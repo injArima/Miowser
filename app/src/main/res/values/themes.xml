@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base application theme — used only for the window/launch background before Compose
+         takes over; all real theming (colors, typography, dark mode) lives in ui/theme/*.kt. -->
+    <style name="Theme.Miowser" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>
