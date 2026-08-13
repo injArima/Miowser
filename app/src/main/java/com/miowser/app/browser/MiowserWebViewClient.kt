@@ -1,51 +1,64 @@
 package com.miowser.app.browser
 
-import android.util.Base64
+import android.graphics.Bitmap
 import android.util.Log
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import java.io.ByteArrayInputStream
+import com.miowser.app.adblock.AdBlockEngine
 
 private const val TAG = "Miowser/Intercept"
 
-// The classic 1x1 transparent GIF — a valid-but-inert stub of the right MIME type, not a bare
-// failure, matching the substitution pattern found in 1DM's ad-block engine (see project
-// memory: 1dm-adblock-engine.md).
-private val TRANSPARENT_GIF_PIXEL: ByteArray = Base64.decode(
-    "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBTAA7",
-    Base64.DEFAULT
-)
-
-private val IMAGE_EXTENSIONS = listOf(".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp")
-
 /**
- * Phase-1 proof-of-concept interceptor — NOT the real ad-block engine. It logs every request
- * that passes through shouldInterceptRequest (proving real interception of every subresource,
- * not just the main document navigation) and substitutes an inert stub for image requests
- * specifically, as a visible, screenshot-verifiable demonstration that response substitution
- * actually works end-to-end against a real site before anything is built on top of it.
+ * Consults [AdBlockEngine] for every subresource request and returns its stub response when a
+ * rule matches. All the actual rule-parsing, matching, and stub-selection logic lives in the
+ * adblock package (see AdBlockEngine.decide / StubResponses) — this class is just the
+ * WebView-facing glue.
+ *
+ * Threading note: shouldInterceptRequest is called by Chromium off the main thread, so it must
+ * never touch the WebView instance itself (e.g. view.getUrl() throws — "A WebView method was
+ * called on thread 'ThreadPoolForeg'"). The current page URL is tracked separately here,
+ * updated only from onPageStarted, which — unlike shouldInterceptRequest — is a normal
+ * main-thread callback.
  */
 class MiowserWebViewClient(
-    private val onCanGoBackChanged: (Boolean) -> Unit
+    private val adBlockEngine: AdBlockEngine,
+    private val onCanGoBackChanged: (Boolean) -> Unit,
+    private val onUrlChanged: (String) -> Unit
 ) : WebViewClient() {
+
+    @Volatile private var currentPageUrl: String = "about:blank"
+
+    override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+        if (url != null) {
+            currentPageUrl = url
+            onUrlChanged(url)
+        }
+    }
+
+    override fun onPageFinished(view: WebView, url: String?) {
+        // Covers redirects: the URL at load-finish can differ from the one onPageStarted saw.
+        if (url != null) {
+            currentPageUrl = url
+            onUrlChanged(url)
+        }
+    }
 
     override fun shouldInterceptRequest(
         view: WebView,
         request: WebResourceRequest
     ): WebResourceResponse? {
-        val url = request.url.toString()
-        Log.d(TAG, "request: ${request.method} $url (mainFrame=${request.isForMainFrame})")
+        val requestUrl = request.url.toString()
+        // For the main-frame navigation request itself, the request *is* the new page — the
+        // tracked currentPageUrl still reflects the previous page until this commits.
+        val pageUrl = if (request.isForMainFrame) requestUrl else currentPageUrl
 
-        val isImage = IMAGE_EXTENSIONS.any { ext ->
-            url.substringBefore('?').endsWith(ext, ignoreCase = true)
+        val response = adBlockEngine.decide(pageUrl, requestUrl, request.requestHeaders, request.isForMainFrame)
+        if (response != null) {
+            Log.d(TAG, "blocked: $requestUrl")
         }
-        if (isImage) {
-            Log.d(TAG, "blocking image, substituting inert stub: $url")
-            return WebResourceResponse("image/gif", null, ByteArrayInputStream(TRANSPARENT_GIF_PIXEL))
-        }
-        return null // fall through to normal loading
+        return response
     }
 
     override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {

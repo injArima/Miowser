@@ -7,40 +7,39 @@ import androidx.webkit.WebViewFeature
 
 private const val TAG = "Miowser/DocStart"
 
-// Proof script: logs a timestamp (independently verifiable via logcat ordering against the
-// page's own load-finish timestamp) and inserts a visible banner at the very top of the page —
-// something a page's own scripts could not have removed if this genuinely ran first.
-private val PROOF_SCRIPT = """
+// Runs before any page script (see installCosmeticInjectionScript doc). Reads this page's
+// cosmetic CSS from the native AdBlockEngine via a synchronous JavascriptInterface call and
+// injects it as a single <style> tag. CSS-based hiding (rather than a MutationObserver +
+// manual DOM removal, which is closer to what 1DM's engine does) naturally covers elements
+// added to the page later too, since the cascade applies live — no sweep pass needed.
+private const val COSMETIC_INJECTION_SCRIPT = """
     (function() {
-        console.log('[Miowser] document-start script executed at ' + Date.now());
-        function insertBanner() {
-            if (document.getElementById('miowser-proof-banner')) return;
-            var banner = document.createElement('div');
-            banner.id = 'miowser-proof-banner';
-            banner.textContent = 'Miowser: injected before page scripts ran';
-            banner.style.cssText = 'position:relative;z-index:999999;background:#ff3b30;' +
-                'color:#fff;padding:12px;font:16px sans-serif;text-align:center;';
-            document.body.insertBefore(banner, document.body.firstChild);
-        }
-        if (document.body) {
-            insertBanner();
-        } else {
-            document.addEventListener('DOMContentLoaded', insertBanner);
-        }
+        try {
+            var bridge = window.MiowserAdBlock;
+            if (!bridge) return;
+            var css = bridge.cssFor(document.location.hostname);
+            if (!css) return;
+            var style = document.createElement('style');
+            style.setAttribute('data-miowser-adblock', '1');
+            style.textContent = css;
+            (document.head || document.documentElement).appendChild(style);
+        } catch (e) {}
     })();
-""".trimIndent()
+"""
 
 /**
- * Installs a script guaranteed to run before any page script, via androidx.webkit's
- * addDocumentStartJavaScript — the real fix for cosmetic-filter injection timing races (see
- * project memory: miowser-browser-engine-decision.md). Feature-detected since it's only
- * available on newer WebView provider versions; must be called before loadUrl() for the
- * upcoming navigation to pick it up.
+ * Installs the cosmetic-filter injection script via androidx.webkit's
+ * addDocumentStartJavaScript, guaranteed to run before any page script — the real fix for
+ * cosmetic-filter timing races (see project memory: miowser-browser-engine-decision.md), and
+ * verified in practice to run ~950ms before a real page's own scripts during the earlier
+ * interception-pipeline proof. Feature-detected since it's only available on newer WebView
+ * provider versions. Must be called before loadUrl() for the first navigation to pick it up,
+ * and requires a CosmeticBridge already registered as "MiowserAdBlock" on this WebView.
  */
-fun WebView.installDocumentStartProofScript() {
+fun WebView.installCosmeticInjectionScript() {
     if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-        Log.w(TAG, "DOCUMENT_START_SCRIPT not supported by this WebView provider — skipping")
+        Log.w(TAG, "DOCUMENT_START_SCRIPT not supported by this WebView provider — cosmetic filtering degraded")
         return
     }
-    WebViewCompat.addDocumentStartJavaScript(this, PROOF_SCRIPT, setOf("*"))
+    WebViewCompat.addDocumentStartJavaScript(this, COSMETIC_INJECTION_SCRIPT, setOf("*"))
 }
