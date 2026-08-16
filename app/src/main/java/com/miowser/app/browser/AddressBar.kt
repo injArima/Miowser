@@ -8,7 +8,10 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -26,8 +29,9 @@ import androidx.compose.ui.unit.dp
 
 /**
  * The browser's address bar: a single text field doubling as URL entry and search box (see
- * [UrlOrSearchResolver] for how input is disambiguated), a reload/stop button, and a slim
- * progress indicator while a page is loading.
+ * [UrlOrSearchResolver] for how input is disambiguated), a reload/stop button, a slim progress
+ * indicator while a page is loading, and — when the grabber has found anything on this page —
+ * a badged button opening the detected-media list.
  */
 @Composable
 fun AddressBar(
@@ -39,6 +43,8 @@ fun AddressBar(
     onStop: () -> Unit,
     isLoading: Boolean,
     loadProgress: Float,
+    detectedCount: Int,
+    onOpenDetected: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(tonalElevation = 2.dp, modifier = modifier.fillMaxWidth()) {
@@ -60,6 +66,13 @@ fun AddressBar(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                     keyboardActions = KeyboardActions(onGo = { onSubmit() })
                 )
+                if (detectedCount > 0) {
+                    IconButton(onClick = onOpenDetected) {
+                        BadgedBox(badge = { Badge { Text(detectedCount.coerceAtMost(99).toString()) } }) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = "Detected media ($detectedCount)")
+                        }
+                    }
+                }
                 IconButton(onClick = if (isLoading) onStop else onReload) {
                     Icon(
                         imageVector = if (isLoading) Icons.Default.Close else Icons.Default.Refresh,

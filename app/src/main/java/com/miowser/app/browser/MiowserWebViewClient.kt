@@ -7,6 +7,8 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.miowser.app.adblock.AdBlockEngine
+import com.miowser.app.grabber.MediaType
+import com.miowser.app.grabber.MediaUrlClassifier
 
 private const val TAG = "Miowser/Intercept"
 
@@ -16,16 +18,24 @@ private const val TAG = "Miowser/Intercept"
  * adblock package (see AdBlockEngine.decide / StubResponses) — this class is just the
  * WebView-facing glue.
  *
+ * Requests that *aren't* blocked are also cheaply classified by [MediaUrlClassifier] — a
+ * synchronous, allocation-light extension check — and handed to [onCandidateMediaUrl] for the
+ * real verification probe, which is Tab's job (see MediaProbe), not this class's.
+ *
  * Threading note: shouldInterceptRequest is called by Chromium off the main thread, so it must
  * never touch the WebView instance itself (e.g. view.getUrl() throws — "A WebView method was
  * called on thread 'ThreadPoolForeg'"). The current page URL is tracked separately here,
  * updated only from onPageStarted, which — unlike shouldInterceptRequest — is a normal
- * main-thread callback.
+ * main-thread callback. onCandidateMediaUrl fires from this same background thread; callers
+ * that touch Compose state must hop to the main thread themselves (MediaProbe's onResult
+ * callback already does this for the async path Tab actually uses).
  */
 class MiowserWebViewClient(
     private val adBlockEngine: AdBlockEngine,
     private val onCanGoBackChanged: (Boolean) -> Unit,
-    private val onUrlChanged: (String) -> Unit
+    private val onUrlChanged: (String) -> Unit,
+    private val onNewPageStarted: () -> Unit,
+    private val onCandidateMediaUrl: (url: String, type: MediaType) -> Unit
 ) : WebViewClient() {
 
     @Volatile private var currentPageUrl: String = "about:blank"
@@ -34,6 +44,7 @@ class MiowserWebViewClient(
         if (url != null) {
             currentPageUrl = url
             onUrlChanged(url)
+            onNewPageStarted()
         }
     }
 
@@ -57,8 +68,11 @@ class MiowserWebViewClient(
         val response = adBlockEngine.decide(pageUrl, requestUrl, request.requestHeaders, request.isForMainFrame)
         if (response != null) {
             Log.d(TAG, "blocked: $requestUrl")
+            return response
         }
-        return response
+
+        MediaUrlClassifier.classify(requestUrl)?.let { type -> onCandidateMediaUrl(requestUrl, type) }
+        return null
     }
 
     override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
