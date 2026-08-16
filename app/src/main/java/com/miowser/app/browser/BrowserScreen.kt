@@ -1,6 +1,7 @@
 package com.miowser.app.browser
 
 import android.view.View
+import android.webkit.CookieManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,10 +30,31 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.miowser.app.adblock.AdBlock
+import com.miowser.app.downloader.Download
+import com.miowser.app.downloader.DownloadKind
+import com.miowser.app.downloader.DownloadQueue
+import com.miowser.app.downloader.DownloadStatus
+import com.miowser.app.grabber.DetectedMedia
+import com.miowser.app.grabber.MediaType
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val STARTER_URL = "https://en.wikipedia.org"
+
+// Anything that isn't safe/sensible in a filename, replaced with "_"; matches the common
+// filesystem-reserved set (Windows is the strictest, so satisfying it covers everything else).
+private val UNSAFE_FILENAME_CHARS = Regex("[\\\\/:*?\"<>|]")
+
+private fun sanitizeFileName(raw: String): String {
+    val cleaned = raw.trim().replace(UNSAFE_FILENAME_CHARS, "_").take(80)
+    return cleaned.ifBlank { "miowser_download" }
+}
+
+/** Strips a trailing ".ext" (2-4 alphanumeric chars) so callers can safely append their own without duplicating it. */
+private fun stripKnownExtension(name: String): String {
+    val ext = name.substringAfterLast('.', "")
+    return if (ext.length in 2..4 && ext.all { it.isLetterOrDigit() }) name.substringBeforeLast('.') else name
+}
 
 /**
  * Browser shell: a [TabStrip] + [AddressBar] driving whichever tab is active, over a Box that
@@ -47,6 +69,7 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
     val clipboard = LocalClipboard.current
     val coroutineScope = rememberCoroutineScope()
     var showDetectedSheet by remember { mutableStateOf(false) }
+    var showDownloadsSheet by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         AdBlock.engine.loadEasyListInBackground(context)
@@ -107,6 +130,35 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
 
     val activeTab = tabs.firstOrNull { it.id == activeTabId }
 
+    // Builds a real Download from a detected item — cookies/UA/referer forwarded the same way
+    // MediaProbe already does for its verification probes, so a download authenticates exactly
+    // like the page load that found it did.
+    fun downloadMedia(item: DetectedMedia) {
+        val tab = activeTab ?: return
+        val name = item.pageTitle?.trim()?.takeIf { it.isNotEmpty() && it != "New Tab" }
+            ?: item.url.substringBefore('?').substringBefore('#').substringAfterLast('/').ifBlank { "video" }
+        val download = Download(
+            id = Download.nextId(),
+            // outputBaseName below has any existing extension stripped — DirectFileDownloader
+            // always appends its own detected extension, and WebView falls back to using the raw
+            // URL as a page's title when it has no real HTML <title> (true for a direct-file
+            // navigation), so `name` here is very often already a filename ending in ".mp4" —
+            // without stripping, the saved file ends up literally named "video.mp4.mp4". Caught
+            // on-device: a real download landed with exactly that duplicated extension.
+            sourceUrl = item.url,
+            pageUrl = item.pageUrl,
+            userAgent = tab.webView.settings.userAgentString,
+            referer = item.pageUrl,
+            cookies = CookieManager.getInstance().getCookie(item.url),
+            kind = if (item.type == MediaType.HLS) DownloadKind.HLS else DownloadKind.DIRECT_FILE,
+            displayName = name,
+            outputBaseName = sanitizeFileName(stripKnownExtension(name))
+        )
+        DownloadQueue.enqueue(context, download)
+        showDetectedSheet = false
+        showDownloadsSheet = true
+    }
+
     BackHandler(enabled = activeTab?.canGoBack == true) {
         activeTab?.webView?.goBack()
     }
@@ -160,7 +212,12 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
                         isLoading = activeTab.isLoading,
                         loadProgress = activeTab.loadProgress,
                         detectedCount = activeTab.detectedMedia.size,
-                        onOpenDetected = { showDetectedSheet = true }
+                        onOpenDetected = { showDetectedSheet = true },
+                        downloadCount = DownloadQueue.downloads.size,
+                        activeDownloadCount = DownloadQueue.downloads.count {
+                            it.status == DownloadStatus.QUEUED || it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.MUXING
+                        },
+                        onOpenDownloads = { showDownloadsSheet = true }
                     )
                 }
             }
@@ -197,7 +254,16 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
                     clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("url", url)))
                 }
             },
+            onDownload = { item -> downloadMedia(item) },
             onDismiss = { showDetectedSheet = false }
+        )
+    }
+
+    if (showDownloadsSheet) {
+        DownloadsSheet(
+            downloads = DownloadQueue.downloads,
+            onCancel = { download -> DownloadQueue.cancel(download) },
+            onDismiss = { showDownloadsSheet = false }
         )
     }
 

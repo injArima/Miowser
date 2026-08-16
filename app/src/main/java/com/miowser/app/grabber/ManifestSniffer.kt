@@ -57,7 +57,10 @@ object ManifestSniffer {
             .maxByOrNull { (w, h) -> w * h }
             ?.let { (w, h) -> "${w}x${h}" }
 
-    private fun resolveUrl(base: String, relativeOrAbsolute: String): String =
+    // internal, not private: HlsPlaylistParser (the downloader's full segment-list parser, as
+    // opposed to this file's lightweight detection-time sniff) resolves segment/key URIs the
+    // same way and shouldn't duplicate this logic.
+    internal fun resolveUrl(base: String, relativeOrAbsolute: String): String =
         runCatching { URL(URL(base), relativeOrAbsolute).toString() }.getOrDefault(relativeOrAbsolute)
 
     private fun areaOf(resolution: String): Long {

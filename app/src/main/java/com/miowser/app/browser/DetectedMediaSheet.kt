@@ -26,15 +26,18 @@ import com.miowser.app.grabber.MediaType
 import kotlin.math.roundToInt
 
 /**
- * Read-only listing of what the grabber has found on the current page — detection only for
- * now, per scope; no download/play actions yet, just a copy-URL affordance since that's useful
- * without pulling in anything beyond what this screen already needs.
+ * Listing of what the grabber has found on the current page: a Copy-URL affordance for
+ * everything, plus a Download action for anything the download engine actually knows how to
+ * fetch — direct files always, HLS via the real segment-download+mux pipeline (HlsDownloader).
+ * DASH and unconfirmed (e.g. blob:) entries don't get a Download button yet; see
+ * [isDownloadable].
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DetectedMediaSheet(
     items: List<DetectedMedia>,
     onCopyUrl: (String) -> Unit,
+    onDownload: (DetectedMedia) -> Unit,
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -46,15 +49,19 @@ fun DetectedMediaSheet(
         } else {
             LazyColumn {
                 items(items, key = { it.url }) { item ->
-                    DetectedMediaRow(item, onCopyUrl)
+                    DetectedMediaRow(item, onCopyUrl, onDownload)
                 }
             }
         }
     }
 }
 
+/** DASH isn't downloadable yet (no segment-list parser built for it); an unconfirmed entry (e.g. a blob: URL) has no independently fetchable source. */
+private fun isDownloadable(item: DetectedMedia): Boolean =
+    item.isConfirmed && item.type != MediaType.DASH
+
 @Composable
-private fun DetectedMediaRow(item: DetectedMedia, onCopyUrl: (String) -> Unit) {
+private fun DetectedMediaRow(item: DetectedMedia, onCopyUrl: (String) -> Unit, onDownload: (DetectedMedia) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -109,8 +116,15 @@ private fun DetectedMediaRow(item: DetectedMedia, onCopyUrl: (String) -> Unit) {
                 Text(text = details, style = MaterialTheme.typography.bodySmall)
             }
         }
-        TextButton(onClick = { onCopyUrl(item.url) }) {
-            Text("Copy")
+        Column(horizontalAlignment = Alignment.End) {
+            TextButton(onClick = { onCopyUrl(item.url) }) {
+                Text("Copy")
+            }
+            if (isDownloadable(item)) {
+                TextButton(onClick = { onDownload(item) }) {
+                    Text("Download")
+                }
+            }
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.miowser.app
 
+import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -26,6 +27,8 @@ class MainActivity : ComponentActivity() {
 
     private val requestLocalNetworkPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    private val requestNotificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,6 +41,15 @@ class MainActivity : ComponentActivity() {
             ContextCompat.checkSelfPermission(this, LOCAL_NETWORK_PERMISSION) != PackageManager.PERMISSION_GRANTED
         ) {
             requestLocalNetworkPermission.launch(LOCAL_NETWORK_PERMISSION)
+        }
+
+        // Needed for DownloadForegroundService's progress notification on API 33+; without it
+        // the service still runs (starting a foreground service doesn't require the permission),
+        // it just can't show anything, so this is best-effort rather than gating downloads on it.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
 
         setContent {
