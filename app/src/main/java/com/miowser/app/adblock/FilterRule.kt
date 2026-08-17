@@ -57,14 +57,21 @@ data class NetworkFilterRule(
         }
     }
 
-    private fun matchesDomain(hostname: String, ruleDomain: String): Boolean =
-        hostname == ruleDomain || hostname.endsWith(".$ruleDomain")
+    private fun matchesDomain(hostname: String, ruleDomain: String): Boolean = hostnameMatchesDomain(hostname, ruleDomain)
 }
 
-/** A parsed cosmetic (element-hiding) rule: `domain##selector`, `##selector`, or `domain#@#selector`. */
+/**
+ * A parsed cosmetic (element-hiding) rule: `domain##selector`, `##selector`, or `domain#@#selector`
+ * — plus EasyList's domain-exclusion form, `domain1,~domain2##selector` ("apply on domain1 and
+ * its subdomains, except domain2 and its subdomains"). [excludedDomains] is empty for the common
+ * case; when present, [AdBlockEngine.cosmeticCssFor] checks it against the *actual page hostname*
+ * for every emission of this rule, regardless of which domain-hierarchy level (domain, or one of
+ * its own ancestors) is what matched [domain] in the first place.
+ */
 data class CosmeticRule(
-    val domain: String?, // null = applies everywhere
+    val domain: String?, // null = applies everywhere (subject to excludedDomains below)
     val selector: String,
     val isException: Boolean,
-    val source: FilterSource
+    val source: FilterSource,
+    val excludedDomains: List<String> = emptyList()
 )

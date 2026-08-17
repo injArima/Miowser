@@ -121,4 +121,29 @@ class FilterListParserTest {
         val result = FilterListParser.parse("example.com##div:has(.ad)", FilterSource.SUBSCRIBED)
         assertTrue(result.cosmeticRules.isEmpty())
     }
+
+    @Test
+    fun `cosmetic rule with a domain exclusion keeps the inclusion and records the exclusion`() {
+        val result = FilterListParser.parse("example.com,~sub.example.com##.ad", FilterSource.SUBSCRIBED)
+        assertEquals(1, result.cosmeticRules.size)
+        val rule = result.cosmeticRules.single()
+        assertEquals("example.com", rule.domain)
+        assertEquals(listOf("sub.example.com"), rule.excludedDomains)
+    }
+
+    @Test
+    fun `cosmetic rule with only exclusions is treated as generic, carrying the exclusion`() {
+        val result = FilterListParser.parse("~foo.com##.ad", FilterSource.SUBSCRIBED)
+        assertEquals(1, result.cosmeticRules.size)
+        val rule = result.cosmeticRules.single()
+        assertEquals(null, rule.domain)
+        assertEquals(listOf("foo.com"), rule.excludedDomains)
+    }
+
+    @Test
+    fun `cosmetic rule with multiple included domains shares one exclusion list across all of them`() {
+        val result = FilterListParser.parse("a.com,b.com,~c.com##.ad", FilterSource.SUBSCRIBED)
+        assertEquals(2, result.cosmeticRules.size)
+        assertTrue(result.cosmeticRules.all { it.excludedDomains == listOf("c.com") })
+    }
 }

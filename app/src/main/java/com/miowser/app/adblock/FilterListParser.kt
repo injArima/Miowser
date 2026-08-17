@@ -144,11 +144,19 @@ object FilterListParser {
             return listOf(CosmeticRule(domain = null, selector = selector, isException = isException, source = source))
         }
 
-        // Domain *exclusions* on cosmetic rules ("~foo.com##sel") aren't supported — such
-        // tokens are just dropped from the inclusion set rather than handled specially.
-        val domains = domainsPart.split(',')
-            .map { it.trim() }
-            .filter { it.isNotEmpty() && !it.startsWith("~") }
-        return domains.map { CosmeticRule(domain = it, selector = selector, isException = isException, source = source) }
+        val tokens = domainsPart.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+        val includedDomains = tokens.filterNot { it.startsWith("~") }
+        val excludedDomains = tokens.filter { it.startsWith("~") }.map { it.removePrefix("~") }
+
+        if (includedDomains.isEmpty()) {
+            // Exclusions with no plain inclusion ("~foo.com##sel" alone) are valid EasyList
+            // syntax — real adblockers treat this as a generic rule (applies everywhere) with
+            // foo.com carved out, not as "no domains, so nothing." Distinct from the domainsPart-
+            // is-blank case above only in that it still carries an exclusion list.
+            return listOf(CosmeticRule(domain = null, selector = selector, isException = isException, source = source, excludedDomains = excludedDomains))
+        }
+        return includedDomains.map {
+            CosmeticRule(domain = it, selector = selector, isException = isException, source = source, excludedDomains = excludedDomains)
+        }
     }
 }

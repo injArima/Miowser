@@ -16,9 +16,12 @@ private const val TAG = "Miowser/AdBlockEngine"
  */
 class AdBlockEngine {
     private val networkEngine = FilterEngine()
-    private val cosmeticByDomain = HashMap<String, MutableList<String>>()
-    private val cosmeticGeneric = mutableListOf<String>()
+    private val cosmeticByDomain = HashMap<String, MutableList<CosmeticEntry>>()
+    private val cosmeticGeneric = mutableListOf<CosmeticEntry>()
     private val cosmeticExceptions = HashSet<String>()
+
+    /** A selector plus the domains it's carved out on (see CosmeticRule.excludedDomains) — usually empty. */
+    private data class CosmeticEntry(val selector: String, val excludedDomains: List<String>)
 
     @Volatile private var loadingStarted = false
     @Volatile var isFullyLoaded: Boolean = false
@@ -59,15 +62,19 @@ class AdBlockEngine {
         }
     }
 
-    private fun addCosmeticRule(rule: CosmeticRule) {
+    // internal, not private: unit tests add cosmetic rules directly rather than through the full
+    // loadEasyList(Context) path, which needs a real asset file and Android Context neither are
+    // available to a plain JVM unit test.
+    internal fun addCosmeticRule(rule: CosmeticRule) {
         if (rule.isException) {
             cosmeticExceptions += "${rule.domain}|${rule.selector}"
             return
         }
+        val entry = CosmeticEntry(rule.selector, rule.excludedDomains)
         if (rule.domain == null) {
-            cosmeticGeneric += rule.selector
+            cosmeticGeneric += entry
         } else {
-            cosmeticByDomain.getOrPut(rule.domain) { mutableListOf() } += rule.selector
+            cosmeticByDomain.getOrPut(rule.domain) { mutableListOf() } += entry
         }
     }
 
@@ -95,10 +102,10 @@ class AdBlockEngine {
     fun cosmeticCssFor(hostname: String): String {
         if (hostname.isBlank()) return ""
         val selectors = LinkedHashSet<String>()
-        selectors += cosmeticGeneric.filterNot { "$hostname|$it" in cosmeticExceptions }
+        selectors += applicableSelectors(cosmeticGeneric, hostname)
         var h = hostname
         while (true) {
-            cosmeticByDomain[h]?.let { list -> selectors += list.filterNot { "$hostname|$it" in cosmeticExceptions } }
+            cosmeticByDomain[h]?.let { selectors += applicableSelectors(it, hostname) }
             val dot = h.indexOf('.')
             if (dot == -1) break
             h = h.substring(dot + 1)
@@ -106,6 +113,16 @@ class AdBlockEngine {
         if (selectors.isEmpty()) return ""
         return selectors.joinToString(",\n") + " { display: none !important; }"
     }
+
+    // Exclusion is checked against the real page hostname, not against whichever domain-hierarchy
+    // level (h, in cosmeticCssFor's walk) happened to match the rule's own inclusion domain —
+    // "example.com,~sub.example.com##sel" must not hide on sub.example.com even though "sub." is
+    // never itself a key this rule is stored under (it's stored under "example.com").
+    private fun applicableSelectors(entries: List<CosmeticEntry>, hostname: String): List<String> =
+        entries
+            .filterNot { "$hostname|${it.selector}" in cosmeticExceptions }
+            .filterNot { entry -> entry.excludedDomains.any { hostnameMatchesDomain(hostname, it) } }
+            .map { it.selector }
 
     private fun hostnameOf(url: String): String? =
         runCatching { URI(url).host?.lowercase() }.getOrNull()
