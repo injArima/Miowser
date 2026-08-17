@@ -27,16 +27,17 @@ import kotlin.math.roundToInt
 
 /**
  * Listing of what the grabber has found on the current page: a Copy-URL affordance for
- * everything, plus a Download action for anything the download engine actually knows how to
- * fetch — direct files, HLS (HlsDownloader), and DASH (DashDownloader) all have a real pipeline
- * behind them. Only unconfirmed entries (e.g. a blob: URL, which has no independently fetchable
- * source) don't get a Download button; see [isDownloadable].
+ * everything, a Play action opening it directly in PlayerScreen, and a Download action for
+ * anything the download engine actually knows how to fetch — direct files, HLS (HlsDownloader),
+ * and DASH (DashDownloader) all have a real pipeline behind them. Only unconfirmed entries (e.g.
+ * a blob: URL, which has no independently fetchable source) get neither; see [isFetchable].
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DetectedMediaSheet(
     items: List<DetectedMedia>,
     onCopyUrl: (String) -> Unit,
+    onPlay: (DetectedMedia) -> Unit,
     onDownload: (DetectedMedia) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -49,18 +50,23 @@ fun DetectedMediaSheet(
         } else {
             LazyColumn {
                 items(items, key = { it.url }) { item ->
-                    DetectedMediaRow(item, onCopyUrl, onDownload)
+                    DetectedMediaRow(item, onCopyUrl, onPlay, onDownload)
                 }
             }
         }
     }
 }
 
-/** An unconfirmed entry (e.g. a blob: URL) has no independently fetchable source to download. */
-private fun isDownloadable(item: DetectedMedia): Boolean = item.isConfirmed
+/** An unconfirmed entry (e.g. a blob: URL) has no independently fetchable source to play or download. */
+private fun isFetchable(item: DetectedMedia): Boolean = item.isConfirmed
 
 @Composable
-private fun DetectedMediaRow(item: DetectedMedia, onCopyUrl: (String) -> Unit, onDownload: (DetectedMedia) -> Unit) {
+private fun DetectedMediaRow(
+    item: DetectedMedia,
+    onCopyUrl: (String) -> Unit,
+    onPlay: (DetectedMedia) -> Unit,
+    onDownload: (DetectedMedia) -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -119,7 +125,10 @@ private fun DetectedMediaRow(item: DetectedMedia, onCopyUrl: (String) -> Unit, o
             TextButton(onClick = { onCopyUrl(item.url) }) {
                 Text("Copy")
             }
-            if (isDownloadable(item)) {
+            if (isFetchable(item)) {
+                TextButton(onClick = { onPlay(item) }) {
+                    Text("Play")
+                }
                 TextButton(onClick = { onDownload(item) }) {
                     Text("Download")
                 }

@@ -36,6 +36,8 @@ import com.miowser.app.downloader.DownloadQueue
 import com.miowser.app.downloader.DownloadStatus
 import com.miowser.app.grabber.DetectedMedia
 import com.miowser.app.grabber.MediaType
+import com.miowser.app.player.PlaybackRequest
+import com.miowser.app.player.PlayerScreen
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -70,6 +72,7 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
     val coroutineScope = rememberCoroutineScope()
     var showDetectedSheet by remember { mutableStateOf(false) }
     var showDownloadsSheet by remember { mutableStateOf(false) }
+    var playbackRequest by remember { mutableStateOf<PlaybackRequest?>(null) }
 
     LaunchedEffect(Unit) {
         AdBlock.engine.loadEasyListInBackground(context)
@@ -163,8 +166,30 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
         showDownloadsSheet = true
     }
 
+    // Same cookies/UA/referer forwarding as downloadMedia above — playback authenticates the
+    // same way a real page load (or a download) would have.
+    fun playMedia(item: DetectedMedia) {
+        val tab = activeTab ?: return
+        playbackRequest = PlaybackRequest(
+            url = item.url,
+            pageUrl = item.pageUrl,
+            userAgent = tab.webView.settings.userAgentString,
+            cookies = CookieManager.getInstance().getCookie(item.url),
+            mediaType = item.type
+        )
+        showDetectedSheet = false
+    }
+
     BackHandler(enabled = activeTab?.canGoBack == true) {
         activeTab?.webView?.goBack()
+    }
+
+    // Composed after the tab-navigation BackHandler above, so it's the most recently added and
+    // wins the back press while the player is open — closing playback rather than navigating the
+    // browser tab underneath it, which stays composed but hidden behind the player's own opaque
+    // background.
+    BackHandler(enabled = playbackRequest != null) {
+        playbackRequest = null
     }
 
     Scaffold(
@@ -258,9 +283,14 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
                     clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("url", url)))
                 }
             },
+            onPlay = { item -> playMedia(item) },
             onDownload = { item -> downloadMedia(item) },
             onDismiss = { showDetectedSheet = false }
         )
+    }
+
+    playbackRequest?.let { request ->
+        PlayerScreen(request = request, onDismiss = { playbackRequest = null })
     }
 
     if (showDownloadsSheet) {
