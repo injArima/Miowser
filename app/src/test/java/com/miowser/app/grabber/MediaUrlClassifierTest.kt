@@ -46,4 +46,27 @@ class MediaUrlClassifierTest {
         assertEquals(true, MediaUrlClassifier.isManifestType(MediaType.DASH))
         assertEquals(false, MediaUrlClassifier.isManifestType(MediaType.MP4))
     }
+
+    @Test
+    fun `classifies known manifest and media MIME types, ignoring charset parameters`() {
+        assertEquals(MediaType.HLS, MediaUrlClassifier.classifyByMimeType("application/vnd.apple.mpegurl"))
+        assertEquals(MediaType.HLS, MediaUrlClassifier.classifyByMimeType("application/x-mpegurl"))
+        assertEquals(MediaType.DASH, MediaUrlClassifier.classifyByMimeType("application/dash+xml; charset=utf-8"))
+        assertEquals(MediaType.MP4, MediaUrlClassifier.classifyByMimeType("video/mp4"))
+        assertEquals(MediaType.AUDIO, MediaUrlClassifier.classifyByMimeType("audio/mpeg"))
+        assertEquals(MediaType.SUBTITLE, MediaUrlClassifier.classifyByMimeType("text/vtt"))
+    }
+
+    @Test
+    fun `falls back to a generic video or audio guess for an unlisted but still video or audio MIME type`() {
+        assertEquals(MediaType.MP4, MediaUrlClassifier.classifyByMimeType("video/quicktime"))
+        assertEquals(MediaType.AUDIO, MediaUrlClassifier.classifyByMimeType("audio/x-something-unlisted"))
+    }
+
+    @Test
+    fun `returns null for a null or unrelated MIME type`() {
+        assertNull(MediaUrlClassifier.classifyByMimeType(null))
+        assertNull(MediaUrlClassifier.classifyByMimeType("text/html"))
+        assertNull(MediaUrlClassifier.classifyByMimeType("application/octet-stream"))
+    }
 }

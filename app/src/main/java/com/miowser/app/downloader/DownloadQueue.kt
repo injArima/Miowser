@@ -21,6 +21,7 @@ object DownloadQueue {
             when (download.kind) {
                 DownloadKind.DIRECT_FILE -> DirectFileDownloader.run(context.applicationContext, download)
                 DownloadKind.HLS -> HlsDownloader.run(context.applicationContext, download)
+                DownloadKind.DASH -> DashDownloader.run(context.applicationContext, download)
             }
         }
     }

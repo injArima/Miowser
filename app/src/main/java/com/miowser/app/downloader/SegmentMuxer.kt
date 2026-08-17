@@ -21,10 +21,12 @@ import java.nio.ByteBuffer
  * guaranteed, and wrong here would show up as an audio/video sync jump or a stutter at every
  * segment join.
  *
- * Scope: classic MPEG-TS segments only. CMAF/fMP4 segments (an #EXT-X-MAP initialization segment
- * carrying the moov box separately from the media segments) aren't handled — MediaExtractor would
- * fail to find valid tracks in a bare fMP4 media segment without its init segment prepended, and
- * this doesn't attempt that. The test stream this was verified against uses plain .ts segments.
+ * [mux]'s scope: classic MPEG-TS segments only (HLS). CMAF/fMP4 segments on their own (an
+ * #EXT-X-MAP initialization segment carrying the moov box separately from the media segments)
+ * aren't handled here — MediaExtractor would fail to find valid tracks in a bare fMP4 media
+ * segment without its init segment prepended. DASH's own fMP4 segments go through
+ * DashDownloader's own init+media concatenation first (which produces a complete, directly
+ * MediaExtractor-readable file per track) and then [muxTracks] below, not this function.
  */
 object SegmentMuxer {
     class MuxException(message: String, cause: Throwable? = null) : Exception(message, cause)
@@ -129,5 +131,74 @@ object SegmentMuxer {
             if (mime.startsWith(mimePrefix)) return i
         }
         return -1
+    }
+
+    /**
+     * Muxes up to one video-only and one audio-only container into a single .mp4 — the DASH
+     * case (see DashDownloader), where each input file is already a complete, continuously
+     * timestamped track on its own (a CMAF init segment concatenated with its media segments is
+     * a valid fMP4 by construction). Simpler than [mux]: no cross-file timestamp rebasing is
+     * needed, since there's exactly one "segment" per track here, not many to stitch together.
+     */
+    fun muxTracks(videoFile: File?, audioFile: File?, outputPath: String) {
+        if (videoFile == null && audioFile == null) throw MuxException("No tracks to mux")
+
+        val muxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        var muxerStarted = false
+        val bufferInfo = MediaCodec.BufferInfo()
+        val buffer = ByteBuffer.allocate(2 * 1024 * 1024)
+        var videoExtractor: MediaExtractor? = null
+        var audioExtractor: MediaExtractor? = null
+
+        try {
+            videoExtractor = videoFile?.let { openExtractor(it) }
+            audioExtractor = audioFile?.let { openExtractor(it) }
+            val videoTrackInFile = videoExtractor?.let { findTrack(it, "video/") }?.takeIf { it != -1 }
+            val audioTrackInFile = audioExtractor?.let { findTrack(it, "audio/") }?.takeIf { it != -1 }
+
+            val videoTrackIndex = if (videoExtractor != null && videoTrackInFile != null) {
+                muxer.addTrack(videoExtractor.getTrackFormat(videoTrackInFile))
+            } else -1
+            val audioTrackIndex = if (audioExtractor != null && audioTrackInFile != null) {
+                muxer.addTrack(audioExtractor.getTrackFormat(audioTrackInFile))
+            } else -1
+            if (videoTrackIndex == -1 && audioTrackIndex == -1) {
+                throw MuxException("Neither file has a usable video or audio track")
+            }
+            muxer.start()
+            muxerStarted = true
+
+            if (videoExtractor != null && videoTrackInFile != null && videoTrackIndex != -1) {
+                copyTrack(videoExtractor, videoTrackInFile, muxer, videoTrackIndex, 0L, buffer, bufferInfo)
+            }
+            if (audioExtractor != null && audioTrackInFile != null && audioTrackIndex != -1) {
+                copyTrack(audioExtractor, audioTrackInFile, muxer, audioTrackIndex, 0L, buffer, bufferInfo)
+            }
+        } finally {
+            videoExtractor?.release()
+            audioExtractor?.release()
+            // Nested so muxer.release() always runs — including when muxer.stop() itself throws.
+            try {
+                if (muxerStarted) {
+                    try {
+                        muxer.stop()
+                    } catch (e: Exception) {
+                        throw MuxException("Muxer failed to finalize the output file", e)
+                    }
+                }
+            } finally {
+                muxer.release()
+            }
+        }
+    }
+
+    private fun openExtractor(file: File): MediaExtractor {
+        val extractor = MediaExtractor()
+        try {
+            extractor.setDataSource(file.absolutePath)
+        } catch (e: Exception) {
+            throw MuxException("${file.name} isn't a readable media container", e)
+        }
+        return extractor
     }
 }

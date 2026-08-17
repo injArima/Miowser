@@ -150,7 +150,11 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
             userAgent = tab.webView.settings.userAgentString,
             referer = item.pageUrl,
             cookies = CookieManager.getInstance().getCookie(item.url),
-            kind = if (item.type == MediaType.HLS) DownloadKind.HLS else DownloadKind.DIRECT_FILE,
+            kind = when (item.type) {
+                MediaType.HLS -> DownloadKind.HLS
+                MediaType.DASH -> DownloadKind.DASH
+                else -> DownloadKind.DIRECT_FILE
+            },
             displayName = name,
             outputBaseName = sanitizeFileName(stripKnownExtension(name))
         )

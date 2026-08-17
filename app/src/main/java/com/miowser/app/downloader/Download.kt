@@ -7,7 +7,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 enum class DownloadStatus { QUEUED, DOWNLOADING, MUXING, COMPLETED, FAILED, CANCELED }
 
-enum class DownloadKind { DIRECT_FILE, HLS }
+enum class DownloadKind { DIRECT_FILE, HLS, DASH }
 
 /**
  * One user-visible download. Progress fields are Compose-observable properties on a plain class
@@ -16,9 +16,9 @@ enum class DownloadKind { DIRECT_FILE, HLS }
  * fight Compose's diffing for no benefit.
  *
  * [bytesDownloaded]/[totalBytes] mean actual bytes for a direct-file download, but *segments
- * completed/total* for HLS — an HLS download's real byte total isn't known upfront (see
- * MediaProbe's own size estimate, which is a separate, approximate number). Either way the ratio
- * is a valid 0..1 progress fraction, which is all the UI actually needs.
+ * completed/total* for HLS and DASH — neither's real byte total is known upfront (see
+ * MediaProbe's own HLS size estimate, which is a separate, approximate number). Either way the
+ * ratio is a valid 0..1 progress fraction, which is all the UI actually needs.
  */
 class Download(
     val id: Long,

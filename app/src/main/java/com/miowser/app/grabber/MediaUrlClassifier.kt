@@ -42,5 +42,41 @@ object MediaUrlClassifier {
         return EXTENSION_TYPES[extension]
     }
 
+    private val MIME_TYPES = mapOf(
+        "application/vnd.apple.mpegurl" to MediaType.HLS,
+        "application/x-mpegurl" to MediaType.HLS,
+        "audio/mpegurl" to MediaType.HLS,
+        "audio/x-mpegurl" to MediaType.HLS,
+        "application/dash+xml" to MediaType.DASH,
+        "video/mp4" to MediaType.MP4,
+        "video/webm" to MediaType.WEBM,
+        "video/x-matroska" to MediaType.MATROSKA,
+        "audio/mpeg" to MediaType.AUDIO,
+        "audio/mp4" to MediaType.AUDIO,
+        "audio/aac" to MediaType.AUDIO,
+        "audio/flac" to MediaType.AUDIO,
+        "audio/ogg" to MediaType.AUDIO,
+        "audio/wav" to MediaType.AUDIO,
+        "audio/opus" to MediaType.AUDIO,
+        "text/vtt" to MediaType.SUBTITLE,
+        "application/x-subrip" to MediaType.SUBTITLE
+    )
+
+    /**
+     * Fallback for callers that only have a server-declared Content-Type, not a URL to extract
+     * an extension from — namely WebView's DownloadListener, whose whole point is firing for
+     * exactly the URLs [classify] can't help with (opaque CDN paths with no useful extension).
+     */
+    fun classifyByMimeType(mimeType: String?): MediaType? {
+        if (mimeType == null) return null
+        val normalized = mimeType.substringBefore(';').trim().lowercase()
+        MIME_TYPES[normalized]?.let { return it }
+        return when {
+            normalized.startsWith("video/") -> MediaType.MP4
+            normalized.startsWith("audio/") -> MediaType.AUDIO
+            else -> null
+        }
+    }
+
     fun isManifestType(type: MediaType): Boolean = type == MediaType.HLS || type == MediaType.DASH
 }

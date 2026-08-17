@@ -28,9 +28,9 @@ import kotlin.math.roundToInt
 /**
  * Listing of what the grabber has found on the current page: a Copy-URL affordance for
  * everything, plus a Download action for anything the download engine actually knows how to
- * fetch — direct files always, HLS via the real segment-download+mux pipeline (HlsDownloader).
- * DASH and unconfirmed (e.g. blob:) entries don't get a Download button yet; see
- * [isDownloadable].
+ * fetch — direct files, HLS (HlsDownloader), and DASH (DashDownloader) all have a real pipeline
+ * behind them. Only unconfirmed entries (e.g. a blob: URL, which has no independently fetchable
+ * source) don't get a Download button; see [isDownloadable].
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,9 +56,8 @@ fun DetectedMediaSheet(
     }
 }
 
-/** DASH isn't downloadable yet (no segment-list parser built for it); an unconfirmed entry (e.g. a blob: URL) has no independently fetchable source. */
-private fun isDownloadable(item: DetectedMedia): Boolean =
-    item.isConfirmed && item.type != MediaType.DASH
+/** An unconfirmed entry (e.g. a blob: URL) has no independently fetchable source to download. */
+private fun isDownloadable(item: DetectedMedia): Boolean = item.isConfirmed
 
 @Composable
 private fun DetectedMediaRow(item: DetectedMedia, onCopyUrl: (String) -> Unit, onDownload: (DetectedMedia) -> Unit) {

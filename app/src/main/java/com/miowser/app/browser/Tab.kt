@@ -80,6 +80,24 @@ class Tab(
         if (existingIndex >= 0) detectedMedia[existingIndex] = media else detectedMedia.add(media)
     }
 
+    // Shared by both paths that find a *candidate* URL rather than already having real headers
+    // for it (unlike the DownloadListener's direct-file branch, which doesn't need this):
+    // shouldInterceptRequest's network classification, and the DownloadListener's own manifest
+    // branch (a direct navigation to an .m3u8/.mpd still benefits from real body-verification,
+    // resolution, and variant-count extraction, not just the headers WebView already has).
+    private fun probeCandidate(candidateUrl: String, guessedType: MediaType, userAgent: String) {
+        MediaProbe.probe(
+            url = candidateUrl,
+            pageUrl = this@Tab.url,
+            userAgent = userAgent,
+            guessedType = guessedType
+        ) { result ->
+            // onResult is always main-thread-dispatched (see MediaProbe), so reading
+            // this@Tab.title here is safe regardless of which thread called probeCandidate.
+            if (result != null) addOrReplaceDetection(result.copy(pageTitle = this@Tab.title))
+        }
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     val webView: WebView = WebView(context).apply {
         settings.javaScriptEnabled = true
@@ -126,6 +144,43 @@ class Tab(
         )
         installVideoSnifferScript() // must also run before loadUrl()
 
+        // The other half of the "no downloader embedded" gap: without this, WebView falls back
+        // to its own default handling — historically observed as the OS just downloading the raw
+        // file — for any URL whose response it can't render itself, which includes a direct
+        // navigation (typed in the address bar, or a plain <a href> link) straight to an .mpd,
+        // .m3u8, or any direct media file. shouldInterceptRequest's network-classify path only
+        // catches *sub-resources* a page requests while rendering; a direct navigation *to* the
+        // media file never gets that far; this is the real browser↔downloader handoff point 1DM
+        // itself uses (project memory: 1dm-browser-downloader-handoff.md,
+        // DownloadHandler.onDownloadStart). WebView only fires this once it already knows the
+        // response can't be rendered, so contentLength/mimeType here are real, already-fetched
+        // header data — no separate verification probe needed for a direct file the way
+        // onCandidateMediaUrl below needs one for a URL merely seen in passing.
+        setDownloadListener { downloadUrl, _, _, mimeType, contentLength ->
+            if (seenGrabberUrls.add(downloadUrl)) {
+                val guessedType = MediaUrlClassifier.classify(downloadUrl) ?: MediaUrlClassifier.classifyByMimeType(mimeType)
+                if (guessedType != null && MediaUrlClassifier.isManifestType(guessedType)) {
+                    probeCandidate(downloadUrl, guessedType, cachedUserAgent)
+                } else {
+                    addOrReplaceDetection(
+                        DetectedMedia(
+                            url = downloadUrl,
+                            pageUrl = this@Tab.url,
+                            type = guessedType ?: MediaType.UNKNOWN,
+                            isConfirmed = true, // WebView's own connection attempt already fetched real headers for this
+                            sizeBytes = contentLength.takeIf { it > 0 },
+                            isSizeApproximate = false,
+                            durationSeconds = null,
+                            variantCount = null,
+                            resolution = null,
+                            isEncrypted = false,
+                            pageTitle = this@Tab.title
+                        )
+                    )
+                }
+            }
+        }
+
         webViewClient = MiowserWebViewClient(
             adBlockEngine = AdBlock.engine,
             onCanGoBackChanged = { canGoBack = it },
@@ -142,19 +197,7 @@ class Tab(
                 seenGrabberUrls.clear()
             },
             onCandidateMediaUrl = { candidateUrl, guessedType ->
-                if (seenGrabberUrls.add(candidateUrl)) {
-                    MediaProbe.probe(
-                        url = candidateUrl,
-                        pageUrl = this@Tab.url,
-                        userAgent = cachedUserAgent,
-                        guessedType = guessedType
-                    ) { result ->
-                        // onResult is always main-thread-dispatched (see MediaProbe), so reading
-                        // this@Tab.title here — unlike in the classify/probe call above, which
-                        // still runs off-thread — is safe.
-                        if (result != null) addOrReplaceDetection(result.copy(pageTitle = this@Tab.title))
-                    }
-                }
+                if (seenGrabberUrls.add(candidateUrl)) probeCandidate(candidateUrl, guessedType, cachedUserAgent)
             }
         )
         webChromeClient = object : WebChromeClient() {
