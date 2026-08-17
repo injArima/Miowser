@@ -337,6 +337,7 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
         DownloadsSheet(
             downloads = DownloadQueue.downloads,
             onCancel = { download -> DownloadQueue.cancel(download) },
+            onRetry = { download -> DownloadQueue.retry(context, download) },
             onDismiss = { showDownloadsSheet = false }
         )
     }

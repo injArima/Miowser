@@ -26,6 +26,7 @@ import com.miowser.app.downloader.DownloadStatus
 fun DownloadsSheet(
     downloads: List<Download>,
     onCancel: (Download) -> Unit,
+    onRetry: (Download) -> Unit,
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -34,7 +35,7 @@ fun DownloadsSheet(
         } else {
             LazyColumn {
                 items(downloads, key = { it.id }) { download ->
-                    DownloadRow(download, onCancel)
+                    DownloadRow(download, onCancel, onRetry)
                 }
             }
         }
@@ -42,7 +43,7 @@ fun DownloadsSheet(
 }
 
 @Composable
-private fun DownloadRow(download: Download, onCancel: (Download) -> Unit) {
+private fun DownloadRow(download: Download, onCancel: (Download) -> Unit, onRetry: (Download) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -70,6 +71,11 @@ private fun DownloadRow(download: Download, onCancel: (Download) -> Unit) {
         if (download.status == DownloadStatus.DOWNLOADING || download.status == DownloadStatus.QUEUED) {
             TextButton(onClick = { onCancel(download) }) {
                 Text("Cancel")
+            }
+        }
+        if (download.status == DownloadStatus.FAILED || download.status == DownloadStatus.CANCELED) {
+            TextButton(onClick = { onRetry(download) }) {
+                Text("Retry")
             }
         }
     }

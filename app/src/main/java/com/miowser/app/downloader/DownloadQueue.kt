@@ -19,6 +19,40 @@ object DownloadQueue {
     fun enqueue(context: Context, download: Download) {
         downloads.add(0, download) // newest first
         persist(context)
+        startAndDispatch(context, download)
+    }
+
+    fun cancel(download: Download) {
+        download.isCanceled = true
+    }
+
+    /**
+     * Re-runs a FAILED or CANCELED download in place — same list entry, same id, no duplicate
+     * row. Safe to call on any of the three downloaders: each one deletes its own cache dir in a
+     * `finally` block at the end of every run (keyed by download.id, so a stale one never lingers
+     * between attempts) and opens a fresh MediaStore output on every call, so there's no leftover
+     * state from the failed attempt to clean up here beyond the Download object's own fields.
+     *
+     * Caveat this doesn't paper over: a download restored from disk after a restart has no
+     * userAgent/cookies/referer (see DownloadStore's doc comment on why those aren't persisted).
+     * Retrying it still goes out over the network with whatever it has — which for most direct
+     * file/manifest URLs is enough, but for anything that actually needed those headers, retry
+     * will just fail again with a real (if less informative) HTTP/connection error rather than a
+     * fabricated "can't retry" message. That's judged an acceptable, honest limitation rather than
+     * one worth adding heuristics to preempt.
+     */
+    fun retry(context: Context, download: Download) {
+        if (download.status != DownloadStatus.FAILED && download.status != DownloadStatus.CANCELED) return
+        download.status = DownloadStatus.QUEUED
+        download.bytesDownloaded = 0L
+        download.totalBytes = -1L
+        download.errorMessage = null
+        download.isCanceled = false
+        persist(context)
+        startAndDispatch(context, download)
+    }
+
+    private fun startAndDispatch(context: Context, download: Download) {
         DownloadForegroundService.start(context.applicationContext)
         executor.execute {
             when (download.kind) {
@@ -28,10 +62,6 @@ object DownloadQueue {
             }
             persist(context)
         }
-    }
-
-    fun cancel(download: Download) {
-        download.isCanceled = true
     }
 
     fun hasActiveWork(): Boolean = downloads.any {
