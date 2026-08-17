@@ -8,7 +8,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Badge
@@ -46,9 +45,6 @@ fun AddressBar(
     loadProgress: Float,
     detectedCount: Int,
     onOpenDetected: () -> Unit,
-    downloadCount: Int,
-    activeDownloadCount: Int,
-    onOpenDownloads: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(tonalElevation = 2.dp, modifier = modifier.fillMaxWidth()) {
@@ -74,17 +70,6 @@ fun AddressBar(
                     IconButton(onClick = onOpenDetected) {
                         BadgedBox(badge = { Badge { Text(detectedCount.coerceAtMost(99).toString()) } }) {
                             Icon(Icons.Default.PlayArrow, contentDescription = "Detected media ($detectedCount)")
-                        }
-                    }
-                }
-                if (downloadCount > 0) {
-                    IconButton(onClick = onOpenDownloads) {
-                        if (activeDownloadCount > 0) {
-                            BadgedBox(badge = { Badge { Text(activeDownloadCount.coerceAtMost(99).toString()) } }) {
-                                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Downloads ($activeDownloadCount active)")
-                            }
-                        } else {
-                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Downloads")
                         }
                     }
                 }

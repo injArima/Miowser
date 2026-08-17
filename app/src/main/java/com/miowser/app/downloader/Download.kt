@@ -43,5 +43,10 @@ class Download(
     companion object {
         private val idCounter = AtomicLong(0)
         fun nextId(): Long = idCounter.getAndIncrement()
+
+        /** Bumps the counter past a restored download's old id, so new downloads never collide with it. */
+        fun ensureNextIdAbove(id: Long) {
+            idCounter.updateAndGet { current -> maxOf(current, id + 1) }
+        }
     }
 }

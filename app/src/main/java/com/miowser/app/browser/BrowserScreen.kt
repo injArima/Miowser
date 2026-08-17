@@ -38,6 +38,7 @@ import com.miowser.app.grabber.DetectedMedia
 import com.miowser.app.grabber.MediaType
 import com.miowser.app.player.PlaybackRequest
 import com.miowser.app.player.PlayerScreen
+import com.miowser.app.ui.BottomBar
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -76,6 +77,7 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
 
     LaunchedEffect(Unit) {
         AdBlock.engine.loadEasyListInBackground(context)
+        DownloadQueue.restore(context)
     }
 
     val tabs = remember { mutableStateListOf<Tab>() }
@@ -241,15 +243,18 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
                         isLoading = activeTab.isLoading,
                         loadProgress = activeTab.loadProgress,
                         detectedCount = activeTab.detectedMedia.size,
-                        onOpenDetected = { showDetectedSheet = true },
-                        downloadCount = DownloadQueue.downloads.size,
-                        activeDownloadCount = DownloadQueue.downloads.count {
-                            it.status == DownloadStatus.QUEUED || it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.MUXING
-                        },
-                        onOpenDownloads = { showDownloadsSheet = true }
+                        onOpenDetected = { showDetectedSheet = true }
                     )
                 }
             }
+        },
+        bottomBar = {
+            BottomBar(
+                activeDownloadCount = DownloadQueue.downloads.count {
+                    it.status == DownloadStatus.QUEUED || it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.MUXING
+                },
+                onOpenDownloads = { showDownloadsSheet = true }
+            )
         }
     ) { innerPadding ->
         Box(
@@ -334,6 +339,7 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
                     // The durability point for session restore: covers backgrounding + later
                     // process death, the overwhelmingly common real-world "app was gone" case.
                     TabSessionStore.save(context, tabs, activeTabId)
+                    DownloadQueue.persist(context)
                 }
                 else -> Unit
             }
