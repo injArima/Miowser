@@ -39,7 +39,8 @@ object DirectFileDownloader {
 
             val extension = extensionFor(download.sourceUrl, connection.getHeaderField("Content-Type"))
             val fileName = "${download.outputBaseName}.$extension"
-            opened = MediaStoreOutput.open(context, fileName, mimeTypeFor(extension))
+            val mimeType = mimeTypeFor(extension)
+            opened = MediaStoreOutput.open(context, fileName, mimeType)
             if (opened == null) {
                 fail(download, "Could not create output file")
                 return
@@ -68,7 +69,7 @@ object DirectFileDownloader {
                     download.bytesDownloaded = totalRead
                 }
             }
-            MediaStoreOutput.finish(context, opened.uri)
+            MediaStoreOutput.finish(context, opened.uri, mimeType)
             download.status = DownloadStatus.COMPLETED
         } catch (e: Exception) {
             Log.d(TAG, "download failed for ${download.sourceUrl}: ${e.message}")

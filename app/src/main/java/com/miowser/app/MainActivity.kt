@@ -29,6 +29,8 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     private val requestNotificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    private val requestLegacyStoragePermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,6 +52,17 @@ class MainActivity : ComponentActivity() {
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
             requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
+        // Only needed below API 29 — MediaStoreOutput's Q+ path writes through ContentResolver,
+        // which needs no storage permission at all. Below that, a download's very first write
+        // would otherwise hit a SecurityException the first time this permission's missing,
+        // since declaring it in the manifest (maxSdkVersion 28) alone doesn't grant it — see
+        // MediaStoreOutput's own doc comment for the on-device consequence this was found from.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestLegacyStoragePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
 
         setContent {

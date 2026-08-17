@@ -69,7 +69,7 @@ object HlsDownloader {
             val opened = MediaStoreOutput.open(context, "${download.outputBaseName}.mp4", "video/mp4")
                 ?: return fail(download, "Could not create output file")
             muxedFile.inputStream().use { input -> opened.stream.use { output -> input.copyTo(output) } }
-            MediaStoreOutput.finish(context, opened.uri)
+            MediaStoreOutput.finish(context, opened.uri, "video/mp4")
 
             download.status = DownloadStatus.COMPLETED
         } catch (e: Exception) {
