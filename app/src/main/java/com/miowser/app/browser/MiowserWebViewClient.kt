@@ -33,7 +33,7 @@ private const val TAG = "Miowser/Intercept"
  */
 class MiowserWebViewClient(
     private val adBlockEngine: AdBlockEngine,
-    private val onCanGoBackChanged: (Boolean) -> Unit,
+    private val onNavigationStateChanged: (canGoBack: Boolean, canGoForward: Boolean) -> Unit,
     private val onUrlChanged: (String) -> Unit,
     private val onNewPageStarted: () -> Unit,
     private val onCandidateMediaUrl: (url: String, type: MediaType) -> Unit,
@@ -84,7 +84,11 @@ class MiowserWebViewClient(
         return null
     }
 
+    // The documented hook for "the back/forward history changed" — fires after every top-level
+    // navigation, including history navigations (our own Back/Forward buttons calling goBack()/
+    // goForward()), so this single callback keeps canGoBack/canGoForward correct everywhere,
+    // not just after fresh loads.
     override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
-        onCanGoBackChanged(view.canGoBack())
+        onNavigationStateChanged(view.canGoBack(), view.canGoForward())
     }
 }

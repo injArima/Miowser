@@ -55,6 +55,7 @@ class Tab(
     var title by mutableStateOf("New Tab")
     var url by mutableStateOf("")
     var canGoBack by mutableStateOf(false)
+    var canGoForward by mutableStateOf(false)
     var isLoading by mutableStateOf(false)
     var loadProgress by mutableFloatStateOf(0f)
     var addressBarText by mutableStateOf(TextFieldValue(initialUrl))
@@ -192,7 +193,10 @@ class Tab(
 
         webViewClient = MiowserWebViewClient(
             adBlockEngine = AdBlock.engine,
-            onCanGoBackChanged = { canGoBack = it },
+            onNavigationStateChanged = { back, forward ->
+                canGoBack = back
+                canGoForward = forward
+            },
             onUrlChanged = { newUrl ->
                 // Qualified with this@Tab: unqualified `url` here would resolve to WebView's
                 // own read-only `url` synthetic property (from getUrl()) via the enclosing

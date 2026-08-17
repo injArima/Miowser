@@ -4,10 +4,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -23,31 +21,31 @@ import com.miowser.app.settings.SearchEngine
 import com.miowser.app.settings.Settings
 
 /**
- * Every control here applies immediately via [onUpdate] — a mobile settings sheet with a
+ * Every control here applies immediately via [onUpdate] — a mobile settings page with a
  * separate "Save" step just adds a step users have to remember to take, for state that's cheap
  * to persist on every change (SettingsStore.save is a small synchronous SharedPreferences write).
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsSheet(
+fun SettingsPage(
     settings: Settings,
     onUpdate: (Settings) -> Unit,
-    onDismiss: () -> Unit
+    onBack: () -> Unit
 ) {
     // A local draft for the home-page text field: applying onUpdate on every keystroke would
-    // persist (and re-resolve elsewhere) a URL that's still mid-edit. Committed on blur/dismiss
-    // instead, via the LaunchedEffect(Unit)-style flush below.
+    // persist (and re-resolve elsewhere) a URL that's still mid-edit. Committed when leaving the
+    // page instead (onBack below), same as it was committed on sheet-dismiss before this was a page.
     var homePageDraft by remember(settings.homePageUrl) { mutableStateOf(settings.homePageUrl) }
 
-    ModalBottomSheet(onDismissRequest = {
-        if (homePageDraft != settings.homePageUrl && homePageDraft.isNotBlank()) {
-            onUpdate(settings.copy(homePageUrl = homePageDraft))
+    SimplePageScaffold(
+        title = "Settings",
+        onBack = {
+            if (homePageDraft != settings.homePageUrl && homePageDraft.isNotBlank()) {
+                onUpdate(settings.copy(homePageUrl = homePageDraft))
+            }
+            onBack()
         }
-        onDismiss()
-    }) {
-        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-            Text("Settings", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 16.dp))
-
+    ) { modifier ->
+        Column(modifier = modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
             SettingRow(label = "Block ads and trackers") {
                 Switch(
                     checked = settings.adBlockEnabled,

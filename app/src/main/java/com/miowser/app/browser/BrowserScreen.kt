@@ -4,7 +4,6 @@ import android.view.View
 import android.webkit.CookieManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -41,11 +40,23 @@ import com.miowser.app.history.HistoryLog
 import com.miowser.app.player.PlaybackRequest
 import com.miowser.app.player.PlayerScreen
 import com.miowser.app.settings.AppSettings
+import com.miowser.app.ui.BookmarksPage
 import com.miowser.app.ui.BottomBar
-import com.miowser.app.ui.LibrarySheet
-import com.miowser.app.ui.SettingsSheet
+import com.miowser.app.ui.HistoryPage
+import com.miowser.app.ui.OverflowMenuSheet
+import com.miowser.app.ui.Screen
+import com.miowser.app.ui.SettingsPage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+// The transient overlays allowed on screen at a time — DETECTED is opened from AddressBar
+// (page-contextual), TABS and MENU from BottomBar. Downloads/History/Bookmarks/Settings are NOT
+// here: those are real full pages (see Screen, rendered by replacing the whole browser UI, not
+// overlaid on top of it) rather than sheets, so switching to one of them always also clears this
+// to null (see every activeScreen assignment below). A single nullable field rather than
+// independent booleans structurally rules out two ModalBottomSheets ever trying to render at
+// once — the render site below is a `when` on this one value.
+private enum class Sheet { DETECTED, TABS, MENU }
 
 // Anything that isn't safe/sensible in a filename, replaced with "_"; matches the common
 // filesystem-reserved set (Windows is the strictest, so satisfying it covers everything else).
@@ -63,9 +74,10 @@ private fun stripKnownExtension(name: String): String {
 }
 
 /**
- * Browser shell: a [TabStrip] + [AddressBar] driving whichever tab is active, over a Box that
- * keeps every open tab's WebView alive simultaneously (see the tab loop below) and just
- * toggles visibility — switching tabs never destroys one.
+ * Browser shell: an [AddressBar] driving whichever tab is active, over a Box that keeps every
+ * open tab's WebView alive simultaneously (see the tab loop below) and just toggles visibility —
+ * switching tabs never destroys one. Tab switching itself lives entirely in [TabsSheet] now
+ * (opened from BottomBar's Tabs button); there's no always-visible top tab strip anymore.
  */
 @Composable
 fun BrowserScreen(modifier: Modifier = Modifier) {
@@ -74,10 +86,8 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
     val keyboardController = LocalSoftwareKeyboardController.current
     val clipboard = LocalClipboard.current
     val coroutineScope = rememberCoroutineScope()
-    var showDetectedSheet by remember { mutableStateOf(false) }
-    var showDownloadsSheet by remember { mutableStateOf(false) }
-    var showLibrarySheet by remember { mutableStateOf(false) }
-    var showSettingsSheet by remember { mutableStateOf(false) }
+    var activeSheet by remember { mutableStateOf<Sheet?>(null) }
+    var activeScreen by remember { mutableStateOf<Screen?>(null) }
     var playbackRequest by remember { mutableStateOf<PlaybackRequest?>(null) }
 
     val tabs = remember { mutableStateListOf<Tab>() }
@@ -104,6 +114,25 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
             tabs.add(tab)
         }
         return tab
+    }
+
+    // Used by TabsSheet's close button — the only place a tab can be closed now that there's no
+    // top strip.
+    fun closeTab(id: Long) {
+        val index = tabs.indexOfFirst { it.id == id }
+        if (index != -1) {
+            val closed = tabs.removeAt(index)
+            closed.webView.destroy()
+            if (tabs.isEmpty()) {
+                activeTabId = createAndInsertTab(AppSettings.current.homePageUrl, null).id
+            } else if (activeTabId == id) {
+                // Prefer returning to the tab that opened this one (a real page-triggered
+                // child); manually-opened tabs have no opener, so fall back to whichever tab
+                // is now immediately before this one's old position — "the previous tab in order".
+                val opener = closed.openerTabId?.let { openerId -> tabs.firstOrNull { it.id == openerId } }
+                activeTabId = opener?.id ?: tabs[(index - 1).coerceIn(0, tabs.size - 1)].id
+            }
+        }
     }
 
     // All one-time startup loads share a single LaunchedEffect(Unit) rather than several: the
@@ -177,8 +206,8 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
             outputBaseName = sanitizeFileName(stripKnownExtension(name))
         )
         DownloadQueue.enqueue(context, download)
-        showDetectedSheet = false
-        showDownloadsSheet = true
+        activeSheet = null
+        activeScreen = Screen.DOWNLOADS
     }
 
     // Same cookies/UA/referer forwarding as downloadMedia above — playback authenticates the
@@ -192,12 +221,12 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
             cookies = CookieManager.getInstance().getCookie(item.url),
             mediaType = item.type
         )
-        showDetectedSheet = false
+        activeSheet = null
     }
 
-    // Used by the Library sheet (history/bookmarks) to open a saved URL: reuses the active tab
-    // if there is one, rather than always opening a new tab, matching how tapping the address bar
-    // and navigating normally behaves.
+    // Used by History/Bookmarks pages to open a saved URL: reuses the active tab if there is
+    // one, rather than always opening a new tab, matching how tapping the address bar and
+    // navigating normally behaves.
     fun openUrlInActiveTab(url: String) {
         val tab = activeTab
         if (tab != null) {
@@ -208,8 +237,26 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    BackHandler(enabled = activeTab?.canGoBack == true) {
-        activeTab?.webView?.goBack()
+    // The one canonical "go back"/"go forward" — both the on-screen BottomBar buttons and the
+    // hardware/gesture back button (BackHandler below) call these, so the two can never disagree
+    // about what "back" does. The canGoBack()/canGoForward() checks are the real, current WebView
+    // state, not the possibly-one-frame-stale Compose-tracked copy (Tab.canGoBack/canGoForward) —
+    // belt-and-suspenders against ever trying to navigate a direction that isn't actually there.
+    fun goBack() {
+        activeTab?.webView?.let { if (it.canGoBack()) it.goBack() }
+    }
+    fun goForward() {
+        activeTab?.webView?.let { if (it.canGoForward()) it.goForward() }
+    }
+    fun goHome() {
+        activeTab?.webView?.loadUrl(AppSettings.current.homePageUrl)
+    }
+
+    // Only wired up while actually browsing (activeScreen == null) — a full page replaces the
+    // WebView entirely, so back-navigating it while one is showing would be invisible and
+    // confusing; the screen's own BackHandler below takes over instead.
+    BackHandler(enabled = activeScreen == null && activeTab?.canGoBack == true) {
+        goBack()
     }
 
     // Composed after the tab-navigation BackHandler above, so it's the most recently added and
@@ -220,75 +267,64 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
         playbackRequest = null
     }
 
+    // Highest priority of the three: a full page (Downloads/History/Bookmarks/Settings) has its
+    // own back arrow already; this just makes the hardware/gesture back button do the same thing.
+    BackHandler(enabled = activeScreen != null) {
+        activeScreen = null
+    }
+
     Scaffold(
         modifier = modifier,
         topBar = {
-            Column {
-                TabStrip(
-                    tabs = tabs,
-                    activeTabId = activeTabId,
-                    onSelectTab = { id -> activeTabId = id },
-                    onCloseTab = { id ->
-                        val index = tabs.indexOfFirst { it.id == id }
-                        if (index != -1) {
-                            val closed = tabs.removeAt(index)
-                            closed.webView.destroy()
-                            if (tabs.isEmpty()) {
-                                activeTabId = createAndInsertTab(AppSettings.current.homePageUrl, null).id
-                            } else if (activeTabId == id) {
-                                // Prefer returning to the tab that opened this one (a real
-                                // page-triggered child); manually-opened tabs have no opener,
-                                // so fall back to whichever tab is now immediately before this
-                                // one's old position — "the previous tab in order".
-                                val opener = closed.openerTabId?.let { openerId -> tabs.firstOrNull { it.id == openerId } }
-                                activeTabId = opener?.id ?: tabs[(index - 1).coerceIn(0, tabs.size - 1)].id
-                            }
-                        }
+            if (activeTab != null) {
+                AddressBar(
+                    value = activeTab.addressBarText,
+                    onValueChange = { activeTab.addressBarText = it },
+                    onFocusChanged = { focused -> activeTab.isAddressBarFocused = focused },
+                    onSubmit = {
+                        val resolved = UrlOrSearchResolver.resolve(
+                            activeTab.addressBarText.text,
+                            AppSettings.current.searchEngine.queryUrlPrefix
+                        )
+                        if (resolved.isNotEmpty()) activeTab.webView.loadUrl(resolved)
+                        keyboardController?.hide()
+                        // Not focusManager.clearFocus(): loadUrl() makes the WebView request
+                        // Android View focus for itself as a side effect of navigating, which
+                        // was racing clearFocus() and winning. Direct focus to the WebView
+                        // instead so the two cooperate rather than race.
+                        activeTab.webView.requestFocus()
                     },
-                    onNewTab = {
-                        activeTabId = createAndInsertTab("", null).id
+                    onReload = { activeTab.webView.reload() },
+                    onStop = { activeTab.webView.stopLoading() },
+                    isLoading = activeTab.isLoading,
+                    loadProgress = activeTab.loadProgress,
+                    detectedCount = activeTab.detectedMedia.size,
+                    onOpenDetected = { activeSheet = Sheet.DETECTED },
+                    isBookmarked = activeTab.url.isNotBlank() && BookmarkList.isBookmarked(activeTab.url),
+                    onToggleBookmark = {
+                        if (activeTab.url.isNotBlank()) BookmarkList.toggle(context, activeTab.url, activeTab.title)
                     }
                 )
-                if (activeTab != null) {
-                    AddressBar(
-                        value = activeTab.addressBarText,
-                        onValueChange = { activeTab.addressBarText = it },
-                        onFocusChanged = { focused -> activeTab.isAddressBarFocused = focused },
-                        onSubmit = {
-                            val resolved = UrlOrSearchResolver.resolve(
-                                activeTab.addressBarText.text,
-                                AppSettings.current.searchEngine.queryUrlPrefix
-                            )
-                            if (resolved.isNotEmpty()) activeTab.webView.loadUrl(resolved)
-                            keyboardController?.hide()
-                            // Not focusManager.clearFocus(): loadUrl() makes the WebView request
-                            // Android View focus for itself as a side effect of navigating, which
-                            // was racing clearFocus() and winning. Direct focus to the WebView
-                            // instead so the two cooperate rather than race.
-                            activeTab.webView.requestFocus()
-                        },
-                        onReload = { activeTab.webView.reload() },
-                        onStop = { activeTab.webView.stopLoading() },
-                        isLoading = activeTab.isLoading,
-                        loadProgress = activeTab.loadProgress,
-                        detectedCount = activeTab.detectedMedia.size,
-                        onOpenDetected = { showDetectedSheet = true },
-                        isBookmarked = activeTab.url.isNotBlank() && BookmarkList.isBookmarked(activeTab.url),
-                        onToggleBookmark = {
-                            if (activeTab.url.isNotBlank()) BookmarkList.toggle(context, activeTab.url, activeTab.title)
-                        }
-                    )
-                }
             }
         },
         bottomBar = {
             BottomBar(
+                canGoBack = activeTab?.canGoBack == true,
+                canGoForward = activeTab?.canGoForward == true,
+                onBack = { goBack() },
+                onForward = { goForward() },
+                onHome = { goHome() },
+                onBookmarks = {
+                    activeSheet = null
+                    activeScreen = Screen.BOOKMARKS
+                },
+                tabCount = tabs.size,
+                tabsSelected = activeSheet == Sheet.TABS,
+                onTabs = { activeSheet = Sheet.TABS },
                 activeDownloadCount = DownloadQueue.downloads.count {
                     it.status == DownloadStatus.QUEUED || it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.MUXING
                 },
-                onOpenDownloads = { showDownloadsSheet = true },
-                onOpenLibrary = { showLibrarySheet = true },
-                onOpenSettings = { showSettingsSheet = true }
+                onMenu = { activeSheet = Sheet.MENU }
             )
         }
     ) { innerPadding ->
@@ -315,60 +351,98 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    if (showDetectedSheet && activeTab != null) {
-        DetectedMediaSheet(
-            items = activeTab.detectedMedia,
-            onCopyUrl = { url ->
-                coroutineScope.launch {
-                    clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("url", url)))
-                }
-            },
-            onPlay = { item -> playMedia(item) },
-            onDownload = { item -> downloadMedia(item) },
-            onDismiss = { showDetectedSheet = false }
+    // Rendered as an opaque full-screen overlay after the Scaffold above — same pattern
+    // PlayerScreen already uses below — rather than replacing the Scaffold outright: the tab
+    // WebViews inside it must stay composed (AndroidView's onRelease destroys a WebView the
+    // moment it leaves composition), so swapping to a full page can never mean un-composing that
+    // Box. Each page's own SimplePageScaffold has an opaque background, so it fully covers the
+    // browser UI beneath rather than actually needing it hidden any other way.
+    when (activeScreen) {
+        Screen.DOWNLOADS -> DownloadsPage(
+            downloads = DownloadQueue.downloads,
+            onCancel = { download -> DownloadQueue.cancel(download) },
+            onRetry = { download -> DownloadQueue.retry(context, download) },
+            onBack = { activeScreen = null }
         )
+        Screen.HISTORY -> HistoryPage(
+            entries = HistoryLog.entries,
+            onOpenUrl = { url ->
+                openUrlInActiveTab(url)
+                activeScreen = null
+            },
+            onRemove = { entry -> HistoryLog.remove(context, entry) },
+            onClear = { HistoryLog.clear(context) },
+            onBack = { activeScreen = null }
+        )
+        Screen.BOOKMARKS -> BookmarksPage(
+            bookmarks = BookmarkList.bookmarks,
+            onOpenUrl = { url ->
+                openUrlInActiveTab(url)
+                activeScreen = null
+            },
+            onRemove = { bookmark -> BookmarkList.remove(context, bookmark) },
+            onBack = { activeScreen = null }
+        )
+        Screen.SETTINGS -> SettingsPage(
+            settings = AppSettings.current,
+            onUpdate = { updated -> AppSettings.update(context) { updated } },
+            onBack = { activeScreen = null }
+        )
+        null -> Unit
+    }
+
+    // A single when-block over the one activeSheet field, rather than independent `if (showX)`
+    // blocks each rendering its own ModalBottomSheet — structurally impossible for two to be
+    // shown at once, since only one branch of a when on a single value can ever match.
+    when (activeSheet) {
+        Sheet.DETECTED -> if (activeTab != null) {
+            DetectedMediaSheet(
+                items = activeTab.detectedMedia,
+                onCopyUrl = { url ->
+                    coroutineScope.launch {
+                        clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("url", url)))
+                    }
+                },
+                onPlay = { item -> playMedia(item) },
+                onDownload = { item -> downloadMedia(item) },
+                onDismiss = { activeSheet = null }
+            )
+        }
+        Sheet.TABS -> TabsSheet(
+            tabs = tabs,
+            activeTabId = activeTabId,
+            onSelectTab = { id ->
+                activeTabId = id
+                activeSheet = null
+            },
+            onCloseTab = { id -> closeTab(id) },
+            onNewTab = {
+                activeTabId = createAndInsertTab("", null).id
+                activeSheet = null
+            },
+            onDismiss = { activeSheet = null }
+        )
+        Sheet.MENU -> OverflowMenuSheet(
+            activeDownloadCount = DownloadQueue.downloads.count {
+                it.status == DownloadStatus.QUEUED || it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.MUXING
+            },
+            onSelect = { screen ->
+                activeSheet = null
+                activeScreen = screen
+            },
+            onDismiss = { activeSheet = null }
+        )
+        null -> Unit
     }
 
     playbackRequest?.let { request ->
         PlayerScreen(request = request, onDismiss = { playbackRequest = null })
     }
 
-    if (showDownloadsSheet) {
-        DownloadsSheet(
-            downloads = DownloadQueue.downloads,
-            onCancel = { download -> DownloadQueue.cancel(download) },
-            onRetry = { download -> DownloadQueue.retry(context, download) },
-            onDismiss = { showDownloadsSheet = false }
-        )
-    }
-
-    if (showLibrarySheet) {
-        LibrarySheet(
-            historyEntries = HistoryLog.entries,
-            bookmarks = BookmarkList.bookmarks,
-            onOpenUrl = { url ->
-                openUrlInActiveTab(url)
-                showLibrarySheet = false
-            },
-            onRemoveHistoryEntry = { entry -> HistoryLog.remove(context, entry) },
-            onClearHistory = { HistoryLog.clear(context) },
-            onRemoveBookmark = { bookmark -> BookmarkList.remove(context, bookmark) },
-            onDismiss = { showLibrarySheet = false }
-        )
-    }
-
-    if (showSettingsSheet) {
-        SettingsSheet(
-            settings = AppSettings.current,
-            onUpdate = { updated -> AppSettings.update(context) { updated } },
-            onDismiss = { showSettingsSheet = false }
-        )
-    }
-
     // Switching tabs (or the active tab navigating away) should close a sheet showing the
     // previous tab's results rather than silently keep showing stale ones.
     LaunchedEffect(activeTabId) {
-        showDetectedSheet = false
+        if (activeSheet == Sheet.DETECTED) activeSheet = null
     }
 
     // Select-all-on-focus, matching standard browser address-bar behavior. Deferred via

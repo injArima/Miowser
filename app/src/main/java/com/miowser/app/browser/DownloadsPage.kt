@@ -6,10 +6,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -19,21 +17,21 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.miowser.app.downloader.Download
 import com.miowser.app.downloader.DownloadStatus
+import com.miowser.app.ui.SimplePageScaffold
 
-/** Lists every download this session has queued, with live progress — reads DownloadQueue.downloads directly, so it updates itself. */
-@OptIn(ExperimentalMaterial3Api::class)
+/** Every download this session has queued, with live progress — reads DownloadQueue.downloads directly, so it updates itself. */
 @Composable
-fun DownloadsSheet(
+fun DownloadsPage(
     downloads: List<Download>,
     onCancel: (Download) -> Unit,
     onRetry: (Download) -> Unit,
-    onDismiss: () -> Unit
+    onBack: () -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    SimplePageScaffold(title = "Downloads", onBack = onBack) { modifier ->
         if (downloads.isEmpty()) {
-            Text(text = "No downloads yet.", modifier = Modifier.padding(24.dp))
+            Text(text = "No downloads yet.", modifier = modifier.padding(24.dp))
         } else {
-            LazyColumn {
+            LazyColumn(modifier = modifier) {
                 items(downloads, key = { it.id }) { download ->
                     DownloadRow(download, onCancel, onRetry)
                 }
