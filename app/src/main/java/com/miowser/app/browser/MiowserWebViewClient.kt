@@ -9,6 +9,7 @@ import android.webkit.WebViewClient
 import com.miowser.app.adblock.AdBlockEngine
 import com.miowser.app.grabber.MediaType
 import com.miowser.app.grabber.MediaUrlClassifier
+import com.miowser.app.settings.AppSettings
 
 private const val TAG = "Miowser/Intercept"
 
@@ -35,7 +36,8 @@ class MiowserWebViewClient(
     private val onCanGoBackChanged: (Boolean) -> Unit,
     private val onUrlChanged: (String) -> Unit,
     private val onNewPageStarted: () -> Unit,
-    private val onCandidateMediaUrl: (url: String, type: MediaType) -> Unit
+    private val onCandidateMediaUrl: (url: String, type: MediaType) -> Unit,
+    private val onPageLoadFinished: (url: String, title: String) -> Unit
 ) : WebViewClient() {
 
     @Volatile private var currentPageUrl: String = "about:blank"
@@ -53,6 +55,11 @@ class MiowserWebViewClient(
         if (url != null) {
             currentPageUrl = url
             onUrlChanged(url)
+            // view.title is WebView's own synchronous getter — usually already populated by
+            // load-finish for real pages, so this doesn't need to wait on the separate
+            // WebChromeClient.onReceivedTitle callback (which can arrive slightly later, or not
+            // at all for a page with no <title>) just to record a history entry.
+            onPageLoadFinished(url, view.title?.takeIf { it.isNotBlank() } ?: url)
         }
     }
 
@@ -65,10 +72,12 @@ class MiowserWebViewClient(
         // tracked currentPageUrl still reflects the previous page until this commits.
         val pageUrl = if (request.isForMainFrame) requestUrl else currentPageUrl
 
-        val response = adBlockEngine.decide(pageUrl, requestUrl, request.requestHeaders, request.isForMainFrame)
-        if (response != null) {
-            Log.d(TAG, "blocked: $requestUrl")
-            return response
+        if (AppSettings.current.adBlockEnabled) {
+            val response = adBlockEngine.decide(pageUrl, requestUrl, request.requestHeaders, request.isForMainFrame)
+            if (response != null) {
+                Log.d(TAG, "blocked: $requestUrl")
+                return response
+            }
         }
 
         MediaUrlClassifier.classify(requestUrl)?.let { type -> onCandidateMediaUrl(requestUrl, type) }

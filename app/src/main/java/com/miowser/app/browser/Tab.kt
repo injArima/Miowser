@@ -21,6 +21,7 @@ import com.miowser.app.grabber.MediaProbe
 import com.miowser.app.grabber.installVideoSnifferScript
 import com.miowser.app.grabber.MediaType
 import com.miowser.app.grabber.MediaUrlClassifier
+import com.miowser.app.history.HistoryLog
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicLong
 
@@ -97,6 +98,14 @@ class Tab(
             if (result != null) addOrReplaceDetection(result.copy(pageTitle = this@Tab.title))
         }
     }
+
+    // Captured under its own name before entering the apply block below: View (WebView's
+    // superclass) exposes its own `context` property, which would otherwise silently shadow
+    // this constructor parameter for any unqualified `context` reference inside that block —
+    // the same class of shadowing bug already documented above for `url` (WebView's own `url`
+    // property vs. this@Tab.url), just for a name that can't be disambiguated with a `this@Tab.`
+    // qualifier since it's a constructor parameter rather than a declared property.
+    private val tabContext = context
 
     @SuppressLint("SetJavaScriptEnabled")
     val webView: WebView = WebView(context).apply {
@@ -198,6 +207,9 @@ class Tab(
             },
             onCandidateMediaUrl = { candidateUrl, guessedType ->
                 if (seenGrabberUrls.add(candidateUrl)) probeCandidate(candidateUrl, guessedType, cachedUserAgent)
+            },
+            onPageLoadFinished = { loadedUrl, loadedTitle ->
+                HistoryLog.recordVisit(tabContext, loadedUrl, loadedTitle)
             }
         )
         webChromeClient = object : WebChromeClient() {

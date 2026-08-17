@@ -13,9 +13,10 @@ object UrlOrSearchResolver {
     private val LOCALHOST_LIKE = Regex("^localhost(:[0-9]+)?(/.*)?$")
     private val IP_LIKE = Regex("^(\\d{1,3}\\.){3}\\d{1,3}(:[0-9]+)?(/.*)?$")
 
-    private const val SEARCH_URL_PREFIX = "https://duckduckgo.com/?q="
+    private const val DEFAULT_SEARCH_URL_PREFIX = "https://duckduckgo.com/?q="
 
-    fun resolve(input: String): String {
+    /** [searchUrlPrefix] lets callers honor the user's chosen search engine (see Settings); defaults to DuckDuckGo. */
+    fun resolve(input: String, searchUrlPrefix: String = DEFAULT_SEARCH_URL_PREFIX): String {
         val trimmed = input.trim()
         if (trimmed.isEmpty()) return ""
 
@@ -25,6 +26,6 @@ object UrlOrSearchResolver {
             (DOMAIN_LIKE.matches(trimmed) || LOCALHOST_LIKE.matches(trimmed) || IP_LIKE.matches(trimmed))
         if (looksLikeUrl) return "https://$trimmed"
 
-        return SEARCH_URL_PREFIX + URLEncoder.encode(trimmed, "UTF-8")
+        return searchUrlPrefix + URLEncoder.encode(trimmed, "UTF-8")
     }
 }

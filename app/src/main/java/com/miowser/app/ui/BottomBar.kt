@@ -3,6 +3,8 @@ package com.miowser.app.ui
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -16,16 +18,17 @@ import androidx.compose.runtime.Composable
  * [com.miowser.app.browser.AddressBar]'s page-contextual actions (e.g. detected media, which is
  * tied to whatever the active tab is currently showing).
  *
- * Downloads currently opens as a transient bottom sheet rather than swapping to a full "selected"
- * destination, so there's no persistent selected-item state yet — kept intentionally simple for
- * this first entry rather than building a full destination/enum nav model before there's a second
- * real screen to justify it. New items (Library, Settings, ...) slot in as additional
- * [NavigationBarItem]s alongside these two.
+ * Every non-Browser item opens as a transient bottom sheet rather than swapping to a full
+ * "selected" destination, so there's no persistent selected-item state to track beyond "Browser
+ * is always the resting item" — kept intentionally simple rather than building a full
+ * destination/enum nav model before there's a real full-screen destination to justify one.
  */
 @Composable
 fun BottomBar(
     activeDownloadCount: Int,
-    onOpenDownloads: () -> Unit
+    onOpenDownloads: () -> Unit,
+    onOpenLibrary: () -> Unit,
+    onOpenSettings: () -> Unit
 ) {
     NavigationBar {
         NavigationBarItem(
@@ -47,6 +50,18 @@ fun BottomBar(
                 }
             },
             label = { Text("Downloads") }
+        )
+        NavigationBarItem(
+            selected = false,
+            onClick = onOpenLibrary,
+            icon = { Icon(Icons.Default.List, contentDescription = "History and bookmarks") },
+            label = { Text("Library") }
+        )
+        NavigationBarItem(
+            selected = false,
+            onClick = onOpenSettings,
+            icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
+            label = { Text("Settings") }
         )
     }
 }

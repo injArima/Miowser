@@ -60,4 +60,19 @@ class UrlOrSearchResolverTest {
     fun `blank input resolves to empty string`() {
         assertEquals("", UrlOrSearchResolver.resolve("   "))
     }
+
+    @Test
+    fun `a custom search engine prefix is honored for search queries`() {
+        val result = UrlOrSearchResolver.resolve("wikipedia", searchUrlPrefix = "https://www.google.com/search?q=")
+        assertTrue(result.startsWith("https://www.google.com/search?q="))
+        assertTrue(result.contains("wikipedia"))
+    }
+
+    @Test
+    fun `a custom search engine prefix does not affect URL-like input`() {
+        assertEquals(
+            "https://example.com",
+            UrlOrSearchResolver.resolve("example.com", searchUrlPrefix = "https://www.google.com/search?q=")
+        )
+    }
 }

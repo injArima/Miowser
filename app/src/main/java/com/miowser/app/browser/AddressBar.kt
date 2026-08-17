@@ -10,6 +10,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Star as FilledStar
+import androidx.compose.material.icons.outlined.Star as OutlinedStar
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -45,6 +47,8 @@ fun AddressBar(
     loadProgress: Float,
     detectedCount: Int,
     onOpenDetected: () -> Unit,
+    isBookmarked: Boolean,
+    onToggleBookmark: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(tonalElevation = 2.dp, modifier = modifier.fillMaxWidth()) {
@@ -72,6 +76,12 @@ fun AddressBar(
                             Icon(Icons.Default.PlayArrow, contentDescription = "Detected media ($detectedCount)")
                         }
                     }
+                }
+                IconButton(onClick = onToggleBookmark) {
+                    Icon(
+                        imageVector = if (isBookmarked) Icons.Filled.FilledStar else Icons.Outlined.OutlinedStar,
+                        contentDescription = if (isBookmarked) "Remove bookmark" else "Add bookmark"
+                    )
                 }
                 IconButton(onClick = if (isLoading) onStop else onReload) {
                     Icon(

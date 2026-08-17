@@ -1,6 +1,7 @@
 package com.miowser.app.adblock
 
 import android.webkit.JavascriptInterface
+import com.miowser.app.settings.AppSettings
 
 /**
  * Exposed to page JS as `window.MiowserAdBlock` (via WebView.addJavascriptInterface) so the
@@ -12,5 +13,8 @@ import android.webkit.JavascriptInterface
  */
 class CosmeticBridge(private val engine: AdBlockEngine) {
     @JavascriptInterface
-    fun cssFor(hostname: String?): String = engine.cosmeticCssFor(hostname?.lowercase().orEmpty())
+    fun cssFor(hostname: String?): String {
+        if (!AppSettings.current.adBlockEnabled) return ""
+        return engine.cosmeticCssFor(hostname?.lowercase().orEmpty())
+    }
 }

@@ -30,19 +30,22 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.miowser.app.adblock.AdBlock
+import com.miowser.app.bookmarks.BookmarkList
 import com.miowser.app.downloader.Download
 import com.miowser.app.downloader.DownloadKind
 import com.miowser.app.downloader.DownloadQueue
 import com.miowser.app.downloader.DownloadStatus
 import com.miowser.app.grabber.DetectedMedia
 import com.miowser.app.grabber.MediaType
+import com.miowser.app.history.HistoryLog
 import com.miowser.app.player.PlaybackRequest
 import com.miowser.app.player.PlayerScreen
+import com.miowser.app.settings.AppSettings
 import com.miowser.app.ui.BottomBar
+import com.miowser.app.ui.LibrarySheet
+import com.miowser.app.ui.SettingsSheet
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
-private const val STARTER_URL = "https://en.wikipedia.org"
 
 // Anything that isn't safe/sensible in a filename, replaced with "_"; matches the common
 // filesystem-reserved set (Windows is the strictest, so satisfying it covers everything else).
@@ -73,12 +76,9 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
     val coroutineScope = rememberCoroutineScope()
     var showDetectedSheet by remember { mutableStateOf(false) }
     var showDownloadsSheet by remember { mutableStateOf(false) }
+    var showLibrarySheet by remember { mutableStateOf(false) }
+    var showSettingsSheet by remember { mutableStateOf(false) }
     var playbackRequest by remember { mutableStateOf<PlaybackRequest?>(null) }
-
-    LaunchedEffect(Unit) {
-        AdBlock.engine.loadEasyListInBackground(context)
-        DownloadQueue.restore(context)
-    }
 
     val tabs = remember { mutableStateListOf<Tab>() }
     var activeTabId by remember { mutableStateOf<Long?>(null) }
@@ -106,14 +106,27 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
         return tab
     }
 
-    // Restore the last session if there is one; otherwise open a single starter tab. Restored
-    // tabs are appended in their saved order (not via the opener-adjacent insert above) so the
-    // saved strip order is reproduced exactly rather than re-derived from opener relationships.
+    // All one-time startup loads share a single LaunchedEffect(Unit) rather than several: the
+    // tab-restore step below needs AppSettings already loaded (for restoreTabsOnStartup and
+    // homePageUrl), and separate LaunchedEffect(Unit) blocks don't have a guaranteed run order
+    // relative to each other — only within one coroutine does "load settings, then decide what
+    // to do with tabs" actually happen in that order.
+    //
+    // Restores the last session if there is one and restoreTabsOnStartup allows it; otherwise
+    // opens a single starter tab at the configured home page. Restored tabs are appended in their
+    // saved order (not via the opener-adjacent insert above) so the saved strip order is
+    // reproduced exactly rather than re-derived from opener relationships.
     LaunchedEffect(Unit) {
+        AdBlock.engine.loadEasyListInBackground(context)
+        DownloadQueue.restore(context)
+        AppSettings.load(context)
+        HistoryLog.restore(context)
+        BookmarkList.restore(context)
+
         if (tabs.isNotEmpty()) return@LaunchedEffect
-        val saved = TabSessionStore.load(context)
+        val saved = if (AppSettings.current.restoreTabsOnStartup) TabSessionStore.load(context) else null
         if (saved == null) {
-            activeTabId = createAndInsertTab(STARTER_URL, null).id
+            activeTabId = createAndInsertTab(AppSettings.current.homePageUrl, null).id
             return@LaunchedEffect
         }
         val (savedTabs, activeIndex) = saved
@@ -182,6 +195,19 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
         showDetectedSheet = false
     }
 
+    // Used by the Library sheet (history/bookmarks) to open a saved URL: reuses the active tab
+    // if there is one, rather than always opening a new tab, matching how tapping the address bar
+    // and navigating normally behaves.
+    fun openUrlInActiveTab(url: String) {
+        val tab = activeTab
+        if (tab != null) {
+            tab.webView.loadUrl(url)
+            activeTabId = tab.id
+        } else {
+            activeTabId = createAndInsertTab(url, null).id
+        }
+    }
+
     BackHandler(enabled = activeTab?.canGoBack == true) {
         activeTab?.webView?.goBack()
     }
@@ -208,7 +234,7 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
                             val closed = tabs.removeAt(index)
                             closed.webView.destroy()
                             if (tabs.isEmpty()) {
-                                activeTabId = createAndInsertTab(STARTER_URL, null).id
+                                activeTabId = createAndInsertTab(AppSettings.current.homePageUrl, null).id
                             } else if (activeTabId == id) {
                                 // Prefer returning to the tab that opened this one (a real
                                 // page-triggered child); manually-opened tabs have no opener,
@@ -229,7 +255,10 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
                         onValueChange = { activeTab.addressBarText = it },
                         onFocusChanged = { focused -> activeTab.isAddressBarFocused = focused },
                         onSubmit = {
-                            val resolved = UrlOrSearchResolver.resolve(activeTab.addressBarText.text)
+                            val resolved = UrlOrSearchResolver.resolve(
+                                activeTab.addressBarText.text,
+                                AppSettings.current.searchEngine.queryUrlPrefix
+                            )
                             if (resolved.isNotEmpty()) activeTab.webView.loadUrl(resolved)
                             keyboardController?.hide()
                             // Not focusManager.clearFocus(): loadUrl() makes the WebView request
@@ -243,7 +272,11 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
                         isLoading = activeTab.isLoading,
                         loadProgress = activeTab.loadProgress,
                         detectedCount = activeTab.detectedMedia.size,
-                        onOpenDetected = { showDetectedSheet = true }
+                        onOpenDetected = { showDetectedSheet = true },
+                        isBookmarked = activeTab.url.isNotBlank() && BookmarkList.isBookmarked(activeTab.url),
+                        onToggleBookmark = {
+                            if (activeTab.url.isNotBlank()) BookmarkList.toggle(context, activeTab.url, activeTab.title)
+                        }
                     )
                 }
             }
@@ -253,7 +286,9 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
                 activeDownloadCount = DownloadQueue.downloads.count {
                     it.status == DownloadStatus.QUEUED || it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.MUXING
                 },
-                onOpenDownloads = { showDownloadsSheet = true }
+                onOpenDownloads = { showDownloadsSheet = true },
+                onOpenLibrary = { showLibrarySheet = true },
+                onOpenSettings = { showSettingsSheet = true }
             )
         }
     ) { innerPadding ->
@@ -303,6 +338,29 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
             downloads = DownloadQueue.downloads,
             onCancel = { download -> DownloadQueue.cancel(download) },
             onDismiss = { showDownloadsSheet = false }
+        )
+    }
+
+    if (showLibrarySheet) {
+        LibrarySheet(
+            historyEntries = HistoryLog.entries,
+            bookmarks = BookmarkList.bookmarks,
+            onOpenUrl = { url ->
+                openUrlInActiveTab(url)
+                showLibrarySheet = false
+            },
+            onRemoveHistoryEntry = { entry -> HistoryLog.remove(context, entry) },
+            onClearHistory = { HistoryLog.clear(context) },
+            onRemoveBookmark = { bookmark -> BookmarkList.remove(context, bookmark) },
+            onDismiss = { showLibrarySheet = false }
+        )
+    }
+
+    if (showSettingsSheet) {
+        SettingsSheet(
+            settings = AppSettings.current,
+            onUpdate = { updated -> AppSettings.update(context) { updated } },
+            onDismiss = { showSettingsSheet = false }
         )
     }
 
