@@ -8,11 +8,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -23,6 +21,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.miowser.app.grabber.DetectedMedia
 import com.miowser.app.grabber.MediaType
+import com.miowser.app.ui.SimplePageScaffold
 import kotlin.math.roundToInt
 
 /**
@@ -31,24 +30,27 @@ import kotlin.math.roundToInt
  * anything the download engine actually knows how to fetch — direct files, HLS (HlsDownloader),
  * and DASH (DashDownloader) all have a real pipeline behind them. Only unconfirmed entries (e.g.
  * a blob: URL, which has no independently fetchable source) get neither; see [isFetchable].
+ *
+ * Reachable two ways: the page-contextual badge beside AddressBar's reload button (only shown
+ * once something's actually been found), and the overflow menu's always-present Media tile —
+ * both land here, on whatever the active tab has detected.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DetectedMediaSheet(
+fun DetectedMediaPage(
     items: List<DetectedMedia>,
     onCopyUrl: (String) -> Unit,
     onPlay: (DetectedMedia) -> Unit,
     onDownload: (DetectedMedia) -> Unit,
-    onDismiss: () -> Unit
+    onBack: () -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    SimplePageScaffold(title = "Detected media", onBack = onBack) { modifier ->
         if (items.isEmpty()) {
             Text(
                 text = "Nothing detected on this page yet.",
-                modifier = Modifier.padding(24.dp)
+                modifier = modifier.padding(24.dp)
             )
         } else {
-            LazyColumn {
+            LazyColumn(modifier = modifier) {
                 items(items, key = { it.url }) { item ->
                     DetectedMediaRow(item, onCopyUrl, onPlay, onDownload)
                 }
@@ -94,11 +96,13 @@ private fun DetectedMediaRow(
                     )
                 }
                 if (item.isEncrypted) {
+                    // Tertiary, not the neutral onSurfaceVariant every other bit of metadata on
+                    // this row uses — encryption is the one attribute here worth a second glance.
                     Icon(
-                        imageVector = Icons.Default.Lock,
+                        imageVector = Icons.Rounded.Lock,
                         contentDescription = "Encrypted",
                         modifier = Modifier.padding(start = 4.dp).size(14.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = MaterialTheme.colorScheme.tertiary
                     )
                 }
             }

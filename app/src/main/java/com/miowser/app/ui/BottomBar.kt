@@ -4,16 +4,21 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.outlined.Star
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.Bookmarks
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -25,11 +30,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 
 /**
- * The real browser toolbar: Back, Forward, Home, Bookmarks, Tabs, and an overflow (hamburger)
+ * The real browser toolbar: Back, Forward, Bookmarks, Home, Tabs, and an overflow (hamburger)
  * menu — the standard mobile-browser bottom-bar layout, plain icon buttons rather than a labeled
  * [androidx.compose.material3.NavigationBar] (which is meant for 3-5 top-level destinations with
  * room for labels; six icons need the compactness a plain Row gives).
@@ -39,11 +45,12 @@ import androidx.compose.ui.unit.dp
  * back button already reacts to (see BrowserScreen's BackHandler), so the on-screen button and
  * the system gesture never disagree about whether "back" is available.
  *
- * Bookmarks and Menu are plain actions, not toggles — Bookmarks navigates straight to its own
- * full page (see [Screen]) rather than opening a popup first, and Menu opens
- * [OverflowMenuSheet], which is where destinations that don't get their own bar button live. Tabs
- * is the one button left with a persistent "currently open" highlight, since it's still a sheet
- * (see BrowserScreen's TabsSheet) rather than a full page.
+ * Every button here is a plain navigation action — Bookmarks/Tabs/Downloads/History/Settings/
+ * Media are all full pages (see [Screen]), not sheets, so there's no "currently open" state left
+ * to highlight (a page fully covers this bar anyway). Unlike AddressBar's star, this Bookmarks
+ * button has no per-tap state of its own: it's not a toggle for the current page, just navigation
+ * to the saved-bookmarks list — Bookmarks (a stack of ribbons) says that plainly regardless of
+ * whether the active tab happens to be bookmarked.
  */
 @Composable
 fun BottomBar(
@@ -51,15 +58,22 @@ fun BottomBar(
     canGoForward: Boolean,
     onBack: () -> Unit,
     onForward: () -> Unit,
-    onHome: () -> Unit,
     onBookmarks: () -> Unit,
+    onHome: () -> Unit,
     tabCount: Int,
-    tabsSelected: Boolean,
     onTabs: () -> Unit,
     activeDownloadCount: Int,
     onMenu: () -> Unit
 ) {
-    Surface(tonalElevation = 2.dp) {
+    // BottomBar sits in Scaffold's bottomBar slot, which — unlike Material3's own NavigationBar
+    // — doesn't apply any window-insets padding on its own; a raw custom composable there draws
+    // straight under the gesture/navigation bar without this. Scaffold sizes the WebView
+    // content's bottom padding to match this Surface's actual measured height, so growing it by
+    // the inset amount pushes the content up to clear it automatically.
+    Surface(
+        tonalElevation = 2.dp,
+        modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -67,43 +81,47 @@ fun BottomBar(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             IconButton(onClick = onBack, enabled = canGoBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
             }
             IconButton(onClick = onForward, enabled = canGoForward) {
-                Icon(Icons.Default.ArrowForward, contentDescription = "Forward")
-            }
-            IconButton(onClick = onHome) {
-                Icon(Icons.Default.Home, contentDescription = "Home")
+                Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = "Forward")
             }
             IconButton(onClick = onBookmarks) {
-                Icon(Icons.Outlined.Star, contentDescription = "Bookmarks")
+                Icon(Icons.Rounded.Bookmarks, contentDescription = "Bookmarks", tint = MaterialTheme.colorScheme.primary)
+            }
+            IconButton(onClick = onHome) {
+                Icon(Icons.Rounded.Home, contentDescription = "Home")
             }
             IconButton(onClick = onTabs) {
-                TabCountIcon(
-                    count = tabCount,
-                    tint = if (tabsSelected) MaterialTheme.colorScheme.primary else LocalContentColor.current
-                )
+                TabCountIcon(count = tabCount)
             }
             IconButton(onClick = onMenu) {
                 if (activeDownloadCount > 0) {
                     BadgedBox(badge = { Badge { Text(activeDownloadCount.coerceAtMost(99).toString()) } }) {
-                        Icon(Icons.Default.Menu, contentDescription = "More ($activeDownloadCount downloads active)")
+                        Icon(Icons.Rounded.Menu, contentDescription = "More ($activeDownloadCount downloads active)")
                     }
                 } else {
-                    Icon(Icons.Default.Menu, contentDescription = "More")
+                    Icon(Icons.Rounded.Menu, contentDescription = "More")
                 }
             }
         }
     }
 }
 
-/** A rounded-square outline with the open-tab count inside — the standard mobile-browser "tabs" icon; no ready-made one exists in material-icons-core. */
+/**
+ * A rounded-square outline with the open-tab count inside — the standard mobile-browser "tabs"
+ * icon; no ready-made one exists in material-icons-core. `clearAndSetSemantics` (rather than
+ * plain `semantics`) replaces the inner Text's own auto-generated "3" reading with the full
+ * label, so a screen reader announces "Tabs (3 open)" once instead of stacking both.
+ */
 @Composable
-private fun TabCountIcon(count: Int, tint: Color) {
+private fun TabCountIcon(count: Int) {
+    val tint = LocalContentColor.current
     Box(
         modifier = Modifier
             .size(24.dp)
-            .border(width = 2.dp, color = tint, shape = RoundedCornerShape(5.dp)),
+            .border(width = 2.dp, color = tint, shape = RoundedCornerShape(5.dp))
+            .clearAndSetSemantics { contentDescription = "Tabs ($count open)" },
         contentAlignment = Alignment.Center
     ) {
         Text(

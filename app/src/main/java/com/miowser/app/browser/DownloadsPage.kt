@@ -48,10 +48,17 @@ private fun DownloadRow(download: Download, onCancel: (Download) -> Unit, onRetr
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(text = download.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // Neutral while in flight, then color-coded the moment there's an actual outcome to
+            // report — error for FAILED, primary for COMPLETED — so scanning a long list for
+            // "did that one work?" doesn't require reading every line of text.
             Text(
                 text = statusLabel(download),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = when (download.status) {
+                    DownloadStatus.FAILED -> MaterialTheme.colorScheme.error
+                    DownloadStatus.COMPLETED -> MaterialTheme.colorScheme.primary
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
             )
             if (download.status == DownloadStatus.DOWNLOADING) {
                 if (download.totalBytes > 0) {

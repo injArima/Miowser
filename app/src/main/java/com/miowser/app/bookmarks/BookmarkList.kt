@@ -17,15 +17,22 @@ object BookmarkList {
 
     fun isBookmarked(url: String): Boolean = bookmarks.any { it.url == url }
 
-    /** Adds a bookmark for [url] if it isn't already one, or removes it if it is — the address bar's star button. */
-    fun toggle(context: Context, url: String, title: String) {
+    /**
+     * Adds a bookmark for [url] if it isn't already one, or removes it if it is — the address
+     * bar's star button. Returns whether the page is now bookmarked (true = just added, false =
+     * just removed), so callers can react only to the add — e.g. a "Bookmarked" confirmation
+     * snackbar makes sense on add, not on remove.
+     */
+    fun toggle(context: Context, url: String, title: String): Boolean {
         val existingIndex = bookmarks.indexOfFirst { it.url == url }
+        val nowBookmarked = existingIndex < 0
         if (existingIndex >= 0) {
             bookmarks.removeAt(existingIndex)
         } else {
             bookmarks.add(0, Bookmark(url = url, title = title.ifBlank { url }, addedAt = System.currentTimeMillis()))
         }
         persist(context)
+        return nowBookmarked
     }
 
     fun remove(context: Context, bookmark: Bookmark) {

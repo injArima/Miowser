@@ -40,6 +40,12 @@ object HistoryLog {
         persist(context)
     }
 
+    /** Bulk-remove (e.g. everything from one date on HistoryPage's group-delete) with a single persist, not one per entry. */
+    fun removeAll(context: Context, toRemove: Collection<HistoryEntry>) {
+        entries.removeAll(toRemove)
+        persist(context)
+    }
+
     fun clear(context: Context) {
         entries.clear()
         persist(context)

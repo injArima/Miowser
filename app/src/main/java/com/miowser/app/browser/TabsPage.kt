@@ -8,37 +8,35 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.miowser.app.ui.SimplePageScaffold
 
 /**
- * The Tabs bottom-bar destination: every open tab in one scrollable list (title + URL), with
+ * The Tabs destination: every open tab in one scrollable list (title + URL), with
  * switch/close/new-tab actions — the only tab-management surface now that there's no
  * always-visible top strip; BottomBar's tab-count icon is the sole other hint of how many are open.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TabsSheet(
+fun TabsPage(
     tabs: List<Tab>,
     activeTabId: Long?,
     onSelectTab: (Long) -> Unit,
     onCloseTab: (Long) -> Unit,
     onNewTab: () -> Unit,
-    onDismiss: () -> Unit
+    onBack: () -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        LazyColumn {
+    SimplePageScaffold(title = "Tabs", onBack = onBack) { modifier ->
+        LazyColumn(modifier = modifier) {
             items(tabs, key = { it.id }) { tab ->
                 TabListRow(
                     title = tab.title,
@@ -56,7 +54,7 @@ fun TabsSheet(
                         .padding(horizontal = 16.dp, vertical = 16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = null)
+                    Icon(Icons.Rounded.Add, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     Text(text = "New tab", modifier = Modifier.padding(start = 16.dp))
                 }
             }
@@ -97,7 +95,7 @@ private fun TabListRow(
             }
         }
         IconButton(onClick = onClose) {
-            Icon(Icons.Default.Close, contentDescription = "Close tab")
+            Icon(Icons.Rounded.Close, contentDescription = "Close tab")
         }
     }
 }

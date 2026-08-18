@@ -1,12 +1,21 @@
 package com.miowser.app.browser
 
 import android.view.View
+import android.view.ViewGroup
 import android.webkit.CookieManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import android.content.ClipData
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -18,13 +27,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -49,15 +61,6 @@ import com.miowser.app.ui.SettingsPage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-// The transient overlays allowed on screen at a time — DETECTED is opened from AddressBar
-// (page-contextual), TABS and MENU from BottomBar. Downloads/History/Bookmarks/Settings are NOT
-// here: those are real full pages (see Screen, rendered by replacing the whole browser UI, not
-// overlaid on top of it) rather than sheets, so switching to one of them always also clears this
-// to null (see every activeScreen assignment below). A single nullable field rather than
-// independent booleans structurally rules out two ModalBottomSheets ever trying to render at
-// once — the render site below is a `when` on this one value.
-private enum class Sheet { DETECTED, TABS, MENU }
-
 // Anything that isn't safe/sensible in a filename, replaced with "_"; matches the common
 // filesystem-reserved set (Windows is the strictest, so satisfying it covers everything else).
 private val UNSAFE_FILENAME_CHARS = Regex("[\\\\/:*?\"<>|]")
@@ -76,7 +79,7 @@ private fun stripKnownExtension(name: String): String {
 /**
  * Browser shell: an [AddressBar] driving whichever tab is active, over a Box that keeps every
  * open tab's WebView alive simultaneously (see the tab loop below) and just toggles visibility —
- * switching tabs never destroys one. Tab switching itself lives entirely in [TabsSheet] now
+ * switching tabs never destroys one. Tab switching itself lives entirely in [TabsPage] now
  * (opened from BottomBar's Tabs button); there's no always-visible top tab strip anymore.
  */
 @Composable
@@ -86,9 +89,18 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
     val keyboardController = LocalSoftwareKeyboardController.current
     val clipboard = LocalClipboard.current
     val coroutineScope = rememberCoroutineScope()
-    var activeSheet by remember { mutableStateOf<Sheet?>(null) }
+    // The overflow (hamburger) menu is the only thing left that's a transient sheet rather than
+    // a full page — it's a picker, not a destination itself. Everything it (or AddressBar's
+    // badge, or BottomBar's own buttons) launches is a Screen, rendered as an opaque overlay
+    // below rather than replacing the Scaffold outright (see the comment at that render site).
+    var showOverflowMenu by remember { mutableStateOf(false) }
     var activeScreen by remember { mutableStateOf<Screen?>(null) }
     var playbackRequest by remember { mutableStateOf<PlaybackRequest?>(null) }
+    // One shared bubble for lightweight confirmations (copy/download-started/bookmarked) —
+    // rendered at the very end of the Box below so it's visible above whichever layer (browser,
+    // a full page, the player) happens to be showing, rather than being tied to any one of their
+    // own Scaffolds.
+    val snackbarHostState = remember { SnackbarHostState() }
 
     val tabs = remember { mutableStateListOf<Tab>() }
     var activeTabId by remember { mutableStateOf<Long?>(null) }
@@ -116,7 +128,7 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
         return tab
     }
 
-    // Used by TabsSheet's close button — the only place a tab can be closed now that there's no
+    // Used by TabsPage's close button — the only place a tab can be closed now that there's no
     // top strip.
     fun closeTab(id: Long) {
         val index = tabs.indexOfFirst { it.id == id }
@@ -206,12 +218,15 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
             outputBaseName = sanitizeFileName(stripKnownExtension(name))
         )
         DownloadQueue.enqueue(context, download)
-        activeSheet = null
         activeScreen = Screen.DOWNLOADS
+        coroutineScope.launch { snackbarHostState.showSnackbar("Download started") }
     }
 
     // Same cookies/UA/referer forwarding as downloadMedia above — playback authenticates the
-    // same way a real page load (or a download) would have.
+    // same way a real page load (or a download) would have. Deliberately doesn't touch
+    // activeScreen: PlayerScreen renders as its own opaque overlay on top of whatever's showing
+    // (same pattern as everything else layered after the Scaffold below), so closing playback
+    // naturally lands back on the Detected Media page the user was just on, not the raw browser.
     fun playMedia(item: DetectedMedia) {
         val tab = activeTab ?: return
         playbackRequest = PlaybackRequest(
@@ -221,7 +236,6 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
             cookies = CookieManager.getInstance().getCookie(item.url),
             mediaType = item.type
         )
-        activeSheet = null
     }
 
     // Used by History/Bookmarks pages to open a saved URL: reuses the active tab if there is
@@ -273,176 +287,227 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
         activeScreen = null
     }
 
-    Scaffold(
-        modifier = modifier,
-        topBar = {
-            if (activeTab != null) {
-                AddressBar(
-                    value = activeTab.addressBarText,
-                    onValueChange = { activeTab.addressBarText = it },
-                    onFocusChanged = { focused -> activeTab.isAddressBarFocused = focused },
-                    onSubmit = {
-                        val resolved = UrlOrSearchResolver.resolve(
-                            activeTab.addressBarText.text,
-                            AppSettings.current.searchEngine.queryUrlPrefix
-                        )
-                        if (resolved.isNotEmpty()) activeTab.webView.loadUrl(resolved)
-                        keyboardController?.hide()
-                        // Not focusManager.clearFocus(): loadUrl() makes the WebView request
-                        // Android View focus for itself as a side effect of navigating, which
-                        // was racing clearFocus() and winning. Direct focus to the WebView
-                        // instead so the two cooperate rather than race.
-                        activeTab.webView.requestFocus()
+    // Everything visual lives inside this one Box so SnackbarHost (added at the very end) can sit
+    // structurally above the browser Scaffold, every full-page Screen overlay, the overflow menu,
+    // and the player alike — a bubble triggered from any of them (Copy URL on Detected Media,
+    // Download-started from the same page, Bookmarked from the browser's own AddressBar) needs to
+    // actually be visible regardless of which of those happens to be on top at the time.
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            modifier = modifier,
+            topBar = {
+                if (activeTab != null) {
+                    AddressBar(
+                        value = activeTab.addressBarText,
+                        onValueChange = { activeTab.addressBarText = it },
+                        onFocusChanged = { focused -> activeTab.isAddressBarFocused = focused },
+                        onSubmit = {
+                            val resolved = UrlOrSearchResolver.resolve(
+                                activeTab.addressBarText.text,
+                                AppSettings.current.searchEngine.queryUrlPrefix
+                            )
+                            if (resolved.isNotEmpty()) activeTab.webView.loadUrl(resolved)
+                            keyboardController?.hide()
+                            // Not focusManager.clearFocus(): loadUrl() makes the WebView request
+                            // Android View focus for itself as a side effect of navigating, which
+                            // was racing clearFocus() and winning. Direct focus to the WebView
+                            // instead so the two cooperate rather than race.
+                            activeTab.webView.requestFocus()
+                        },
+                        onReload = { activeTab.webView.reload() },
+                        onStop = { activeTab.webView.stopLoading() },
+                        isLoading = activeTab.isLoading,
+                        loadProgress = activeTab.loadProgress,
+                        detectedCount = activeTab.detectedMedia.size,
+                        onOpenDetected = { activeScreen = Screen.DETECTED },
+                        isBookmarked = activeTab.url.isNotBlank() && BookmarkList.isBookmarked(activeTab.url),
+                        onToggleBookmark = {
+                            if (activeTab.url.isNotBlank()) {
+                                val added = BookmarkList.toggle(context, activeTab.url, activeTab.title)
+                                // Only on add, not remove — a confirmation for taking something away
+                                // isn't useful the way one for adding it is, and the star's own
+                                // color+fill change already signals "removed" clearly enough.
+                                if (added) {
+                                    coroutineScope.launch { snackbarHostState.showSnackbar("Bookmarked") }
+                                }
+                            }
+                        }
+                    )
+                }
+            },
+            bottomBar = {
+                BottomBar(
+                    canGoBack = activeTab?.canGoBack == true,
+                    canGoForward = activeTab?.canGoForward == true,
+                    onBack = { goBack() },
+                    onForward = { goForward() },
+                    onBookmarks = { activeScreen = Screen.BOOKMARKS },
+                    onHome = { goHome() },
+                    tabCount = tabs.size,
+                    onTabs = { activeScreen = Screen.TABS },
+                    activeDownloadCount = DownloadQueue.downloads.count {
+                        it.status == DownloadStatus.QUEUED || it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.MUXING
                     },
-                    onReload = { activeTab.webView.reload() },
-                    onStop = { activeTab.webView.stopLoading() },
-                    isLoading = activeTab.isLoading,
-                    loadProgress = activeTab.loadProgress,
-                    detectedCount = activeTab.detectedMedia.size,
-                    onOpenDetected = { activeSheet = Sheet.DETECTED },
-                    isBookmarked = activeTab.url.isNotBlank() && BookmarkList.isBookmarked(activeTab.url),
-                    onToggleBookmark = {
-                        if (activeTab.url.isNotBlank()) BookmarkList.toggle(context, activeTab.url, activeTab.title)
-                    }
+                    onMenu = { showOverflowMenu = true }
                 )
             }
-        },
-        bottomBar = {
-            BottomBar(
-                canGoBack = activeTab?.canGoBack == true,
-                canGoForward = activeTab?.canGoForward == true,
-                onBack = { goBack() },
-                onForward = { goForward() },
-                onHome = { goHome() },
-                onBookmarks = {
-                    activeSheet = null
-                    activeScreen = Screen.BOOKMARKS
-                },
-                tabCount = tabs.size,
-                tabsSelected = activeSheet == Sheet.TABS,
-                onTabs = { activeSheet = Sheet.TABS },
-                activeDownloadCount = DownloadQueue.downloads.count {
-                    it.status == DownloadStatus.QUEUED || it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.MUXING
-                },
-                onMenu = { activeSheet = Sheet.MENU }
-            )
-        }
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
-            // Every tab's AndroidView stays composed (and thus its WebView stays alive) for as
-            // long as the tab exists; only the active one is made visible. Conditionally
-            // composing just the active tab would call AndroidView's onRelease — which destroys
-            // the WebView — on every switch, which is exactly the "don't destroy on switch"
-            // requirement this is here to avoid.
-            tabs.forEach { tab ->
-                key(tab.id) {
-                    AndroidView(
-                        modifier = Modifier.fillMaxSize(),
-                        factory = { tab.webView },
-                        update = { view -> view.visibility = if (tab.id == activeTabId) View.VISIBLE else View.INVISIBLE },
-                        onRelease = { it.destroy() }
-                    )
+        ) { innerPadding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
+                // Every tab's AndroidView stays composed (and thus its WebView stays alive) for as
+                // long as the tab exists; only the active one is made visible. Conditionally
+                // composing just the active tab would call AndroidView's onRelease — which destroys
+                // the WebView — on every switch, which is exactly the "don't destroy on switch"
+                // requirement this is here to avoid.
+                val pullToRefreshTint = MaterialTheme.colorScheme.primary.toArgb()
+                tabs.forEach { tab ->
+                    key(tab.id) {
+                        // Tracks only a pull-triggered reload, not every ordinary page load —
+                        // SwipeRefreshLayout.isRefreshing shows its spinner regardless of what set
+                        // it, so tying this directly to tab.isLoading would flash the spinner on
+                        // top of the page for a plain link tap too, not just an actual pull.
+                        var isRefreshing by remember { mutableStateOf(false) }
+                        LaunchedEffect(tab.isLoading) {
+                            if (!tab.isLoading) isRefreshing = false
+                        }
+                        AndroidView(
+                            modifier = Modifier.fillMaxSize(),
+                            factory = { ctx ->
+                                // Compose's own pull-to-refresh relies on the nested-scroll system
+                                // to know when a drag is happening at the very top of scrollable
+                                // content — the stock WebView never participates in that system, so
+                                // it can't tell Compose whether it has scrolled to the top. The
+                                // older View-based SwipeRefreshLayout sidesteps that: it asks the
+                                // child directly via canChildScrollUp below, which WebView answers
+                                // correctly through its ordinary View.canScrollVertically.
+                                SwipeRefreshLayout(ctx).apply {
+                                    addView(
+                                        tab.webView,
+                                        ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                                    )
+                                    setColorSchemeColors(pullToRefreshTint)
+                                    setOnChildScrollUpCallback { _, _ -> tab.webView.canScrollVertically(-1) }
+                                    setOnRefreshListener {
+                                        isRefreshing = true
+                                        tab.webView.reload()
+                                    }
+                                }
+                            },
+                            update = { swipeRefresh ->
+                                swipeRefresh.visibility = if (tab.id == activeTabId) View.VISIBLE else View.INVISIBLE
+                                swipeRefresh.isRefreshing = isRefreshing
+                            },
+                            onRelease = { tab.webView.destroy() }
+                        )
+                    }
                 }
             }
         }
-    }
 
-    // Rendered as an opaque full-screen overlay after the Scaffold above — same pattern
-    // PlayerScreen already uses below — rather than replacing the Scaffold outright: the tab
-    // WebViews inside it must stay composed (AndroidView's onRelease destroys a WebView the
-    // moment it leaves composition), so swapping to a full page can never mean un-composing that
-    // Box. Each page's own SimplePageScaffold has an opaque background, so it fully covers the
-    // browser UI beneath rather than actually needing it hidden any other way.
-    when (activeScreen) {
-        Screen.DOWNLOADS -> DownloadsPage(
-            downloads = DownloadQueue.downloads,
-            onCancel = { download -> DownloadQueue.cancel(download) },
-            onRetry = { download -> DownloadQueue.retry(context, download) },
-            onBack = { activeScreen = null }
-        )
-        Screen.HISTORY -> HistoryPage(
-            entries = HistoryLog.entries,
-            onOpenUrl = { url ->
-                openUrlInActiveTab(url)
-                activeScreen = null
-            },
-            onRemove = { entry -> HistoryLog.remove(context, entry) },
-            onClear = { HistoryLog.clear(context) },
-            onBack = { activeScreen = null }
-        )
-        Screen.BOOKMARKS -> BookmarksPage(
-            bookmarks = BookmarkList.bookmarks,
-            onOpenUrl = { url ->
-                openUrlInActiveTab(url)
-                activeScreen = null
-            },
-            onRemove = { bookmark -> BookmarkList.remove(context, bookmark) },
-            onBack = { activeScreen = null }
-        )
-        Screen.SETTINGS -> SettingsPage(
-            settings = AppSettings.current,
-            onUpdate = { updated -> AppSettings.update(context) { updated } },
-            onBack = { activeScreen = null }
-        )
-        null -> Unit
-    }
-
-    // A single when-block over the one activeSheet field, rather than independent `if (showX)`
-    // blocks each rendering its own ModalBottomSheet — structurally impossible for two to be
-    // shown at once, since only one branch of a when on a single value can ever match.
-    when (activeSheet) {
-        Sheet.DETECTED -> if (activeTab != null) {
-            DetectedMediaSheet(
-                items = activeTab.detectedMedia,
-                onCopyUrl = { url ->
-                    coroutineScope.launch {
-                        clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("url", url)))
-                    }
+        // Rendered as an opaque full-screen overlay after the Scaffold above — same pattern
+        // PlayerScreen already uses below — rather than replacing the Scaffold outright: the tab
+        // WebViews inside it must stay composed (AndroidView's onRelease destroys a WebView the
+        // moment it leaves composition), so swapping to a full page can never mean un-composing that
+        // Box. Each page's own SimplePageScaffold has an opaque background, so it fully covers the
+        // browser UI beneath rather than actually needing it hidden any other way.
+        when (activeScreen) {
+            Screen.DETECTED -> if (activeTab != null) {
+                DetectedMediaPage(
+                    items = activeTab.detectedMedia,
+                    onCopyUrl = { url ->
+                        coroutineScope.launch {
+                            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("url", url)))
+                            snackbarHostState.showSnackbar("URL copied")
+                        }
+                    },
+                    onPlay = { item -> playMedia(item) },
+                    onDownload = { item -> downloadMedia(item) },
+                    onBack = { activeScreen = null }
+                )
+            }
+            Screen.TABS -> TabsPage(
+                tabs = tabs,
+                activeTabId = activeTabId,
+                onSelectTab = { id ->
+                    activeTabId = id
+                    activeScreen = null
                 },
-                onPlay = { item -> playMedia(item) },
-                onDownload = { item -> downloadMedia(item) },
-                onDismiss = { activeSheet = null }
+                onCloseTab = { id -> closeTab(id) },
+                onNewTab = {
+                    activeTabId = createAndInsertTab("", null).id
+                    activeScreen = null
+                },
+                onBack = { activeScreen = null }
+            )
+            Screen.DOWNLOADS -> DownloadsPage(
+                downloads = DownloadQueue.downloads,
+                onCancel = { download -> DownloadQueue.cancel(download) },
+                onRetry = { download -> DownloadQueue.retry(context, download) },
+                onBack = { activeScreen = null }
+            )
+            Screen.HISTORY -> HistoryPage(
+                entries = HistoryLog.entries,
+                onOpenUrl = { url ->
+                    openUrlInActiveTab(url)
+                    activeScreen = null
+                },
+                onRemove = { entry -> HistoryLog.remove(context, entry) },
+                onRemoveEntries = { entries -> HistoryLog.removeAll(context, entries) },
+                onClear = { HistoryLog.clear(context) },
+                onBack = { activeScreen = null }
+            )
+            Screen.BOOKMARKS -> BookmarksPage(
+                bookmarks = BookmarkList.bookmarks,
+                onOpenUrl = { url ->
+                    openUrlInActiveTab(url)
+                    activeScreen = null
+                },
+                onRemove = { bookmark -> BookmarkList.remove(context, bookmark) },
+                onBack = { activeScreen = null }
+            )
+            Screen.SETTINGS -> SettingsPage(
+                settings = AppSettings.current,
+                onUpdate = { updated -> AppSettings.update(context) { updated } },
+                onBack = { activeScreen = null }
+            )
+            null -> Unit
+        }
+
+        if (showOverflowMenu) {
+            OverflowMenuSheet(
+                activeDownloadCount = DownloadQueue.downloads.count {
+                    it.status == DownloadStatus.QUEUED || it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.MUXING
+                },
+                detectedCount = activeTab?.detectedMedia?.size ?: 0,
+                onSelect = { screen ->
+                    showOverflowMenu = false
+                    activeScreen = screen
+                },
+                onDismiss = { showOverflowMenu = false }
             )
         }
-        Sheet.TABS -> TabsSheet(
-            tabs = tabs,
-            activeTabId = activeTabId,
-            onSelectTab = { id ->
-                activeTabId = id
-                activeSheet = null
-            },
-            onCloseTab = { id -> closeTab(id) },
-            onNewTab = {
-                activeTabId = createAndInsertTab("", null).id
-                activeSheet = null
-            },
-            onDismiss = { activeSheet = null }
+
+        playbackRequest?.let { request ->
+            PlayerScreen(request = request, onDismiss = { playbackRequest = null })
+        }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
         )
-        Sheet.MENU -> OverflowMenuSheet(
-            activeDownloadCount = DownloadQueue.downloads.count {
-                it.status == DownloadStatus.QUEUED || it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.MUXING
-            },
-            onSelect = { screen ->
-                activeSheet = null
-                activeScreen = screen
-            },
-            onDismiss = { activeSheet = null }
-        )
-        null -> Unit
     }
 
-    playbackRequest?.let { request ->
-        PlayerScreen(request = request, onDismiss = { playbackRequest = null })
-    }
-
-    // Switching tabs (or the active tab navigating away) should close a sheet showing the
-    // previous tab's results rather than silently keep showing stale ones.
+    // Switching tabs should close a Detected Media page showing the previous tab's results
+    // rather than silently keep showing stale ones. (In practice hard to trigger — TabsPage is
+    // itself the only way to switch tabs now, and picking a tab there already sends
+    // activeScreen back to null — but harmless to keep as a belt-and-suspenders guard.)
     LaunchedEffect(activeTabId) {
-        if (activeSheet == Sheet.DETECTED) activeSheet = null
+        if (activeScreen == Screen.DETECTED) activeScreen = null
     }
 
     // Select-all-on-focus, matching standard browser address-bar behavior. Deferred via
