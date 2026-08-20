@@ -49,9 +49,14 @@ object HistoryCodec {
 /** Thin SharedPreferences wrapper around [HistoryCodec]. */
 object HistoryStore {
     fun save(context: Context, entries: List<HistoryEntry>) {
+        // commit(), not apply(): apply() queues the disk write and returns immediately, so a
+        // process death (crash, OS low-memory kill, force-stop) shortly after can lose it before
+        // it ever lands — confirmed as a real, reproducible bug for the equivalent DownloadStore
+        // write (see its own doc comment). commit()'s synchronous block is a non-issue here: none
+        // of these save() calls are on a per-frame/per-keystroke hot path.
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putString(KEY_ENTRIES, HistoryCodec.encode(entries))
-            .apply()
+            .commit()
     }
 
     fun load(context: Context): List<HistoryEntry> {

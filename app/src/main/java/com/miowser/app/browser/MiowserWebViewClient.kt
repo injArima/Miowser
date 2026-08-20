@@ -47,6 +47,7 @@ class MiowserWebViewClient(
             currentPageUrl = url
             onUrlChanged(url)
             onNewPageStarted()
+            refreshNavigationState(view)
         }
     }
 
@@ -55,12 +56,27 @@ class MiowserWebViewClient(
         if (url != null) {
             currentPageUrl = url
             onUrlChanged(url)
+            refreshNavigationState(view)
             // view.title is WebView's own synchronous getter — usually already populated by
             // load-finish for real pages, so this doesn't need to wait on the separate
             // WebChromeClient.onReceivedTitle callback (which can arrive slightly later, or not
             // at all for a page with no <title>) just to record a history entry.
             onPageLoadFinished(url, view.title?.takeIf { it.isNotBlank() } ?: url)
         }
+    }
+
+    /**
+     * Confirmed on-device: view.canGoBack()/canGoForward() checked *synchronously* inside these
+     * callbacks reports stale results — Forward showed enabled at the newest history entry
+     * (nothing actually ahead) even right after onPageFinished, for a single fresh navigation
+     * with no redirect involved. This is a known WebView/Chromium quirk: the WebBackForwardList
+     * isn't necessarily settled yet at the exact moment these callbacks fire. view.post queues
+     * the real check for the next pass through the message loop, by which point it reliably has —
+     * the same "don't trust a synchronous read here" fix this codebase already uses for the
+     * address bar's select-all-on-focus race (see BrowserScreen's matching LaunchedEffect).
+     */
+    private fun refreshNavigationState(view: WebView) {
+        view.post { onNavigationStateChanged(view.canGoBack(), view.canGoForward()) }
     }
 
     override fun shouldInterceptRequest(
@@ -84,11 +100,13 @@ class MiowserWebViewClient(
         return null
     }
 
-    // The documented hook for "the back/forward history changed" — fires after every top-level
-    // navigation, including history navigations (our own Back/Forward buttons calling goBack()/
-    // goForward()), so this single callback keeps canGoBack/canGoForward correct everywhere,
-    // not just after fresh loads.
+    // The documented hook for "the back/forward history changed", including history navigations
+    // (our own Back/Forward buttons calling goBack()/goForward()) — a third refresh point
+    // alongside onPageStarted/onPageFinished above, since none of the three is reliably invoked
+    // for every navigation type on its own (see onPageStarted's/onPageFinished's own comments,
+    // and the audit finding that motivated all this: navigating directly between two
+    // media-manifest URLs skipped onPageStarted entirely).
     override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
-        onNavigationStateChanged(view.canGoBack(), view.canGoForward())
+        refreshNavigationState(view)
     }
 }

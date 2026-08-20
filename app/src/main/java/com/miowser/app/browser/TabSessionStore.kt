@@ -45,10 +45,14 @@ object TabSessionStore {
         }
         val activeIndex = tabs.indexOfFirst { it.id == activeTabId }
 
+        // commit(), not apply() — see DownloadStore's matching doc comment for why: apply()'s
+        // async write can be lost to a process death before it lands. This one's called from
+        // ON_PAUSE specifically to survive the app being killed shortly after, so the guarantee
+        // matters here more than almost anywhere else in the app.
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putString(KEY_TABS, TabSessionCodec.encode(savedTabs))
             .putInt(KEY_ACTIVE_INDEX, activeIndex)
-            .apply()
+            .commit()
     }
 
     /** Returns the saved tabs plus which index was active, or null if there's no saved session. */

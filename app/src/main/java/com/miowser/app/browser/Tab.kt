@@ -69,6 +69,22 @@ class Tab(
     // from shouldInterceptRequest, which Chromium calls off the main thread.
     private val seenGrabberUrls = Collections.synchronizedSet(mutableSetOf<String>())
 
+    /**
+     * Resets grabber detection state for a brand-new page. Called from two places: WebView's own
+     * onPageStarted (via onNewPageStarted below) for ordinary navigations, and proactively by
+     * BrowserScreen right before every explicit loadUrl() it issues itself (address bar submit,
+     * opening a History/Bookmarks entry, Home) — confirmed on-device that WebView doesn't always
+     * route a direct navigation from one raw media-manifest URL straight to another (e.g. an
+     * .m3u8 page's address bar overwritten with a .mpd URL) through onPageStarted at all, only
+     * onPageFinished, which never fires this clear on its own. Calling it twice for one
+     * navigation (WebView's callback firing after this one already ran) is harmless — clearing an
+     * already-empty list is a no-op.
+     */
+    fun clearDetections() {
+        detectedMedia.clear()
+        seenGrabberUrls.clear()
+    }
+
     // Appends a new detection, or replaces an existing one sharing the same URL — needed because
     // seenGrabberUrls only prevents duplicate probes within one "generation" (between
     // onNewPageStarted clears); an async network probe already in flight when a clear happens
@@ -205,10 +221,7 @@ class Tab(
                 this@Tab.url = newUrl
                 if (!isAddressBarFocused) addressBarText = TextFieldValue(newUrl)
             },
-            onNewPageStarted = {
-                detectedMedia.clear()
-                seenGrabberUrls.clear()
-            },
+            onNewPageStarted = { clearDetections() },
             onCandidateMediaUrl = { candidateUrl, guessedType ->
                 if (seenGrabberUrls.add(candidateUrl)) probeCandidate(candidateUrl, guessedType, cachedUserAgent)
             },

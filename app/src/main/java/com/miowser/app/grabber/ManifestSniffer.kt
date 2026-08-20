@@ -73,7 +73,15 @@ object ManifestSniffer {
         val trimmed = body.trimStart()
         return when {
             trimmed.startsWith("#EXTM3U") -> sniffHls(body, manifestUrl)
-            trimmed.startsWith("<?xml") && body.contains("<MPD") -> sniffDash(body)
+            // The XML declaration is optional per spec, and real-world MPDs routinely omit it —
+            // confirmed on-device that requiring "<?xml" as the literal prefix was the actual
+            // cause of DASH detection never firing at all: Akamai's own bbb_30fps.mpd test
+            // stream (and most real CDN-served MPDs) starts directly with "<MPD", no prolog.
+            // <MPD is checked as the trimmed body's own prefix for that common case, and — when a
+            // prolog IS present — within just the first slice of the body rather than an
+            // unbounded scan, so an unrelated document that merely mentions "<MPD" somewhere deep
+            // inside (a forum post about MPEG-DASH, say) doesn't false-positive.
+            trimmed.startsWith("<MPD") || (trimmed.startsWith("<?xml") && trimmed.take(500).contains("<MPD")) -> sniffDash(body)
             else -> ManifestInfo(
                 confirmedType = null,
                 isMasterOrMultiVariant = false,

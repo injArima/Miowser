@@ -25,11 +25,13 @@ object SettingsStore {
     }
 
     fun save(context: Context, settings: Settings) {
+        // commit(), not apply() — see DownloadStore's matching doc comment for why: apply()'s
+        // async write can be lost to a process death before it lands.
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_AD_BLOCK_ENABLED, settings.adBlockEnabled)
             .putString(KEY_HOME_PAGE_URL, settings.homePageUrl)
             .putString(KEY_SEARCH_ENGINE, settings.searchEngine.name)
             .putBoolean(KEY_RESTORE_TABS_ON_STARTUP, settings.restoreTabsOnStartup)
-            .apply()
+            .commit()
     }
 }

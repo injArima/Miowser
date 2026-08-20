@@ -42,9 +42,11 @@ object BookmarkCodec {
 /** Thin SharedPreferences wrapper around [BookmarkCodec]. */
 object BookmarkStore {
     fun save(context: Context, bookmarks: List<Bookmark>) {
+        // commit(), not apply() — see DownloadStore's matching doc comment for why: apply()'s
+        // async write can be lost to a process death before it lands.
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putString(KEY_BOOKMARKS, BookmarkCodec.encode(bookmarks))
-            .apply()
+            .commit()
     }
 
     fun load(context: Context): List<Bookmark> {

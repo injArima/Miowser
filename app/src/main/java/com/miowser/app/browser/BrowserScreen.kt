@@ -244,6 +244,9 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
     fun openUrlInActiveTab(url: String) {
         val tab = activeTab
         if (tab != null) {
+            // Explicit, defense-in-depth clear — see Tab.clearDetections' doc comment for why
+            // WebView's own onPageStarted-triggered clear alone isn't always enough.
+            tab.clearDetections()
             tab.webView.loadUrl(url)
             activeTabId = tab.id
         } else {
@@ -263,7 +266,10 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
         activeTab?.webView?.let { if (it.canGoForward()) it.goForward() }
     }
     fun goHome() {
-        activeTab?.webView?.loadUrl(AppSettings.current.homePageUrl)
+        activeTab?.let { tab ->
+            tab.clearDetections()
+            tab.webView.loadUrl(AppSettings.current.homePageUrl)
+        }
     }
 
     // Only wired up while actually browsing (activeScreen == null) — a full page replaces the
@@ -306,7 +312,10 @@ fun BrowserScreen(modifier: Modifier = Modifier) {
                                 activeTab.addressBarText.text,
                                 AppSettings.current.searchEngine.queryUrlPrefix
                             )
-                            if (resolved.isNotEmpty()) activeTab.webView.loadUrl(resolved)
+                            if (resolved.isNotEmpty()) {
+                                activeTab.clearDetections()
+                                activeTab.webView.loadUrl(resolved)
+                            }
                             keyboardController?.hide()
                             // Not focusManager.clearFocus(): loadUrl() makes the WebView request
                             // Android View focus for itself as a side effect of navigating, which

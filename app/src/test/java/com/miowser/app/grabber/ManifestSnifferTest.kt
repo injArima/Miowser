@@ -107,6 +107,43 @@ class ManifestSnifferTest {
     }
 
     @Test
+    fun `confirms a DASH manifest with no XML prolog`() {
+        // Confirmed on-device as the actual bug, not a hypothetical: the XML declaration is
+        // optional per spec, and real CDN-served MPDs routinely omit it — Akamai's own public
+        // bbb_30fps.mpd test stream starts directly with "<MPD", no "<?xml" line at all. Requiring
+        // that prefix (the previous check) meant DASH was never confirmed for a real manifest,
+        // only for every existing test fixture above, which all happen to include the prolog.
+        val body = """
+            <MPD xmlns="urn:mpeg:dash:schema:mpd:2011" mediaPresentationDuration="PT10M34.566S">
+              <Period>
+                <AdaptationSet>
+                  <Representation id="1" bandwidth="1000000" width="640" height="360"/>
+                  <Representation id="2" bandwidth="2000000" width="1920" height="1080"/>
+                </AdaptationSet>
+              </Period>
+            </MPD>
+        """.trimIndent()
+
+        val info = ManifestSniffer.sniff(body, "https://example.com/dash/manifest.mpd")
+
+        assertEquals(MediaType.DASH, info.confirmedType)
+        assertEquals(2, info.variantCount)
+        assertEquals("1920x1080", info.resolution)
+    }
+
+    @Test
+    fun `does not false-positive on an unrelated XML document with a literal MPD substring deep inside`() {
+        // Starts with "<?xml", same as a real DASH manifest with a prolog — the only thing that
+        // should disqualify it is the literal "<MPD" text being nowhere near the front, well past
+        // the bounded scan window a real prolog would ever need.
+        val body = "<?xml version=\"1.0\"?>\n<root>" +
+            "x".repeat(600) +
+            "<MPDsomethingElse>not actually a DASH manifest root element</MPDsomethingElse>" +
+            "</root>"
+        assertNull(ManifestSniffer.sniff(body, "https://example.com/page.xml").confirmedType)
+    }
+
+    @Test
     fun `detects DASH content protection as encrypted`() {
         val body = """
             <?xml version="1.0" encoding="UTF-8"?>
