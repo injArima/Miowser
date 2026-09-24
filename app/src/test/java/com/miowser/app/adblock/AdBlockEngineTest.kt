@@ -71,9 +71,20 @@ class AdBlockEngineTest {
     }
 
     @Test
-    fun `returns an empty string when nothing applies`() {
+    fun `does not emit a domain scoped selector on an unrelated domain`() {
         val engine = AdBlockEngine()
         engine.addCosmeticRule(ruleFor("example.com", ".ad"))
-        assertTrue(engine.cosmeticCssFor("unrelated.com").isEmpty())
+        assertFalse(engine.cosmeticCssFor("unrelated.com").contains(".ad {"))
+    }
+
+    @Test
+    fun `emits cosmetic selectors as independent CSS rules`() {
+        val engine = AdBlockEngine()
+        engine.addCosmeticRule(ruleFor(null, ".simple-ad"))
+        engine.addCosmeticRule(ruleFor(null, ".rail:has(.ad-label)"))
+        val css = engine.cosmeticCssFor("example.com")
+        assertTrue(css.contains(".simple-ad { display: none !important; }"))
+        assertTrue(css.contains(".rail:has(.ad-label) { display: none !important; }"))
+        assertFalse(css.contains(",\n"))
     }
 }

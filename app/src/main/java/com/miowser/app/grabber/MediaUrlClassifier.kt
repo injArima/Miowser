@@ -49,6 +49,7 @@ object MediaUrlClassifier {
         "audio/x-mpegurl" to MediaType.HLS,
         "application/dash+xml" to MediaType.DASH,
         "video/mp4" to MediaType.MP4,
+        "application/mp4" to MediaType.MP4,
         "video/webm" to MediaType.WEBM,
         "video/x-matroska" to MediaType.MATROSKA,
         "audio/mpeg" to MediaType.AUDIO,

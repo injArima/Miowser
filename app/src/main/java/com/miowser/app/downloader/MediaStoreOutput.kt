@@ -11,8 +11,12 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import androidx.core.content.ContextCompat
+import java.io.Closeable
 import java.io.File
+import java.io.FileOutputStream
 import java.io.OutputStream
+import java.io.RandomAccessFile
+import java.nio.channels.FileChannel
 
 private const val TAG = "Miowser/Downloader"
 
@@ -43,11 +47,56 @@ private const val TAG = "Miowser/Downloader"
 object MediaStoreOutput {
     data class Opened(val uri: Uri, val stream: OutputStream)
 
+    /** MediaStore may choose its own name; the legacy path returns the exact reserved filename. */
+    fun legacyFileName(uri: Uri): String? =
+        uri.takeIf { it.scheme == "file" }?.path?.let { File(it).name }
+
+    /**
+     * A position-addressable handle on the same output location [open] would give a plain
+     * OutputStream — for the multi-threaded downloader, where several threads write different
+     * byte ranges of the same file concurrently via [FileChannel.write] (its own positioned
+     * overload, safe to call from multiple threads on one channel without external
+     * synchronization; each call is atomic against the given position, unlike a shared
+     * seek()+write() pair). [close] releases everything this needed to open, not just the
+     * channel itself — on the Q+ path that's a ParcelFileDescriptor the channel's own close()
+     * never touches.
+     */
+    class OpenedRandomAccess(val uri: Uri, val channel: FileChannel, private val toClose: List<Closeable>) : Closeable {
+        override fun close() {
+            toClose.forEach { runCatching { it.close() } }
+        }
+    }
+
     fun open(context: Context, fileName: String, mimeType: String): Opened? {
+        if (!OutputFileIdentity.validFileName(fileName) || !OutputFileIdentity.validMimeType(mimeType)) return null
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             openViaMediaStore(context, fileName, mimeType)
         } else {
             openViaLegacyFile(context, fileName)
+        }
+    }
+
+    fun openRandomAccess(context: Context, fileName: String, mimeType: String): OpenedRandomAccess? {
+        if (!OutputFileIdentity.validFileName(fileName) || !OutputFileIdentity.validMimeType(mimeType)) return null
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            openRandomAccessViaMediaStore(context, fileName, mimeType)
+        } else {
+            openRandomAccessViaLegacyFile(context, fileName)
+        }
+    }
+
+    /** Publishes a completely-written private recovery artifact as one atomic user-visible result. */
+    fun publishFile(context: Context, source: File, fileName: String, mimeType: String): Uri? {
+        if (!source.isFile) return null
+        val opened = open(context, fileName, mimeType) ?: return null
+        return try {
+            source.inputStream().use { input -> opened.stream.use { output -> input.copyTo(output) } }
+            finish(context, opened.uri, mimeType)
+            opened.uri
+        } catch (e: Exception) {
+            runCatching { opened.stream.close() }
+            abandon(context, opened.uri)
+            null
         }
     }
 
@@ -71,20 +120,55 @@ object MediaStoreOutput {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             context.contentResolver.delete(uri, null, null)
         } else {
-            uri.path?.let { File(it).delete() }
+            uri.path?.let { path ->
+                if (File(path).delete()) {
+                    // Remove a previously scanned completed file from the legacy MediaStore index.
+                    MediaScannerConnection.scanFile(context, arrayOf(path), null, null)
+                }
+            }
         }
     }
 
-    private fun openViaMediaStore(context: Context, fileName: String, mimeType: String): Opened? {
+    /** Deletes a finished public file when the user explicitly chooses "File and record". */
+    fun delete(context: Context, uri: Uri) = abandon(context, uri)
+
+    private fun insertMediaStoreEntry(context: Context, fileName: String, mimeType: String): Uri? {
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, fileName)
             put(MediaStore.Downloads.MIME_TYPE, mimeType)
             put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Miowser")
             put(MediaStore.Downloads.IS_PENDING, 1)
         }
-        val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return null
-        val stream = context.contentResolver.openOutputStream(uri) ?: return null
-        return Opened(uri, stream)
+        return context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+    }
+
+    private fun openViaMediaStore(context: Context, fileName: String, mimeType: String): Opened? {
+        val uri = insertMediaStoreEntry(context, fileName, mimeType) ?: return null
+        return try {
+            val stream = context.contentResolver.openOutputStream(uri)
+                ?: run { context.contentResolver.delete(uri, null, null); return null }
+            Opened(uri, stream)
+        } catch (e: Exception) {
+            runCatching { context.contentResolver.delete(uri, null, null) }
+            throw e
+        }
+    }
+
+    private fun legacyOutputDir(): File = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Miowser")
+
+    private fun reserveLegacyFile(fileName: String): File? {
+        if (fileName.isBlank() || fileName == "." || fileName == ".." ||
+            '/' in fileName || '\\' in fileName
+        ) return null
+        val dir = legacyOutputDir()
+        if (!dir.exists() && !dir.mkdirs()) return null
+        // createNewFile is atomic: two downloads cannot silently choose and overwrite the same
+        // public file even when it was created outside Miowser and absent from our download list.
+        for (copyNumber in 1..10_000) {
+            val candidate = File(dir, legacyOutputName(fileName, copyNumber))
+            if (candidate.createNewFile()) return candidate
+        }
+        return null
     }
 
     private fun openViaLegacyFile(context: Context, fileName: String): Opened? {
@@ -92,9 +176,45 @@ object MediaStoreOutput {
             Log.d(TAG, "WRITE_EXTERNAL_STORAGE not granted; can't write $fileName on this pre-Q device")
             return null
         }
-        val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Miowser")
-        if (!dir.exists() && !dir.mkdirs()) return null
-        val file = File(dir, fileName)
-        return Opened(Uri.fromFile(file), file.outputStream())
+        val file = reserveLegacyFile(fileName) ?: return null
+        return try {
+            Opened(Uri.fromFile(file), file.outputStream())
+        } catch (e: Exception) {
+            file.delete()
+            throw e
+        }
+    }
+
+    // "rw" (not "rwt"): mode is passed straight to ContentResolver.openFileDescriptor, which
+    // treats it as the standard ParcelFileDescriptor mode string — "rwt" would truncate on open,
+    // fighting every thread that opens its own descriptor onto the same already-inserted entry.
+    private fun openRandomAccessViaMediaStore(context: Context, fileName: String, mimeType: String): OpenedRandomAccess? {
+        val uri = insertMediaStoreEntry(context, fileName, mimeType) ?: return null
+        var pfd: android.os.ParcelFileDescriptor? = null
+        return try {
+            pfd = context.contentResolver.openFileDescriptor(uri, "rw")
+                ?: run { context.contentResolver.delete(uri, null, null); return null }
+            val stream = FileOutputStream(pfd.fileDescriptor)
+            OpenedRandomAccess(uri, stream.channel, listOf(stream, pfd))
+        } catch (e: Exception) {
+            runCatching { pfd?.close() }
+            runCatching { context.contentResolver.delete(uri, null, null) }
+            throw e
+        }
+    }
+
+    private fun openRandomAccessViaLegacyFile(context: Context, fileName: String): OpenedRandomAccess? {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            Log.d(TAG, "WRITE_EXTERNAL_STORAGE not granted; can't write $fileName on this pre-Q device")
+            return null
+        }
+        val file = reserveLegacyFile(fileName) ?: return null
+        return try {
+            val raf = RandomAccessFile(file, "rw")
+            OpenedRandomAccess(Uri.fromFile(file), raf.channel, listOf(raf))
+        } catch (e: Exception) {
+            file.delete()
+            throw e
+        }
     }
 }

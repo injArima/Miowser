@@ -1,6 +1,12 @@
 package com.miowser.app.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -13,6 +19,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
@@ -28,11 +35,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import com.miowser.app.ui.theme.ExpressiveTokens
 
 /**
  * The real browser toolbar: Back, Forward, Bookmarks, Home, Tabs, and an overflow (hamburger)
@@ -60,11 +73,19 @@ fun BottomBar(
     onForward: () -> Unit,
     onBookmarks: () -> Unit,
     onHome: () -> Unit,
+    onHomeLongClick: () -> Unit,
     tabCount: Int,
     onTabs: () -> Unit,
     activeDownloadCount: Int,
     onMenu: () -> Unit
 ) {
+    val homeInteraction = remember { MutableInteractionSource() }
+    val homePressed by homeInteraction.collectIsPressedAsState()
+    val homePressColor by animateColorAsState(
+        targetValue = if (homePressed) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        animationSpec = tween(ExpressiveTokens.compactMotionMillis),
+        label = "Home button press"
+    )
     // BottomBar sits in Scaffold's bottomBar slot, which — unlike Material3's own NavigationBar
     // — doesn't apply any window-insets padding on its own; a raw custom composable there draws
     // straight under the gesture/navigation bar without this. Scaffold sizes the WebView
@@ -72,6 +93,7 @@ fun BottomBar(
     // the inset amount pushes the content up to clear it automatically.
     Surface(
         tonalElevation = 2.dp,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
     ) {
         Row(
@@ -89,7 +111,21 @@ fun BottomBar(
             IconButton(onClick = onBookmarks) {
                 Icon(Icons.Rounded.Bookmarks, contentDescription = "Bookmarks", tint = MaterialTheme.colorScheme.primary)
             }
-            IconButton(onClick = onHome) {
+            Box(
+                modifier = Modifier
+                    .size(ExpressiveTokens.minimumTouchTarget)
+                    .clip(CircleShape)
+                    .background(homePressColor)
+                    .combinedClickable(
+                        interactionSource = homeInteraction,
+                        indication = null,
+                        role = Role.Button,
+                        onClick = onHome,
+                        onLongClickLabel = "Focus search or address bar",
+                        onLongClick = onHomeLongClick
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(Icons.Rounded.Home, contentDescription = "Home")
             }
             IconButton(onClick = onTabs) {

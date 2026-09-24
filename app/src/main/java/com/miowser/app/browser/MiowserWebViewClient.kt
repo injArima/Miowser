@@ -1,7 +1,10 @@
 package com.miowser.app.browser
 
 import android.graphics.Bitmap
+import android.net.http.SslError
 import android.util.Log
+import android.webkit.SslErrorHandler
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -36,7 +39,11 @@ class MiowserWebViewClient(
     private val onNavigationStateChanged: (canGoBack: Boolean, canGoForward: Boolean) -> Unit,
     private val onUrlChanged: (String) -> Unit,
     private val onNewPageStarted: () -> Unit,
+    private val onPageStarted: () -> Unit,
+    private val onPageError: (String) -> Unit,
+    private val onExternalNavigation: (String) -> Unit,
     private val onCandidateMediaUrl: (url: String, type: MediaType) -> Unit,
+    private val onLikelyDownloadNavigation: (url: String) -> Unit,
     private val onPageLoadFinished: (url: String, title: String) -> Unit
 ) : WebViewClient() {
 
@@ -47,6 +54,7 @@ class MiowserWebViewClient(
             currentPageUrl = url
             onUrlChanged(url)
             onNewPageStarted()
+            onPageStarted()
             refreshNavigationState(view)
         }
     }
@@ -62,6 +70,9 @@ class MiowserWebViewClient(
             // WebChromeClient.onReceivedTitle callback (which can arrive slightly later, or not
             // at all for a page with no <title>) just to record a history entry.
             onPageLoadFinished(url, view.title?.takeIf { it.isNotBlank() } ?: url)
+            // Document-start remains the flicker-free primary path. This second application
+            // catches a filter rebuild that completed while the page itself was loading.
+            view.applyCosmeticFiltersNow()
         }
     }
 
@@ -77,6 +88,40 @@ class MiowserWebViewClient(
      */
     private fun refreshNavigationState(view: WebView) {
         view.post { onNavigationStateChanged(view.canGoBack(), view.canGoForward()) }
+    }
+
+    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+        val url = request.url.toString()
+        if (request.isForMainFrame) {
+            if (ExternalNavigation.isExternal(url)) {
+                onExternalNavigation(url)
+                return true
+            }
+            if (!ExternalNavigation.canStayInWebView(url)) {
+                onPageError("This link uses an unsupported or unsafe address type.")
+                return true
+            }
+        }
+        if (request.isForMainFrame && request.method.equals("GET", ignoreCase = true) &&
+            WebDownloadUrlClassifier.isLikelyDownload(url)
+        ) {
+            onLikelyDownloadNavigation(url)
+            return true
+        }
+        return false
+    }
+
+    override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
+        handler.cancel()
+        if (error.url == currentPageUrl || error.url == view.url) {
+            onPageError("This site's security certificate could not be verified. The connection was blocked.")
+        }
+    }
+
+    override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+        if (request.isForMainFrame) {
+            onPageError(error.description?.toString() ?: "This page could not be loaded.")
+        }
     }
 
     override fun shouldInterceptRequest(

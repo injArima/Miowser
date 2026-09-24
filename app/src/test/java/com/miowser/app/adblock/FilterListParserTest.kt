@@ -118,8 +118,15 @@ class FilterListParserTest {
 
     @Test
     fun `extended procedural cosmetic syntax is skipped rather than mishandled`() {
-        val result = FilterListParser.parse("example.com##div:has(.ad)", FilterSource.SUBSCRIBED)
+        val result = FilterListParser.parse("example.com##div:xpath(//aside)", FilterSource.SUBSCRIBED)
         assertTrue(result.cosmeticRules.isEmpty())
+    }
+
+    @Test
+    fun `native CSS has selector remains available to cosmetic rules`() {
+        val result = FilterListParser.parse("##.fh-wrapper:has(.fh-ad-label)", FilterSource.MANUAL)
+        assertEquals(1, result.cosmeticRules.size)
+        assertEquals(".fh-wrapper:has(.fh-ad-label)", result.cosmeticRules.single().selector)
     }
 
     @Test

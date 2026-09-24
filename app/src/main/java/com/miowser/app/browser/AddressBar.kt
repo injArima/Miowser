@@ -17,6 +17,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -28,9 +29,14 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
@@ -55,8 +61,18 @@ fun AddressBar(
     onOpenDetected: () -> Unit,
     isBookmarked: Boolean,
     onToggleBookmark: () -> Unit,
+    isPrivate: Boolean = false,
+    focusRequestKey: Int,
     modifier: Modifier = Modifier
 ) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    LaunchedEffect(focusRequestKey) {
+        if (focusRequestKey > 0) {
+            focusRequester.requestFocus()
+            keyboardController?.show()
+        }
+    }
     // AddressBar sits in Scaffold's topBar slot, which — unlike Material3's own TopAppBar —
     // doesn't apply any window-insets padding on its own; a raw custom composable there draws
     // straight under the status bar (and any display cutout) without this. Scaffold sizes the
@@ -65,6 +81,7 @@ fun AddressBar(
     // needed on the content side.
     Surface(
         tonalElevation = 2.dp,
+        color = if (isPrivate) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = modifier
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
@@ -76,6 +93,12 @@ fun AddressBar(
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                if (isPrivate) Icon(
+                    Icons.Rounded.VisibilityOff,
+                    contentDescription = "Private tab",
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                )
                 // Leftmost, ahead of the URL field itself — the detected-media badge stays
                 // clustered with reload/stop on the right instead.
                 IconButton(onClick = onToggleBookmark) {
@@ -97,11 +120,13 @@ fun AddressBar(
                     onValueChange = onValueChange,
                     modifier = Modifier
                         .weight(1f)
+                        .focusRequester(focusRequester)
                         .onFocusChanged { onFocusChanged(it.isFocused) },
                     singleLine = true,
-                    placeholder = { Text("Search or enter address") },
+                    placeholder = { Text(if (isPrivate) "Private search or address" else "Search or enter address") },
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                    keyboardActions = KeyboardActions(onGo = { onSubmit() })
+                    keyboardActions = KeyboardActions(onGo = { onSubmit() }),
+                    shape = MaterialTheme.shapes.extraLarge
                 )
                 if (detectedCount > 0) {
                     IconButton(onClick = onOpenDetected) {

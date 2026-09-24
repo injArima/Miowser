@@ -15,6 +15,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import com.miowser.app.browser.BrowserScreen
+import com.miowser.app.downloader.DownloadQueue
+import com.miowser.app.library.MediaLibrary
+import com.miowser.app.library.LibraryFolders
 import com.miowser.app.ui.theme.MiowserTheme
 
 private const val LOCAL_NETWORK_PERMISSION = "android.permission.ACCESS_LOCAL_NETWORK"
@@ -64,6 +67,13 @@ class MainActivity : ComponentActivity() {
         ) {
             requestLegacyStoragePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
+
+        // Prehydrate the small persisted Hub indexes before Compose's first frame. The later
+        // BrowserScreen restore remains idempotent, but the Library/Downloads no longer flash an
+        // empty state while their records are read after the first composition.
+        MediaLibrary.restore(applicationContext)
+        LibraryFolders.restore(applicationContext)
+        DownloadQueue.restore(applicationContext)
 
         setContent {
             MiowserApp()

@@ -59,6 +59,53 @@ class ManifestSnifferTest {
     }
 
     @Test
+    fun `uses explicit HLS byte ranges as an exact size including the init map`() {
+        val body = """
+            #EXTM3U
+            #EXT-X-MAP:URI="init.mp4",BYTERANGE="1000@0"
+            #EXTINF:4.0,
+            #EXT-X-BYTERANGE:2000@1000
+            media.mp4
+            #EXTINF:6.0,
+            #EXT-X-BYTERANGE:3000@3000
+            media.mp4
+            #EXT-X-ENDLIST
+        """.trimIndent()
+
+        val info = ManifestSniffer.sniff(body, "https://example.com/hls/index.m3u8")
+
+        assertEquals(6_000L, info.declaredSizeBytes)
+        assertEquals(2, info.sampleSegments.size)
+        assertEquals(2_000L, info.sampleSegments.first().declaredByteLength)
+        assertEquals(10.0, info.durationSeconds!!, 0.001)
+    }
+
+    @Test
+    fun `keeps representative HLS samples and prefers average bandwidth`() {
+        val master = """
+            #EXTM3U
+            #EXT-X-STREAM-INF:BANDWIDTH=5000000,AVERAGE-BANDWIDTH=4000000,RESOLUTION=1920x1080
+            main.m3u8
+        """.trimIndent()
+        val leaf = buildString {
+            appendLine("#EXTM3U")
+            repeat(7) { index ->
+                appendLine("#EXTINF:${index + 1}.0,")
+                appendLine("segment-$index.m4s")
+            }
+        }
+
+        val masterInfo = ManifestSniffer.sniff(master, "https://example.com/master.m3u8")
+        val leafInfo = ManifestSniffer.sniff(leaf, "https://example.com/main.m3u8")
+
+        assertEquals(4_000_000L, masterInfo.bitrateBitsPerSecond)
+        assertEquals(
+            listOf("segment-0.m4s", "segment-3.m4s", "segment-6.m4s"),
+            leafInfo.sampleSegments.map { it.url.substringAfterLast('/') }
+        )
+    }
+
+    @Test
     fun `detects real AES-128 encryption on an HLS playlist`() {
         val body = """
             #EXTM3U
@@ -129,6 +176,27 @@ class ManifestSnifferTest {
         assertEquals(MediaType.DASH, info.confirmedType)
         assertEquals(2, info.variantCount)
         assertEquals("1920x1080", info.resolution)
+    }
+
+    @Test
+    fun `reads prefixed DASH metadata independent of attribute ordering`() {
+        val body = """
+            <d:MPD xmlns:d="urn:mpeg:dash:schema:mpd:2011" mediaPresentationDuration="PT45S">
+              <d:Period><d:AdaptationSet contentType="video">
+                <d:Representation height="1080" bandwidth="3500000" width="1920" id="v">
+                  <d:BaseURL>video.mp4</d:BaseURL>
+                  <d:SegmentBase indexRange="500-700"><d:Initialization range="0-499"/></d:SegmentBase>
+                </d:Representation>
+              </d:AdaptationSet></d:Period>
+            </d:MPD>
+        """.trimIndent()
+
+        val info = ManifestSniffer.sniff(body, "https://example.com/manifest.mpd")
+
+        assertEquals(MediaType.DASH, info.confirmedType)
+        assertEquals("1920x1080", info.resolution)
+        assertEquals(3_500_000L, info.bitrateBitsPerSecond)
+        assertEquals(45.0, info.durationSeconds!!, 0.001)
     }
 
     @Test

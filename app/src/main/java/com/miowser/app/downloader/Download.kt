@@ -1,13 +1,27 @@
 package com.miowser.app.downloader
 
+import android.net.Uri
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import java.util.concurrent.atomic.AtomicLong
 
-enum class DownloadStatus { QUEUED, DOWNLOADING, MUXING, COMPLETED, FAILED, CANCELED }
+enum class DownloadStatus { QUEUED, DOWNLOADING, PAUSED, MUXING, COMPLETED, FAILED, CANCELED }
 
-enum class DownloadKind { DIRECT_FILE, HLS, DASH }
+enum class DownloadKind { DIRECT_FILE, HLS, DASH, WEBVIEW_RESOURCE }
+
+/**
+ * One thread's own byte range within a multi-threaded direct-file download, and how much of it
+ * it's done — see DirectFileDownloader. [startByte]/[endByte] are fixed for the thread's whole
+ * life (inclusive, HTTP Range semantics); [downloadedBytes] is the only field that moves,
+ * updated straight from that thread as it streams its chunk. Purely a UI/progress concern — the
+ * download either finishes with every thread's range filled in or fails outright, so there's no
+ * separate per-thread status to track.
+ */
+class DownloadThreadProgress(val startByte: Long, val endByte: Long) {
+    var downloadedBytes by mutableStateOf(0L)
+}
 
 /**
  * One user-visible download. Progress fields are Compose-observable properties on a plain class
@@ -26,19 +40,188 @@ class Download(
     val pageUrl: String,
     val userAgent: String,
     val referer: String,
-    val cookies: String?,
+    @Volatile var cookies: String?,
     val kind: DownloadKind,
-    val displayName: String,
-    val outputBaseName: String
+    displayName: String,
+    val outputBaseName: String,
+    /** Extension from a webpage's Content-Disposition filename; null for grabber downloads. */
+    val suggestedExtension: String? = null,
+    /** Non-null only when the user explicitly chose "New renamed copy" after a conflict. */
+    val preferredOutputBaseName: String? = null
 ) {
-    var status by mutableStateOf(DownloadStatus.QUEUED)
-    var bytesDownloaded by mutableStateOf(0L)
+    /** Updated once the real response identifies a better filename than WebView's suggestion. */
+    var displayName by mutableStateOf(displayName)
+
+    private var observableStatus by mutableStateOf(DownloadStatus.QUEUED)
+    var status: DownloadStatus
+        get() = observableStatus
+        set(value) {
+            updateElapsedForStatusChange(observableStatus, value)
+            observableStatus = value
+        }
+    private var observableBytesDownloaded by mutableStateOf(0L)
+    var bytesDownloaded: Long
+        get() = observableBytesDownloaded
+        set(value) {
+            updateProgressRate(value)
+            observableBytesDownloaded = value
+        }
     var totalBytes by mutableStateOf(-1L) // -1 = unknown
     var errorMessage by mutableStateOf<String?>(null)
+
+    // The finished file's real content:// (or, pre-Q, file://) Uri — set once, right alongside
+    // MediaStoreOutput.finish() in each of the three downloaders, never touched again after that.
+    // Null for anything not COMPLETED (queued/downloading/failed/canceled never had a finished
+    // file to point at). This is what lets the Hub actually play a completed download locally
+    // instead of only ever re-fetching from the original remote URL.
+    var savedUri by mutableStateOf<Uri?>(null)
+
+    // Empty for anything that isn't a multi-threaded direct-file download in progress — single-
+    // threaded downloads (HLS/DASH always; a direct file whose server didn't support ranged
+    // requests, or where Settings.downloadThreadCount is 1) never populate this at all, which is
+    // exactly how the UI tells the two apart: HubPage falls back to the plain aggregate bar when
+    // this is empty, and shows a divided-into-chunks one when it isn't.
+    val threadProgress = mutableStateListOf<DownloadThreadProgress>()
+
+    /**
+     * Process-local handoff for blob:/data: content. These URLs cannot be fetched by a normal
+     * network worker; the originating Tab attaches a renderer-backed transfer before enqueue.
+     * Deliberately not persisted: blob URLs die with their document, while storing a data URL
+     * would duplicate its entire payload (and potentially private page data) in SharedPreferences.
+     */
+    @Volatile var rendererTransfer: ((Download) -> Unit)? = null
 
     // Checked from the download thread to stop early; not Compose state, and deliberately not
     // read by the UI (status transitioning to CANCELED is what the UI reacts to).
     @Volatile var isCanceled = false
+    @Volatile private var isPaused = false
+    @Volatile private var statusBeforePause = DownloadStatus.DOWNLOADING
+    private val pauseMonitor = Object()
+    private val progressMonitor = Object()
+    private val elapsedMonitor = Object()
+    private var lastProgressValue = 0L
+    private var lastProgressNanos = System.nanoTime()
+    private var smoothedUnitsPerSecond = 0.0
+    private var accumulatedActiveNanos = 0L
+    private var activeSinceNanos: Long? = null
+
+    /** Active transfer/muxing time only; time spent paused or waiting in the queue is excluded. */
+    fun elapsedActiveMillis(): Long = synchronized(elapsedMonitor) {
+        val running = activeSinceNanos?.let { System.nanoTime() - it } ?: 0L
+        (accumulatedActiveNanos + running).coerceAtLeast(0L) / 1_000_000L
+    }
+
+    fun restoreElapsedTime(elapsedMillis: Long) = synchronized(elapsedMonitor) {
+        accumulatedActiveNanos = elapsedMillis.coerceAtLeast(0L) * 1_000_000L
+        activeSinceNanos = if (status.isTimedStage()) System.nanoTime() else null
+    }
+
+    fun resetElapsedTime() = synchronized(elapsedMonitor) {
+        accumulatedActiveNanos = 0L
+        activeSinceNanos = if (status.isTimedStage()) System.nanoTime() else null
+    }
+
+    fun requestPause(): Boolean = synchronized(pauseMonitor) {
+        if (status != DownloadStatus.QUEUED && status != DownloadStatus.DOWNLOADING) return@synchronized false
+        statusBeforePause = status
+        isPaused = true
+        status = DownloadStatus.PAUSED
+        resetProgressClock(keepRate = true)
+        true
+    }
+
+    fun requestResume(): Boolean = synchronized(pauseMonitor) {
+        if (status != DownloadStatus.PAUSED) return@synchronized false
+        isPaused = false
+        status = statusBeforePause
+        resetProgressClock(keepRate = true)
+        pauseMonitor.notifyAll()
+        true
+    }
+
+    /** Restored paused work has no live worker; Queue starts a fresh attempt when resumed. */
+    fun restorePausedState() = synchronized(pauseMonitor) {
+        isPaused = true
+        statusBeforePause = DownloadStatus.DOWNLOADING
+        status = DownloadStatus.PAUSED
+    }
+
+    fun requestCancel() = synchronized(pauseMonitor) {
+        isCanceled = true
+        isPaused = false
+        pauseMonitor.notifyAll()
+    }
+
+    fun enterStage(stage: DownloadStatus) = synchronized(pauseMonitor) {
+        statusBeforePause = stage
+        if (!isPaused) status = stage
+    }
+
+    /** Blocks only the downloader worker, never the main/UI thread. */
+    fun awaitIfPaused() {
+        synchronized(pauseMonitor) {
+            while (isPaused && !isCanceled) pauseMonitor.wait()
+        }
+    }
+
+    /**
+     * Estimates time remaining from a smoothed rate of recent progress updates. For direct files
+     * the units are bytes; for HLS/DASH they are completed segments. The ratio is what matters,
+     * so one estimator correctly serves all three download kinds.
+     */
+    fun estimatedSecondsRemaining(): Long? = synchronized(progressMonitor) {
+        val total = totalBytes
+        val completed = observableBytesDownloaded
+        if (total <= 0L || completed < 0L || completed >= total || smoothedUnitsPerSecond <= 0.0) {
+            return@synchronized null
+        }
+        val idleSeconds = (System.nanoTime() - lastProgressNanos) / 1_000_000_000.0
+        // A paused transfer is intentionally idle: retain its last rate so the frozen remaining
+        // estimate stays visible. For a running transfer, stale progress still means the estimate
+        // is no longer trustworthy and should disappear after 30 seconds.
+        if (idleSeconds > 30.0 && status != DownloadStatus.PAUSED) return@synchronized null
+        kotlin.math.ceil((total - completed) / smoothedUnitsPerSecond).toLong().coerceAtLeast(1L)
+    }
+
+    private fun updateProgressRate(newValue: Long) = synchronized(progressMonitor) {
+        val now = System.nanoTime()
+        if (newValue <= 0L || newValue < lastProgressValue) {
+            lastProgressValue = newValue.coerceAtLeast(0L)
+            lastProgressNanos = now
+            smoothedUnitsPerSecond = 0.0
+            return@synchronized
+        }
+        val delta = newValue - lastProgressValue
+        val elapsedSeconds = (now - lastProgressNanos) / 1_000_000_000.0
+        if (delta > 0L && elapsedSeconds >= 0.05) {
+            val instantaneousRate = delta / elapsedSeconds
+            smoothedUnitsPerSecond = if (smoothedUnitsPerSecond == 0.0) {
+                instantaneousRate
+            } else {
+                (smoothedUnitsPerSecond * 0.7) + (instantaneousRate * 0.3)
+            }
+            lastProgressValue = newValue
+            lastProgressNanos = now
+        }
+    }
+
+    private fun resetProgressClock(keepRate: Boolean) = synchronized(progressMonitor) {
+        lastProgressValue = observableBytesDownloaded
+        lastProgressNanos = System.nanoTime()
+        if (!keepRate) smoothedUnitsPerSecond = 0.0
+    }
+
+    private fun updateElapsedForStatusChange(old: DownloadStatus, new: DownloadStatus) =
+        synchronized(elapsedMonitor) {
+            val wasTimed = old.isTimedStage()
+            val willBeTimed = new.isTimedStage()
+            if (wasTimed && !willBeTimed) {
+                activeSinceNanos?.let { accumulatedActiveNanos += System.nanoTime() - it }
+                activeSinceNanos = null
+            } else if (!wasTimed && willBeTimed) {
+                activeSinceNanos = System.nanoTime()
+            }
+        }
 
     companion object {
         private val idCounter = AtomicLong(0)
@@ -50,3 +233,6 @@ class Download(
         }
     }
 }
+
+private fun DownloadStatus.isTimedStage(): Boolean =
+    this == DownloadStatus.DOWNLOADING || this == DownloadStatus.MUXING

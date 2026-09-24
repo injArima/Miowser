@@ -165,4 +165,140 @@ class DashPlaylistParserTest {
 
         assertTrue(DashPlaylistParser.parse(body, "https://example.com/dash/manifest.mpd").tracks.isEmpty())
     }
+
+    @Test
+    fun `records SegmentBase index initialization ranges and cascaded media URL`() {
+        val body = """
+            <MPD>
+              <BaseURL>cdn/</BaseURL>
+              <Period>
+                <AdaptationSet contentType="video">
+                  <BaseURL>tracks/</BaseURL>
+                  <Representation id="v1" bandwidth="2000000" width="1920" height="1080">
+                    <BaseURL>video.mp4</BaseURL>
+                    <SegmentBase timescale="1000" indexRange="800-999" indexRangeExact="true">
+                      <Initialization range="0-799"/>
+                    </SegmentBase>
+                  </Representation>
+                </AdaptationSet>
+              </Period>
+            </MPD>
+        """.trimIndent()
+
+        val track = DashPlaylistParser.parse(body, "https://example.com/dash/manifest.mpd").tracks.single()
+        val base = track.segmentBase!!
+        assertEquals("https://example.com/dash/cdn/tracks/video.mp4", base.mediaUrl)
+        assertEquals(DashByteRange(800, 999), base.indexRange)
+        assertEquals(DashByteRange(0, 799), base.initializationRange)
+        assertEquals(1000L, base.expectedTimescale)
+        assertTrue(base.indexRangeExact)
+        assertTrue(track.mediaSegments.isEmpty())
+    }
+
+    @Test
+    fun `inherits SegmentBase from the AdaptationSet`() {
+        val body = """
+            <MPD>
+              <Period>
+                <AdaptationSet contentType="audio">
+                  <SegmentBase indexRange="500-599"><Initialization range="0-499"/></SegmentBase>
+                  <Representation id="a1" bandwidth="128000"><BaseURL>audio.mp4</BaseURL></Representation>
+                </AdaptationSet>
+              </Period>
+            </MPD>
+        """.trimIndent()
+
+        val track = DashPlaylistParser.parse(body, "https://example.com/dash/manifest.mpd").tracks.single()
+        assertEquals("audio", track.type)
+        assertEquals(DashByteRange(500, 599), track.segmentBase?.indexRange)
+    }
+
+    @Test
+    fun `keeps separate video and audio SegmentBase representations for muxing`() {
+        val body = """
+            <MPD>
+              <Period>
+                <AdaptationSet contentType="video">
+                  <Representation id="v1" bandwidth="2000000" width="1920" height="1080">
+                    <BaseURL>video/main.mp4</BaseURL>
+                    <SegmentBase timescale="90000" indexRange="900-1099">
+                      <Initialization range="0-899"/>
+                    </SegmentBase>
+                  </Representation>
+                </AdaptationSet>
+                <AdaptationSet contentType="audio">
+                  <Representation id="a1" bandwidth="128000">
+                    <BaseURL>audio/main.mp4</BaseURL>
+                    <SegmentBase timescale="48000" indexRange="500-699">
+                      <Initialization range="0-499"/>
+                    </SegmentBase>
+                  </Representation>
+                </AdaptationSet>
+              </Period>
+            </MPD>
+        """.trimIndent()
+
+        val tracks = DashPlaylistParser.parse(body, "https://example.com/dash/manifest.mpd").tracks
+
+        assertEquals(2, tracks.size)
+        val video = tracks.single { it.type == "video" }.segmentBase!!
+        val audio = tracks.single { it.type == "audio" }.segmentBase!!
+        assertEquals("https://example.com/dash/video/main.mp4", video.mediaUrl)
+        assertEquals(DashByteRange(900, 1099), video.indexRange)
+        assertEquals(90000L, video.expectedTimescale)
+        assertEquals("https://example.com/dash/audio/main.mp4", audio.mediaUrl)
+        assertEquals(DashByteRange(500, 699), audio.indexRange)
+        assertEquals(48000L, audio.expectedTimescale)
+    }
+
+    @Test
+    fun `parses namespace-prefixed SegmentBase manifests`() {
+        val body = """
+            <mpd:MPD xmlns:mpd="urn:mpeg:dash:schema:mpd:2011">
+              <mpd:Period>
+                <mpd:AdaptationSet contentType="video">
+                  <mpd:Representation id="v1" bandwidth="1000000">
+                    <mpd:BaseURL>video.mp4</mpd:BaseURL>
+                    <mpd:SegmentBase indexRange="700-899">
+                      <mpd:Initialization range="0-699"/>
+                    </mpd:SegmentBase>
+                  </mpd:Representation>
+                </mpd:AdaptationSet>
+              </mpd:Period>
+            </mpd:MPD>
+        """.trimIndent()
+
+        val track = DashPlaylistParser.parse(body, "https://example.com/dash/manifest.mpd").tracks.single()
+
+        assertEquals("video", track.type)
+        assertEquals("https://example.com/dash/video.mp4", track.segmentBase?.mediaUrl)
+        assertEquals(DashByteRange(700, 899), track.segmentBase?.indexRange)
+        assertEquals(DashByteRange(0, 699), track.segmentBase?.initializationRange)
+    }
+
+    @Test
+    fun `rejects content protected DASH before choosing representations`() {
+        val body = """
+            <MPD><Period><AdaptationSet contentType="video">
+              <ContentProtection schemeIdUri="urn:uuid:test"/>
+              <Representation id="v1"><BaseURL>video.mp4</BaseURL><SegmentBase indexRange="10-20"/></Representation>
+            </AdaptationSet></Period></MPD>
+        """.trimIndent()
+
+        val manifest = DashPlaylistParser.parse(body, "https://example.com/manifest.mpd")
+        assertTrue(manifest.tracks.isEmpty())
+        assertEquals("DRM-protected DASH streams are not supported", manifest.unsupportedReason)
+    }
+
+    @Test
+    fun `keeps an invalid SegmentBase as a useful validation failure`() {
+        val body = """
+            <MPD><Period><AdaptationSet contentType="video">
+              <Representation id="v1"><BaseURL>video.mp4</BaseURL><SegmentBase indexRange="broken"/></Representation>
+            </AdaptationSet></Period></MPD>
+        """.trimIndent()
+
+        val base = DashPlaylistParser.parse(body, "https://example.com/manifest.mpd").tracks.single().segmentBase!!
+        assertEquals("SegmentBase has an invalid indexRange", base.validationError)
+    }
 }

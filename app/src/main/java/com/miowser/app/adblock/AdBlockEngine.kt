@@ -4,77 +4,120 @@ import android.content.Context
 import android.util.Log
 import android.webkit.WebResourceResponse
 import java.net.URI
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicLong
 
 private const val TAG = "Miowser/AdBlockEngine"
 
 /**
- * Public façade the browser layer talks to. Loads the curated fallback list synchronously
- * (tiny, instant) and the bundled EasyList asset (~78k rules) on a background thread, then
- * answers block/allow + cosmetic-CSS queries. Requests made before EasyList finishes loading
- * are still checked against the curated list, so ad-blocking isn't fully off during the
- * roughly one-time startup parse.
+ * WebView's ad-blocking facade.
+ * Every source is parsed into a fresh state and then published in one atomic swap, so requests
+ * see a complete old or new ruleset while lists change. The small curated fallback exists
+ * synchronously before the larger subscribed sources finish parsing.
  */
 class AdBlockEngine {
-    private val networkEngine = FilterEngine()
-    private val cosmeticByDomain = HashMap<String, MutableList<CosmeticEntry>>()
-    private val cosmeticGeneric = mutableListOf<CosmeticEntry>()
-    private val cosmeticExceptions = HashSet<String>()
-
-    /** A selector plus the domains it's carved out on (see CosmeticRule.excludedDomains) — usually empty. */
+    /** A selector plus the domains it's carved out on (see CosmeticRule.excludedDomains) - usually empty. */
     private data class CosmeticEntry(val selector: String, val excludedDomains: List<String>)
 
-    @Volatile private var loadingStarted = false
+    private data class EngineState(
+        val networkEngine: FilterEngine = FilterEngine(),
+        val cosmeticByDomain: HashMap<String, MutableList<CosmeticEntry>> = HashMap(),
+        val cosmeticGeneric: MutableList<CosmeticEntry> = mutableListOf(),
+        val cosmeticExceptions: HashSet<String> = HashSet()
+    )
+
+    private val reloadExecutor = Executors.newSingleThreadExecutor()
+    private val requestedGeneration = AtomicLong(0)
+    @Volatile private var state = stateWithCuratedFallback()
     @Volatile var isFullyLoaded: Boolean = false
         private set
 
-    init {
-        for (raw in CuratedFallbackList.RULES) {
-            runCatching { FilterListParser.parseNetworkRule(raw, FilterSource.SUBSCRIBED) }
-                .onSuccess { networkEngine.addRule(it) }
+    /** Kept as a compatibility entry point for older callers. */
+    fun loadEasyListInBackground(context: Context) = reloadInBackground(context)
+
+    fun reloadInBackground(context: Context) {
+        val generation = requestedGeneration.incrementAndGet()
+        isFullyLoaded = false
+        reloadExecutor.execute {
+            val built = buildState(context.applicationContext)
+            if (generation == requestedGeneration.get()) {
+                state = built
+                isFullyLoaded = true
+            }
         }
     }
 
-    fun loadEasyListInBackground(context: Context) {
-        if (loadingStarted) return
-        loadingStarted = true
-        Thread({ loadEasyList(context.applicationContext) }, "AdBlockEngine-Load")
-            .apply { isDaemon = true }
-            .start()
+    /** WorkManager already owns a background thread, so it can rebuild synchronously. */
+    internal fun reloadNow(context: Context) {
+        requestedGeneration.incrementAndGet()
+        state = buildState(context.applicationContext)
+        isFullyLoaded = true
     }
 
-    private fun loadEasyList(context: Context) {
+    private fun buildState(context: Context): EngineState {
         val start = System.currentTimeMillis()
+        val built = stateWithCuratedFallback()
+        var networkCount = CuratedFallbackList.RULES.size
+        var cosmeticCount = 0
+        var skippedRegex = 0
+        var skippedMalformed = 0
         try {
-            val text = context.assets.open("easylist.txt").bufferedReader().use { it.readText() }
-            val result = FilterListParser.parse(text, FilterSource.SUBSCRIBED)
-            result.networkRules.forEach(networkEngine::addRule)
-            result.cosmeticRules.forEach(::addCosmeticRule)
-            val elapsed = System.currentTimeMillis() - start
+            AdBlockFilters.enabledSources(context).forEach { source ->
+                val result = FilterListParser.parse(source.text, source.source)
+                result.networkRules.forEach(built.networkEngine::addRule)
+                result.cosmeticRules.forEach { addCosmeticRule(built, it) }
+                networkCount += result.networkRules.size
+                cosmeticCount += result.cosmeticRules.size
+                skippedRegex += result.skippedRegex
+                skippedMalformed += result.skippedMalformed
+            }
             Log.i(
                 TAG,
-                "loaded ${result.networkRules.size} network rules, ${result.cosmeticRules.size} cosmetic rules " +
-                    "(${result.skippedRegex} regex + ${result.skippedMalformed} malformed skipped) in ${elapsed}ms"
+                "loaded $networkCount network rules, $cosmeticCount cosmetic rules " +
+                    "($skippedRegex regex + $skippedMalformed malformed skipped) in " +
+                    "${System.currentTimeMillis() - start}ms"
             )
-        } catch (e: Exception) {
-            Log.e(TAG, "failed to load bundled easylist.txt — ad-blocking limited to curated fallback list", e)
-        } finally {
-            isFullyLoaded = true
+        } catch (error: Exception) {
+            Log.e(TAG, "failed to rebuild filters; keeping curated fallback protection", error)
         }
+        return built
+    }
+
+    private fun stateWithCuratedFallback(): EngineState = EngineState().also { built ->
+        CuratedFallbackList.RULES.forEach { raw ->
+            runCatching { FilterListParser.parseNetworkRule(raw, FilterSource.SUBSCRIBED) }
+                .onSuccess(built.networkEngine::addRule)
+        }
+        // A recurring native-ad rail seen in the wild. The child marker keeps this narrower
+        // than hiding every unrelated component that happens to use the generic fh-wrapper name.
+        addCosmeticRule(
+            built,
+            CosmeticRule(
+                domain = null,
+                selector = ".fh-wrapper:has(.fh-ad-label)",
+                isException = false,
+                source = FilterSource.SUBSCRIBED
+            )
+        )
     }
 
     // internal, not private: unit tests add cosmetic rules directly rather than through the full
     // loadEasyList(Context) path, which needs a real asset file and Android Context neither are
     // available to a plain JVM unit test.
     internal fun addCosmeticRule(rule: CosmeticRule) {
+        addCosmeticRule(state, rule)
+    }
+
+    private fun addCosmeticRule(target: EngineState, rule: CosmeticRule) {
         if (rule.isException) {
-            cosmeticExceptions += "${rule.domain}|${rule.selector}"
+            target.cosmeticExceptions += "${rule.domain}|${rule.selector}"
             return
         }
         val entry = CosmeticEntry(rule.selector, rule.excludedDomains)
         if (rule.domain == null) {
-            cosmeticGeneric += entry
+            target.cosmeticGeneric += entry
         } else {
-            cosmeticByDomain.getOrPut(rule.domain) { mutableListOf() } += entry
+            target.cosmeticByDomain.getOrPut(rule.domain) { mutableListOf() } += entry
         }
     }
 
@@ -88,8 +131,9 @@ class AdBlockEngine {
         val pageHost = hostnameOf(pageUrl) ?: return null
         val requestHost = hostnameOf(requestUrl) ?: return null
         val resourceType = ResourceType.infer(requestUrl, headers, isMainFrame)
+        val current = state
 
-        return when (val decision = networkEngine.classify(requestUrl, requestHost, pageHost, resourceType)) {
+        return when (val decision = current.networkEngine.classify(requestUrl, requestHost, pageHost, resourceType)) {
             is FilterDecision.Block -> {
                 Log.d(TAG, "blocked ($resourceType): $requestUrl [${decision.rule.raw}]")
                 StubResponses.forType(resourceType)
@@ -101,26 +145,34 @@ class AdBlockEngine {
     /** CSS (or empty string) to inject for the given page hostname's cosmetic filters. */
     fun cosmeticCssFor(hostname: String): String {
         if (hostname.isBlank()) return ""
+        val current = state
         val selectors = LinkedHashSet<String>()
-        selectors += applicableSelectors(cosmeticGeneric, hostname)
+        selectors += applicableSelectors(current, current.cosmeticGeneric, hostname)
         var h = hostname
         while (true) {
-            cosmeticByDomain[h]?.let { selectors += applicableSelectors(it, hostname) }
+            current.cosmeticByDomain[h]?.let { selectors += applicableSelectors(current, it, hostname) }
             val dot = h.indexOf('.')
             if (dot == -1) break
             h = h.substring(dot + 1)
         }
         if (selectors.isEmpty()) return ""
-        return selectors.joinToString(",\n") + " { display: none !important; }"
+        // Emit one rule per selector. In a comma-separated selector list, one unsupported or
+        // malformed selector invalidates the entire block and can silently disable every other
+        // cosmetic rule on that page.
+        return selectors.joinToString("\n") { "$it { display: none !important; }" }
     }
 
     // Exclusion is checked against the real page hostname, not against whichever domain-hierarchy
     // level (h, in cosmeticCssFor's walk) happened to match the rule's own inclusion domain —
     // "example.com,~sub.example.com##sel" must not hide on sub.example.com even though "sub." is
     // never itself a key this rule is stored under (it's stored under "example.com").
-    private fun applicableSelectors(entries: List<CosmeticEntry>, hostname: String): List<String> =
+    private fun applicableSelectors(
+        current: EngineState,
+        entries: List<CosmeticEntry>,
+        hostname: String
+    ): List<String> =
         entries
-            .filterNot { "$hostname|${it.selector}" in cosmeticExceptions }
+            .filterNot { "$hostname|${it.selector}" in current.cosmeticExceptions }
             .filterNot { entry -> entry.excludedDomains.any { hostnameMatchesDomain(hostname, it) } }
             .map { it.selector }
 

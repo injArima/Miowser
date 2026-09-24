@@ -17,6 +17,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.miowser.app.downloader.Download
 import com.miowser.app.downloader.DownloadStatus
+import com.miowser.app.downloader.remainingTimeLabel
 import com.miowser.app.ui.SimplePageScaffold
 
 /** Every download this session has queued, with live progress — reads DownloadQueue.downloads directly, so it updates itself. */
@@ -90,12 +91,22 @@ private fun statusLabel(download: Download): String = when (download.status) {
     DownloadStatus.QUEUED -> "Waiting…"
     DownloadStatus.DOWNLOADING -> {
         if (download.kind == com.miowser.app.downloader.DownloadKind.HLS && download.totalBytes > 0) {
-            "Downloading segment ${download.bytesDownloaded}/${download.totalBytes}"
+            buildString {
+                append("Downloading segment ${download.bytesDownloaded}/${download.totalBytes}")
+                download.remainingTimeLabel()?.let { append(" • $it") }
+            }
         } else if (download.totalBytes > 0) {
-            "Downloading… ${(download.bytesDownloaded * 100 / download.totalBytes)}%"
+            buildString {
+                append("Downloading… ${(download.bytesDownloaded * 100 / download.totalBytes)}%")
+                download.remainingTimeLabel()?.let { append(" • $it") }
+            }
         } else {
             "Downloading…"
         }
+    }
+    DownloadStatus.PAUSED -> {
+        val percent = if (download.totalBytes > 0) download.bytesDownloaded * 100 / download.totalBytes else null
+        if (percent != null) "Paused • $percent%" else "Paused"
     }
     DownloadStatus.MUXING -> "Combining into final file…"
     DownloadStatus.COMPLETED -> "Done — saved to Downloads/Miowser"

@@ -17,33 +17,25 @@ private const val TAG = "Miowser/Downloader"
 private const val CONNECT_TIMEOUT_MS = 10_000
 private const val READ_TIMEOUT_MS = 15_000
 
-/**
- * The real HLS download pipeline: resolve a master playlist to its best variant (the same one
- * MediaProbe already picked for the grabber's own resolution display, so what downloads matches
- * what the user saw), fetch that leaf playlist's full segment list, download every segment
- * concurrently to a private cache dir, decrypt each one if AES-128-encrypted (HlsAes128Decryptor),
- * remux the set into a single .mp4 (SegmentMuxer), and finally copy that into the public
- * Downloads collection. Segments never touch the public output location themselves — only the
- * final muxed file does.
- */
+/** HLS segment downloading with a durable, verified cache that survives process death. */
 object HlsDownloader {
     private val segmentExecutor = Executors.newFixedThreadPool(4)
 
     fun run(context: Context, download: Download) {
-        val cacheDir = File(context.cacheDir, "hls_download_${download.id}")
+        val recoveryDir = DownloadRecoveryStore.directory(context, download.id)
         try {
-            download.status = DownloadStatus.DOWNLOADING
-            cacheDir.mkdirs()
+            download.enterStage(DownloadStatus.DOWNLOADING)
+            download.awaitIfPaused()
+            if (download.isCanceled) return cancel(context, download)
 
             val requestedBody = fetchText(download.sourceUrl, download)
                 ?: return fail(download, "Could not fetch playlist")
-
-            // A master playlist has no segments of its own — follow its best variant (mirrors
-            // ManifestSniffer's own resolution pick from the grab-time probe) to get to one.
             val sniffed = ManifestSniffer.sniff(requestedBody, download.sourceUrl)
             val (leafBody, leafUrl) = if (sniffed.isMasterOrMultiVariant) {
-                val variantUrl = sniffed.bestVariantUrl ?: return fail(download, "Master playlist has no usable variant")
-                val variantBody = fetchText(variantUrl, download) ?: return fail(download, "Could not fetch variant playlist")
+                val variantUrl = sniffed.bestVariantUrl
+                    ?: return fail(download, "Master playlist has no usable variant")
+                val variantBody = fetchText(variantUrl, download)
+                    ?: return fail(download, "Could not fetch variant playlist")
                 variantBody to variantUrl
             } else {
                 requestedBody to download.sourceUrl
@@ -51,93 +43,136 @@ object HlsDownloader {
 
             val playlist = HlsPlaylistParser.parseLeaf(leafBody, leafUrl)
             if (playlist.segments.isEmpty()) return fail(download, "Playlist has no segments")
-
-            val segmentFiles = downloadAllSegments(playlist.segments, cacheDir, download) ?: return
-            if (download.isCanceled) {
-                download.status = DownloadStatus.CANCELED
-                return
+            val finalFileName = "${download.outputBaseName}.mp4"
+            val fingerprint = recoveryFingerprint(playlist.segments.map(::segmentIdentity))
+            val existing = DownloadRecoveryStore.load(context, download.id)
+            val reusable = existing?.takeIf {
+                it.transferKind == RecoveryTransferKind.HLS_SEGMENTS &&
+                    it.itemFingerprint == fingerprint &&
+                    it.itemCount == playlist.segments.size &&
+                    it.outputFileName == finalFileName
             }
+            if (existing != null && reusable == null) DownloadRecoveryStore.clear(context, download.id)
+            recoveryDir.mkdirs()
+            val recoverySession = DownloadRecoverySession(
+                context,
+                reusable ?: DownloadRecoveryPlan(
+                    downloadId = download.id,
+                    transferKind = RecoveryTransferKind.HLS_SEGMENTS,
+                    sourceFingerprint = recoveryFingerprint(listOf(leafUrl, leafBody)),
+                    etag = null,
+                    lastModified = null,
+                    totalLength = -1L,
+                    outputFileName = finalFileName,
+                    mimeType = "video/mp4",
+                    itemFingerprint = fingerprint,
+                    itemCount = playlist.segments.size
+                )
+            )
 
-            download.status = DownloadStatus.MUXING
-            val muxedFile = File(cacheDir, "muxed.mp4")
+            val segmentFiles = downloadAllSegments(context, playlist.segments, download, recoverySession)
+                ?: return if (download.isCanceled) cancel(context, download) else Unit
+            if (download.isCanceled) return cancel(context, download)
+
+            download.enterStage(DownloadStatus.MUXING)
+            download.awaitIfPaused()
+            if (download.isCanceled) return cancel(context, download)
+            val muxedFile = File(recoveryDir, "muxed.mp4")
             try {
                 SegmentMuxer.mux(segmentFiles, muxedFile.absolutePath)
             } catch (e: SegmentMuxer.MuxException) {
                 return fail(download, e.message ?: "Muxing failed")
             }
 
-            val opened = MediaStoreOutput.open(context, "${download.outputBaseName}.mp4", "video/mp4")
+            download.displayName = finalFileName
+            val uri = MediaStoreOutput.publishFile(context, muxedFile, finalFileName, "video/mp4")
                 ?: return fail(download, "Could not create output file")
-            muxedFile.inputStream().use { input -> opened.stream.use { output -> input.copyTo(output) } }
-            MediaStoreOutput.finish(context, opened.uri, "video/mp4")
-
+            MediaStoreOutput.legacyFileName(uri)?.let { download.displayName = it }
+            download.savedUri = uri
             download.status = DownloadStatus.COMPLETED
+            DownloadRecoveryStore.clear(context, download.id)
         } catch (e: Exception) {
             Log.d(TAG, "HLS download failed for ${download.sourceUrl}: ${e.message}")
-            fail(download, e.message ?: "Unknown error")
-        } finally {
-            cacheDir.deleteRecursively()
+            if (download.isCanceled) cancel(context, download) else fail(download, e.message ?: "Unknown error")
         }
     }
 
-    /** Downloads every segment concurrently on a shared 4-thread pool; returns null (having already failed the download) on any error. */
-    private fun downloadAllSegments(segments: List<HlsSegment>, cacheDir: File, download: Download): List<File>? {
-        val segmentFiles = arrayOfNulls<File>(segments.size)
-        val downloadedCount = AtomicInteger(0)
-        val failure = AtomicReference<String?>(null)
-        val latch = CountDownLatch(segments.size)
-        download.totalBytes = segments.size.toLong() // progress unit is "segments" here, not bytes — see Download's doc comment
+    /** Existing verified files are counted immediately; workers are started only for missing items. */
+    private fun downloadAllSegments(
+        context: Context,
+        segments: List<HlsSegment>,
+        download: Download,
+        recoverySession: DownloadRecoverySession
+    ): List<File>? {
+        val files = segments.indices.map { DownloadRecoveryStore.itemFile(context, download.id, it) }
+        val completed = AtomicInteger(files.count { DownloadRecoveryStore.isVerifiedItem(it, verifyDigest = true) })
+        download.totalBytes = segments.size.toLong()
+        download.bytesDownloaded = completed.get().toLong()
+        val missing = files.indices.filterNot { DownloadRecoveryStore.isVerifiedItem(files[it], verifyDigest = true) }
+        if (missing.isEmpty()) return files
 
-        for ((index, segment) in segments.withIndex()) {
+        val failure = AtomicReference<String?>(null)
+        val latch = CountDownLatch(missing.size)
+        missing.forEach { index ->
             segmentExecutor.execute {
+                val target = files[index]
+                val temporary = File(target.parentFile, "${target.name}.tmp")
                 try {
+                    download.awaitIfPaused()
                     if (!download.isCanceled && failure.get() == null) {
-                        val file = File(cacheDir, "seg_$index.ts")
-                        downloadSegment(segment, file, download)
-                        segmentFiles[index] = file
-                        download.bytesDownloaded = downloadedCount.incrementAndGet().toLong()
+                        temporary.delete()
+                        downloadSegment(segments[index], temporary, download)
+                        if (!download.isCanceled) {
+                            DownloadRecoveryStore.commitVerifiedItem(temporary, target)
+                            download.bytesDownloaded = completed.incrementAndGet().toLong()
+                            recoverySession.updateElapsed(download.elapsedActiveMillis())
+                        }
                     }
                 } catch (e: Exception) {
                     failure.compareAndSet(null, e.message ?: "Segment download failed")
                 } finally {
+                    temporary.delete()
                     latch.countDown()
                 }
             }
         }
         latch.await()
-
+        if (download.isCanceled) return null
         failure.get()?.let {
             fail(download, it)
             return null
         }
-        return segmentFiles.filterNotNull()
+        return files.takeIf { it.all { file -> DownloadRecoveryStore.isVerifiedItem(file, verifyDigest = true) } }
+            ?: run { fail(download, "A downloaded segment could not be verified"); null }
     }
 
     private fun downloadSegment(segment: HlsSegment, outputFile: File, download: Download) {
         val connection = openConnection(segment.url, download)
         try {
             if (connection.responseCode !in 200..299) throw Exception("Segment HTTP ${connection.responseCode}")
-            val bytes = connection.inputStream.use { it.readBytes() }
+            val bytes = connection.inputStream.use { it.readBytesPausable(download) }
             val finalBytes = if (segment.keyUri != null) {
                 val key = fetchBytes(segment.keyUri, download) ?: throw Exception("Could not fetch decryption key")
                 HlsAes128Decryptor.decrypt(bytes, key, segment.ivHex, segment.sequenceNumber)
-            } else {
-                bytes
-            }
+            } else bytes
             outputFile.writeBytes(finalBytes)
         } finally {
             connection.disconnect()
         }
     }
 
-    // Keys are tiny and shared across many segments; a real cache would avoid re-fetching the
-    // same key per segment, but with only 4 segment threads and almost always a single key
-    // covering the whole playlist, the duplicate fetches this causes are cheap enough not to be
-    // worth the extra synchronization for a first version.
+    private fun segmentIdentity(segment: HlsSegment): String = listOf(
+        segment.url,
+        segment.keyUri.orEmpty(),
+        segment.ivHex.orEmpty(),
+        segment.sequenceNumber.toString()
+    ).joinToString("|")
+
     private fun fetchBytes(url: String, download: Download): ByteArray? {
         val connection = openConnection(url, download)
         return try {
-            if (connection.responseCode !in 200..299) null else connection.inputStream.use { it.readBytes() }
+            if (connection.responseCode !in 200..299) null
+            else connection.inputStream.use { it.readBytesPausable(download) }
         } finally {
             connection.disconnect()
         }
@@ -146,7 +181,8 @@ object HlsDownloader {
     private fun fetchText(url: String, download: Download): String? {
         val connection = openConnection(url, download)
         return try {
-            if (connection.responseCode !in 200..299) null else connection.inputStream.bufferedReader().readText()
+            if (connection.responseCode !in 200..299) null
+            else connection.inputStream.use { it.readBytesPausable(download).toString(Charsets.UTF_8) }
         } finally {
             connection.disconnect()
         }
@@ -156,10 +192,16 @@ object HlsDownloader {
         (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = CONNECT_TIMEOUT_MS
             readTimeout = READ_TIMEOUT_MS
+            instanceFollowRedirects = true
             setRequestProperty("User-Agent", download.userAgent)
             setRequestProperty("Referer", download.referer)
             download.cookies?.let { setRequestProperty("Cookie", it) }
         }
+
+    private fun cancel(context: Context, download: Download) {
+        DownloadRecoveryStore.clear(context, download.id)
+        download.status = DownloadStatus.CANCELED
+    }
 
     private fun fail(download: Download, message: String) {
         download.errorMessage = message

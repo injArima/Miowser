@@ -133,8 +133,8 @@ object FilterListParser {
         val domainsPart = line.substring(0, separator.first)
         val selector = line.substring(separator.last + 1)
         if (selector.isBlank()) return emptyList()
-        if (selector.contains(":has(") || selector.contains(":xpath(") ||
-            selector.contains(":matches-css") || selector.contains(":style(")
+        if (selector.contains(":xpath(") || selector.contains(":matches-css") ||
+            selector.contains(":style(")
         ) {
             return emptyList() // extended/procedural cosmetic syntax not supported
         }

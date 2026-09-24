@@ -18,7 +18,16 @@ data class ManifestInfo(
     // parser, which this line-scanning sniffer deliberately isn't.
     val bestVariantUrl: String?, // HLS master only: absolute URL of the [resolution]'s own leaf playlist
     val firstSegmentUrl: String?, // HLS leaf only: absolute URL of its first media segment
-    val firstSegmentDurationSeconds: Double? // HLS leaf only: that one segment's own #EXTINF duration
+    val firstSegmentDurationSeconds: Double?, // HLS leaf only: that one segment's own #EXTINF duration
+    val sampleSegments: List<ManifestSegmentSample> = emptyList(),
+    val declaredSizeBytes: Long? = null,
+    val bitrateBitsPerSecond: Long? = null
+)
+
+data class ManifestSegmentSample(
+    val url: String,
+    val durationSeconds: Double,
+    val declaredByteLength: Long? = null
 )
 
 /**
@@ -35,27 +44,13 @@ object ManifestSniffer {
     private val HLS_BANDWIDTH = Regex("BANDWIDTH=(\\d+)")
     private val HLS_RESOLUTION = Regex("RESOLUTION=(\\d+)x(\\d+)")
     private val HLS_EXTINF = Regex("#EXTINF:([\\d.]+)")
-    private val DASH_REPRESENTATION = Regex("<Representation\\b")
-    private val DASH_CONTENT_PROTECTION = Regex("<ContentProtection\\b")
-    private val DASH_DURATION = Regex("mediaPresentationDuration=\"PT(?:([\\d.]+)H)?(?:([\\d.]+)M)?(?:([\\d.]+)S)?\"")
-    // Assumes width= appears before height= within a Representation tag, which real DASH
-    // manifests consistently do; a full XML attribute parser would be needed to lift that
-    // assumption, which is more than this line-scanning sniffer takes on elsewhere. The leading
-    // \s is load-bearing, not decorative: without it this also matches inside "bandwidth=" (a
-    // real attribute on the same tag), since "width=" is a substring of "bandwidth=" — caught by
-    // a test fixture that put both attributes on the same Representation, like a real manifest
-    // does.
-    private val DASH_RESOLUTION = Regex("\\swidth=\"(\\d+)\"[^>]*\\sheight=\"(\\d+)\"")
-
-    // Multiple representations each advertise their own resolution; the highest one is the most
-    // useful single number to surface (matches what a user means by "the video's resolution" for
-    // an adaptive stream — its best available quality). HLS has its own variant-aware version of
-    // this below, since it also needs to remember *which* variant that was (for bestVariantUrl).
-    private fun Regex.highestResolution(body: String): String? =
-        findAll(body)
-            .mapNotNull { m -> m.groupValues[1].toIntOrNull()?.let { w -> m.groupValues[2].toIntOrNull()?.let { h -> w to h } } }
-            .maxByOrNull { (w, h) -> w * h }
-            ?.let { (w, h) -> "${w}x${h}" }
+    private val DASH_ROOT = Regex(
+        "^(?:<\\?xml[^>]*>\\s*)?(?:<!--.*?-->\\s*)*<(?:[A-Za-z_][\\w.-]*:)?MPD(?:\\s|>)",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+    )
+    private val HLS_AVERAGE_BANDWIDTH = Regex("AVERAGE-BANDWIDTH=(\\d+)")
+    private val HLS_BYTE_RANGE = Regex("#EXT-X-BYTERANGE:(\\d+)(?:@\\d+)?")
+    private val HLS_MAP_BYTE_RANGE = Regex("BYTERANGE=\"(\\d+)(?:@\\d+)?\"")
 
     // internal, not private: HlsPlaylistParser (the downloader's full segment-list parser, as
     // opposed to this file's lightweight detection-time sniff) resolves segment/key URIs the
@@ -81,7 +76,7 @@ object ManifestSniffer {
             // prolog IS present — within just the first slice of the body rather than an
             // unbounded scan, so an unrelated document that merely mentions "<MPD" somewhere deep
             // inside (a forum post about MPEG-DASH, say) doesn't false-positive.
-            trimmed.startsWith("<MPD") || (trimmed.startsWith("<?xml") && trimmed.take(500).contains("<MPD")) -> sniffDash(body)
+            DASH_ROOT.find(trimmed.take(500)) != null -> sniffDash(body, manifestUrl)
             else -> ManifestInfo(
                 confirmedType = null,
                 isMasterOrMultiVariant = false,
@@ -113,21 +108,43 @@ object ManifestSniffer {
 
         var segmentCount = 0
         var totalSegmentDuration = 0.0
+        var totalDeclaredBytes = 0L
+        var allSegmentsHaveDeclaredSize = true
+        var mapDeclaredBytes = 0L
+        var hasMap = false
+        var mapHasDeclaredSize = true
+        var mapCount = 0
         var firstSegmentUrl: String? = null
         var firstSegmentDuration: Double? = null
         var pendingSegmentDuration: Double? = null
+        var pendingSegmentByteLength: Long? = null
+        val segmentSamples = mutableListOf<ManifestSegmentSample>()
 
         for (rawLine in body.lineSequence()) {
             val line = rawLine.trim()
             if (line.isEmpty()) continue
             when {
                 line.startsWith("#EXT-X-STREAM-INF") -> {
-                    pendingBandwidth = HLS_BANDWIDTH.find(line)?.groupValues?.get(1)?.toLongOrNull()
+                    pendingBandwidth = HLS_AVERAGE_BANDWIDTH.find(line)?.groupValues?.get(1)?.toLongOrNull()
+                        ?: HLS_BANDWIDTH.find(line)?.groupValues?.get(1)?.toLongOrNull()
                     pendingResolution = HLS_RESOLUTION.find(line)?.let { "${it.groupValues[1]}x${it.groupValues[2]}" }
                     awaitingVariantUri = true
                 }
                 line.startsWith("#EXTINF") -> {
                     pendingSegmentDuration = HLS_EXTINF.find(line)?.groupValues?.get(1)?.toDoubleOrNull()
+                }
+                line.startsWith("#EXT-X-BYTERANGE") -> {
+                    pendingSegmentByteLength = HLS_BYTE_RANGE.find(line)?.groupValues?.get(1)?.toLongOrNull()
+                }
+                line.startsWith("#EXT-X-MAP") -> {
+                    hasMap = true
+                    mapCount++
+                    val mapLength = HLS_MAP_BYTE_RANGE.find(line)?.groupValues?.get(1)?.toLongOrNull()
+                    // Multiple initialization maps can change over a playlist. Treat that layout
+                    // as estimated rather than risk claiming an exact size while deduplicating or
+                    // double-counting map bytes incorrectly.
+                    mapHasDeclaredSize = mapCount == 1 && mapLength != null
+                    mapDeclaredBytes = mapLength ?: 0L
                 }
                 !line.startsWith("#") -> when {
                     awaitingVariantUri -> {
@@ -143,8 +160,23 @@ object ManifestSniffer {
                             firstSegmentUrl = resolveUrl(manifestUrl, line)
                             firstSegmentDuration = duration
                         }
+                        val byteLength = pendingSegmentByteLength
+                        if (byteLength == null) allSegmentsHaveDeclaredSize = false
+                        else totalDeclaredBytes = runCatching { Math.addExact(totalDeclaredBytes, byteLength) }
+                            .getOrElse {
+                                allSegmentsHaveDeclaredSize = false
+                                totalDeclaredBytes
+                            }
+                        segmentSamples.add(
+                            ManifestSegmentSample(
+                                url = resolveUrl(manifestUrl, line),
+                                durationSeconds = duration,
+                                declaredByteLength = byteLength
+                            )
+                        )
                         segmentCount++
                         pendingSegmentDuration = null
+                        pendingSegmentByteLength = null
                     }
                 }
             }
@@ -157,6 +189,15 @@ object ManifestSniffer {
         )
 
         val isLeaf = variants.isEmpty()
+        val representativeSamples = if (segmentSamples.size <= 3) {
+            segmentSamples
+        } else {
+            listOf(segmentSamples.first(), segmentSamples[segmentSamples.size / 2], segmentSamples.last())
+                .distinctBy { it.url to it.durationSeconds }
+        }
+        val declaredSize = if (isLeaf && segmentCount > 0 && allSegmentsHaveDeclaredSize && (!hasMap || mapHasDeclaredSize)) {
+            runCatching { Math.addExact(totalDeclaredBytes, mapDeclaredBytes) }.getOrNull()
+        } else null
         return ManifestInfo(
             confirmedType = MediaType.HLS,
             isMasterOrMultiVariant = variants.isNotEmpty(),
@@ -166,29 +207,31 @@ object ManifestSniffer {
             resolution = best?.resolution,
             bestVariantUrl = best?.url,
             firstSegmentUrl = if (isLeaf) firstSegmentUrl else null,
-            firstSegmentDurationSeconds = if (isLeaf) firstSegmentDuration else null
+            firstSegmentDurationSeconds = if (isLeaf) firstSegmentDuration else null,
+            sampleSegments = if (isLeaf) representativeSamples else emptyList(),
+            declaredSizeBytes = declaredSize,
+            bitrateBitsPerSecond = best?.bandwidth
         )
     }
 
-    private fun sniffDash(body: String): ManifestInfo {
-        val variantCount = DASH_REPRESENTATION.findAll(body).count()
-        val isEncrypted = DASH_CONTENT_PROTECTION.containsMatchIn(body)
-        val duration = DASH_DURATION.find(body)?.let { m ->
-            val hours = m.groupValues[1].toDoubleOrNull() ?: 0.0
-            val minutes = m.groupValues[2].toDoubleOrNull() ?: 0.0
-            val seconds = m.groupValues[3].toDoubleOrNull() ?: 0.0
-            hours * 3600 + minutes * 60 + seconds
-        }
+    private fun sniffDash(body: String, manifestUrl: String): ManifestInfo {
+        val manifest = DashPlaylistParser.parse(body, manifestUrl)
+        val variantCount = manifest.representationCount
+        val isEncrypted = manifest.unsupportedReason?.contains("DRM", ignoreCase = true) == true
+        val bitrate = listOfNotNull(manifest.maxVideoBandwidth, manifest.maxAudioBandwidth)
+            .takeIf { it.isNotEmpty() }
+            ?.fold(0L) { total, value -> runCatching { Math.addExact(total, value) }.getOrDefault(Long.MAX_VALUE) }
         return ManifestInfo(
             confirmedType = MediaType.DASH,
             isMasterOrMultiVariant = variantCount > 1,
             variantCount = variantCount,
             isEncrypted = isEncrypted,
-            durationSeconds = duration,
-            resolution = DASH_RESOLUTION.highestResolution(body),
+            durationSeconds = manifest.durationSeconds,
+            resolution = manifest.maxVideoResolution,
             bestVariantUrl = null,
             firstSegmentUrl = null,
-            firstSegmentDurationSeconds = null
+            firstSegmentDurationSeconds = null,
+            bitrateBitsPerSecond = bitrate
         )
     }
 }

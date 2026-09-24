@@ -14,16 +14,36 @@ private const val TAG = "Miowser/DocStart"
 // added to the page later too, since the cascade applies live — no sweep pass needed.
 private const val COSMETIC_INJECTION_SCRIPT = """
     (function() {
-        try {
-            var bridge = window.MiowserAdBlock;
-            if (!bridge) return;
-            var css = bridge.cssFor(document.location.hostname);
-            if (!css) return;
-            var style = document.createElement('style');
-            style.setAttribute('data-miowser-adblock', '1');
-            style.textContent = css;
-            (document.head || document.documentElement).appendChild(style);
-        } catch (e) {}
+        function applyMiowserCosmetics() {
+            try {
+                var bridge = window.MiowserAdBlock;
+                if (!bridge) return true;
+                var css = bridge.cssFor(document.location.hostname);
+                var style = document.querySelector('style[data-miowser-adblock="1"]');
+                if (!css) {
+                    if (style) style.remove();
+                    return true;
+                }
+                var target = document.head || document.documentElement;
+                if (!target) return false;
+                if (!style) {
+                    style = document.createElement('style');
+                    style.setAttribute('data-miowser-adblock', '1');
+                    target.appendChild(style);
+                }
+                style.textContent = css;
+                return true;
+            } catch (e) {
+                return true;
+            }
+        }
+
+        if (!applyMiowserCosmetics()) {
+            var observer = new MutationObserver(function() {
+                if (applyMiowserCosmetics()) observer.disconnect();
+            });
+            observer.observe(document, { childList: true, subtree: true });
+        }
     })();
 """
 
@@ -42,4 +62,9 @@ fun WebView.installCosmeticInjectionScript() {
         return
     }
     WebViewCompat.addDocumentStartJavaScript(this, COSMETIC_INJECTION_SCRIPT, setOf("*"))
+}
+
+/** Re-applies or removes cosmetic CSS on an already-open page after filter settings change. */
+fun WebView.applyCosmeticFiltersNow() {
+    evaluateJavascript(COSMETIC_INJECTION_SCRIPT, null)
 }
