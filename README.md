@@ -11,6 +11,6 @@ Open the project in Android Studio, or run `./gradlew :app:assembleDebug`. Relea
 
 ## Privacy and publication
 
-The [privacy policy](docs/privacy-policy.html) is available in the app from the Hub menu. The [publication handoff](docs/PUBLICATION_2026-10-13.md) records the remaining signing, store, and device-check steps. Downloaded media uses public device storage; backup files are user-selected and unencrypted.
+The [public privacy policy](https://injarima.github.io/Miowser/privacy-policy.html) is available in the app from the Hub menu. The [publication handoff](docs/PUBLICATION_2026-10-13.md) records the remaining signing, store, and device-check steps. Downloaded media uses public device storage; backup files are user-selected and unencrypted.
 
 This repository does not contain a release signing key. No source-code license has been selected yet; publication of the repository does not grant additional reuse rights.

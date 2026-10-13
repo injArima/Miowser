@@ -19,7 +19,7 @@ The release Gradle variant intentionally has no local signing config. `assembleR
 
 ## Privacy policy and store presence
 
-The single source of policy text is `app/src/main/assets/privacy_policy.txt`; the Hub menu opens it in-app. Run `scripts/generate_privacy_html.py` after policy edits to update `docs/privacy-policy.html`. Publish that HTML at a stable, publicly accessible HTTPS URL (for example, a project Pages site), then use that exact URL in the Play listing and Data safety section. A local HTML file is not a public URL. Verify it loads without sign-in and on a phone browser. Reconcile the Play Data safety answers with the final build and hosted policy.
+The single source of policy text is `app/src/main/assets/privacy_policy.txt`; the Hub menu opens it in-app. Run `scripts/generate_privacy_html.py` after policy edits to update `docs/privacy-policy.html`. GitHub Pages publishes it at **https://injarima.github.io/Miowser/privacy-policy.html**; use that URL in the Play listing and Data safety section. The public page loaded in a browser on 13 October 2026. Verify it on a phone browser during the device release gate. Reconcile the Play Data safety answers with the final build and hosted policy.
 
 Android cloud backup and device-transfer extraction are disabled in the manifest; the app's explicit Backup & Restore feature is the intended way to copy settings and references. Verify this behavior during the signed-release device pass.
 

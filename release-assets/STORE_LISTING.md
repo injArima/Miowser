@@ -26,7 +26,7 @@ Some websites and media formats may not be compatible. Site availability and con
 
 ## Console declarations to review
 
-- Privacy policy: publish `docs/privacy-policy.html` at a stable public HTTPS URL, then enter that URL in Play Console. The same policy is in Hub → three-dot menu → Privacy policy.
+- Privacy policy: enter `https://injarima.github.io/Miowser/privacy-policy.html` in Play Console. The same policy is in Hub → three-dot menu → Privacy policy.
 - Data safety: complete from the app's actual browser, WebView, permission, download, and backup behavior. The app has no developer-operated account, analytics, or advertising SDK in the audited source, but websites and configured search/media/filter providers receive requests. Confirm the form's questions against the final build and policy.
 - Permissions: `REQUEST_INSTALL_PACKAGES` serves the browser's user-initiated open-downloaded-APK flow. Submit the declaration and demonstrate that flow if Console requires it. Camera, microphone, location, notifications, and Android 8–9 storage are optional/use-specific.
 - Complete content rating, target audience, app access, advertising, and other current Play declarations in Console. This draft does not choose a rating or audience on the publisher's behalf.
