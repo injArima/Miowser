@@ -1,0 +1,35 @@
+# Miowser privacy policy
+
+Last updated: 13 October 2026. Publisher: 1nja. Privacy contact: injamamul2k@gmail.com.
+
+# What Miowser does
+
+Miowser is a web browser with media detection, playback, downloads, bookmarks, a Library, and optional backups. The app does not require a Miowser account. We do not operate an analytics or advertising collection service in the app.
+
+# Information on your device
+
+Miowser stores browser settings, site permissions, normal browsing history and tabs, bookmarks, speed dials, media and download references, playback progress, chosen subtitle files, filter settings, and related artwork on your device. Websites may store cookies and other web data through Android WebView. Private tabs are excluded from normal history and tab restoration, but they use the same underlying WebView storage while open; they are not a separate anonymous browser profile. Miowser clears shared private-session data when the private session ends or is recovered after interruption.
+
+# Network activity
+
+When you browse, search, stream, download, or use subtitles, your device connects to the websites, search engines, and media hosts you choose. Those parties may receive your IP address, requests, and browser data under their own policies. If ad-block filter updates are enabled, Miowser contacts the filter-list provider, including EasyList. Miowser does not send your browsing history or Library to a Miowser-operated server.
+
+# Permissions
+
+Miowser uses network access to browse and transfer media. It may request notifications for download progress; camera, microphone, or approximate location when a website asks and you grant it; storage access on Android 8–9 for public downloads; and permission to install an APK only when you choose to open a downloaded package. You can revoke device permissions in Android Settings and review site permissions in Miowser.
+
+# Downloads and backups
+
+Downloaded media is saved in public device storage and can remain after Miowser is uninstalled. If you enable or create backups, Miowser writes settings, bookmarks, Library references, speed dials, filters, and selected subtitle/artwork assets to the folder you choose. Backups exclude normal history, open tabs, private data, cookies, login data, and the downloaded media files. Backup ZIP files are not encrypted; other apps or services with access to your chosen folder may access them.
+
+# Control, retention, and deletion
+
+You can clear browsing data, remove Library and download records, and delete backups or downloaded files using the app or your device's file manager. Clearing app storage or uninstalling removes app-private records and caches, but does not automatically erase media or backups saved in public or user-selected storage. Websites may retain data according to their own policies.
+
+# Sharing and security
+
+Miowser shares data with websites, search providers, media hosts, and Android apps only as needed for actions you initiate, such as browsing, downloading, opening, or sharing a file. App-private records use Android's app storage isolation. Network security also depends on the sites and connections you use. Miowser does not sell personal data.
+
+# Changes and contact
+
+This policy may change as Miowser changes. Updated text and its date will appear here. For privacy questions, contact injamamul2k@gmail.com.

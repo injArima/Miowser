@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Debug-only: real Miowser browsing (real internet sites) never needs local-network
+         access; this exists purely so debug builds can be pointed at a local dev/test server. -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+    <application android:networkSecurityConfig="@xml/network_security_config_debug" />
+</manifest>

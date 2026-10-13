@@ -1,0 +1,29 @@
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+/app/build
+/benchmark/build
+/app/release
+*.jks
+*.keystore
+*.p12
+*-signed.aab
+*-signed.apk
+*.hprof
+
+# Local optimization checkpoints, downloaded tooling, emulator data, and raw diagnostics.
+/.local/
+/.kotlin/
+
+# Local release previews and captures. Store artwork lives in release-assets/.
+/*.apk
+/*.png
+/*.trace
+/*.pdf

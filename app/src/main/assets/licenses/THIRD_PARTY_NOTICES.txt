@@ -1,0 +1,15 @@
+# Third-party notices
+
+Miowser uses AndroidX, Jetpack Compose, Media3, Kotlin, and other open-source libraries. Their licensing information is available with the corresponding upstream projects and distributed artifacts.
+
+# EasyList
+
+The bundled EasyList filter snapshot is from the EasyList authors: https://easylist.to/. Source: https://github.com/easylist/easylist. License: https://easylist.to/pages/licence.html. EasyList is available under GPL-3.0-or-later or CC BY-SA 3.0-or-later; Miowser attributes it under the Creative Commons option. The bundled file retains its source header and may differ from current upstream updates.
+
+# Public Suffix List
+
+The bundled Public Suffix List is from https://publicsuffix.org/list/ and carries its Mozilla Public License 2.0 header. License: https://www.mozilla.org/MPL/2.0/.
+
+# Subtitle fonts
+
+Bundled Roboto, Arimo (Helvetica-like), Nunito Sans (Avenir-like), Fredoka One, and Lobster font assets are licensed under the SIL Open Font License 1.1. Their individual OFL texts and source links are included in this app under assets/licenses/fonts/.

@@ -1,0 +1,17 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity android:name="com.miowser.app.benchmark.TabControllerProbeActivity"
+            android:exported="true" android:launchMode="singleTop" />
+        <activity android:name="com.miowser.app.benchmark.ActiveTransferFixtureActivity" android:exported="true" />
+        <profileable android:shell="true" />
+        <!-- Exists only in the isolated benchmark APK, never debug or release. -->
+        <activity android:name="com.miowser.app.benchmark.FixtureActivity"
+            android:exported="true" android:process=":fixture" />
+        <activity android:name="com.miowser.app.benchmark.PersistenceProbeActivity"
+            android:exported="true" />
+        <activity android:name="com.miowser.app.benchmark.StartupProbeActivity"
+            android:exported="true" />
+        <activity android:name="com.miowser.app.benchmark.StartupBarrierProbeActivity"
+            android:exported="true" />
+    </application>
+</manifest>

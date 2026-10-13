@@ -1,0 +1,13 @@
+Public Suffix List
+Source: https://publicsuffix.org/list/public_suffix_list.dat
+Upstream version: 2026-09-24_13-26-36_UTC
+Upstream commit: a179a48c465e818cfd8d626691cb317985da87fb
+Retrieved: 2026-09-26
+
+The accompanying public_suffix_list.dat is an unmodified upstream snapshot,
+including its notices and both ICANN and PRIVATE sections. It is covered by
+the Mozilla Public License 2.0: https://mozilla.org/MPL/2.0/.
+Source and update instructions: https://publicsuffix.org/list/.
+
+The application bundles this snapshot; it does not fetch the list at runtime.
+When updating it, preserve its license/header and update this notice.
