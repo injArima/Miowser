@@ -1,5 +1,12 @@
 # Video Assistant — step 1 prototype
 
+**Historical prototype — retired at the user's request.** The user confirmed
+pause/speed worked and reported seek failure; gestures were not wired in this
+prototype. The lab activity, sources, fixtures and separate generated build have
+been removed. These notes preserve the findings, not a currently available lab.
+Continue with [step 2 in the main app](video-assistant-step-2-2026-10-24.md).
+The prototype source remains recoverable from GitHub checkpoint `67ce45c`.
+
 ## Scope
 
 This is the **additional** browser-backed player prototype approved after the

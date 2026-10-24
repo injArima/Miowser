@@ -16,12 +16,15 @@ merges. The approved seven-step sequence is: isolated continuity prototype;
 active-video tracking; floating button; core controls; supported additional
 controls; transitions/recovery; performance/regression hardening.
 
-Step 1 has an isolated debug/development implementation with direct, cross-origin
-iframe and MediaSource fixtures. It reuses the existing transport/timeline UI,
-without changing normal browser fullscreen or native playback. Android runtime
-continuity is **pending the user's device checks**, not established by local
-compilation/unit tests. See
-[step 1 implementation and device checklist](video-assistant-step-1-2026-10-24.md).
+Step 1 was an isolated prototype. The user confirmed pause/speed, reported seek
+failure, and requested removal of the extra development app/build. Gestures had
+not been connected. Its sources/build wiring have been removed; findings remain
+in [the historical step 1 report](video-assistant-step-1-2026-10-24.md).
+
+Step 2 now tracks live video sessions inside normal tabs, alongside existing
+media discovery, with no playback rerouting or new controls. Local compilation
+and contract checks passed; actual WebView/website behavior remains for the
+user's device checks. See [the step 2 report](video-assistant-step-2-2026-10-24.md).
 
 Samsung's inspected **Video Assistant → Fullscreen** path controls a browser-backed
 media session. It does not first ask the user to select a detected URL and open
