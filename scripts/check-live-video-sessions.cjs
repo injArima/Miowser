@@ -9,6 +9,9 @@ const source = kotlin.match(/"""([\s\S]*?)"""/)[1];
 const buttonSource = fs.readFileSync(path.join(__dirname,
   '../app/src/main/java/com/miowser/app/browser/video/VideoAssistantButtonScript.kt'), 'utf8')
   .match(/"""([\s\S]*?)"""/)[1];
+const controlSource = fs.readFileSync(path.join(__dirname,
+  '../app/src/main/java/com/miowser/app/browser/video/BrowserVideoControlScript.kt'), 'utf8')
+  .match(/"""([\s\S]*?)"""/)[1];
 
 class Events {
   constructor() { this.events = new Map(); }
@@ -48,6 +51,9 @@ function video(source = 'blob:https://site.test/video') {
     tagName: 'VIDEO', nodeType: 1, isConnected: true, currentSrc: source, src: source, srcObject: null,
     currentTime: 12, duration: 45, paused: false, ended: false, muted: false,
     playbackRate: 1, readyState: 4, videoWidth: 1280, videoHeight: 720, controls: false,
+    seeking: false,
+    play() { this.paused = false; this.dispatch('play'); return {then(resolve) {resolve();}}; },
+    pause() { this.paused = true; this.dispatch('pause'); },
     seekable: { length: 1, start: () => 0, end: () => 45 },
     buffered: { length: 1, start: () => 0, end: () => 20 },
     getBoundingClientRect: () => ({ left: 0, top: 10, width: 640, height: 360 }),
@@ -98,7 +104,7 @@ function fixture(initial = [video()]) {
     performance: { now: () => time }, setTimeout: fn => { timers.set(next, fn); return next++; },
     clearTimeout: id => timers.delete(id), setInterval: fn => { intervals.set(next, fn); return next++; },
     clearInterval: id => intervals.delete(id) });
-  function run() { vm.runInContext(buttonSource + source, context); }
+  function run() { vm.runInContext(buttonSource + controlSource + source, context); }
   run();
   function bind(extra = {}) {
     const hello = messages.find(m => m.type === 'hello');
@@ -126,8 +132,18 @@ function fixture(initial = [video()]) {
   function click(trusted = true) {
     button().dispatch('click', { isTrusted: trusted, preventDefault() {}, stopPropagation() {} });
   }
+  let commandId = 0;
+  function control(action, value, credentials = {}) {
+    const hello = messages.find(m => m.type === 'hello');
+    const active = messages.filter(m => m.type === 'fullscreenActive').at(-1);
+    const id = ++commandId;
+    bridge.onmessage({data: JSON.stringify({type: 'control', documentId: hello.documentId,
+      navigation: 3, token: 'frame-token', elementId: active?.elementId, attempt: active?.attempt,
+      commandId: id, action, value, ...credentials})});
+    return id;
+  }
   return { initial, window, document, messages, timers, intervals, children, intersections,
-    run, bind, flush, mutate, state, button, policy, click, render, elements, animationFrames, time: () => time };
+    run, bind, flush, mutate, state, button, policy, click, render, elements, animationFrames, control, time: () => time };
 }
 let checks = 0;
 function check(name, test) { test(); checks++; console.log('PASS ' + name); }
@@ -370,5 +386,107 @@ check('main-frame navigation reset hides the old document action immediately', (
   const bridge = f.window.MiowserLiveVideo;
   bridge.onmessage({data: JSON.stringify({type: 'reset', documentId: doc})});
   assert.equal(f.button().hidden, true);
+});
+
+function playingFixture() { const f = enabledFixture(); f.click(); return f; }
+function ack(f, id) { return f.messages.filter(m => m.type === 'controlAck' && m.commandId === id).at(-1); }
+check('rich controls only replace browser controls after explicit attachment', () => {
+  const f = playingFixture(); assert.equal(f.initial[0].controls, true);
+  const id = f.control('richUi', 1);
+  assert.equal(ack(f, id).ok, true); assert.equal(f.initial[0].controls, false);
+  f.control('richUi', 0); assert.equal(f.initial[0].controls, true);
+});
+check('browser controls restore on exit after using the rich UI', () => {
+  const f = playingFixture(); f.control('richUi', 1);
+  f.document.fullscreenElement = null; f.document.dispatch('fullscreenchange');
+  assert.equal(f.initial[0].controls, false); // Original website had custom inline controls.
+  assert.equal(f.messages.filter(m => m.type === 'fullscreenEnded').length, 1);
+});
+check('transport commands control only the owned video and report immediately', () => {
+  const f = playingFixture(), v = f.initial[0];
+  const pause = f.control('pause'); assert.equal(v.paused, true); assert.equal(ack(f, pause).ok, true);
+  const play = f.control('play'); assert.equal(v.paused, false); assert.equal(ack(f, play).ok, true);
+  assert.equal(v.currentTime, 12); assert.equal(v.currentSrc, 'blob:https://site.test/video');
+});
+check('seek works with a finite VOD duration even when seekable is empty', () => {
+  const f = playingFixture(); f.initial[0].seekable.length = 0;
+  const id = f.control('seek', 25);
+  assert.equal(f.initial[0].currentTime, 25); assert.equal(ack(f, id).ok, true);
+});
+check('skip uses fresh DOM time instead of the older native sample', () => {
+  const f = playingFixture(); f.initial[0].currentTime = 18;
+  const id = f.control('skip', 10);
+  assert.equal(f.initial[0].currentTime, 28); assert.equal(ack(f, id).ok, true);
+});
+check('seek targets are clamped around holes in the actual live window', () => {
+  const f = playingFixture();
+  f.initial[0].seekable = {length: 2, start: i => i === 0 ? 5 : 20, end: i => i === 0 ? 10 : 30};
+  f.control('seek', 14); assert.equal(f.initial[0].currentTime, 10);
+  f.control('seek', 18); assert.equal(f.initial[0].currentTime, 20);
+  f.control('seek', 100); assert.equal(f.initial[0].currentTime, 30);
+});
+check('unknown live media does not invent a seekable window', () => {
+  const f = playingFixture(); f.initial[0].seekable.length = 0; f.initial[0].duration = Infinity;
+  const id = f.control('seek', 20);
+  assert.equal(ack(f, id).ok, false); assert.equal(f.initial[0].currentTime, 12);
+});
+check('asynchronous seek waits for seeked and retains the requested pause state', () => {
+  const f = playingFixture(); f.initial[0].seeking = true; f.initial[0].paused = true;
+  const id = f.control('seek', 20);
+  assert.equal(ack(f, id), undefined);
+  assert(f.messages.some(m => m.type === 'controlStarted' && m.commandId === id));
+  f.initial[0].seeking = false; f.initial[0].dispatch('seeked');
+  assert.equal(ack(f, id).ok, true); assert.equal(f.initial[0].paused, true);
+});
+check('ignored seek setters produce an error rather than a false success', () => {
+  const f = playingFixture();
+  Object.defineProperty(f.initial[0], 'currentTime', {get: () => 12, set() {}});
+  const id = f.control('seek', 25); assert.equal(ack(f, id), undefined);
+  f.flush(); assert.equal(ack(f, id).ok, false);
+});
+check('a newer seek cancels the old confirmation listener', () => {
+  const f = playingFixture(); f.initial[0].seeking = true;
+  const first = f.control('seek', 20), second = f.control('seek', 30);
+  assert.equal(ack(f, first).ok, false); assert.equal(ack(f, second), undefined);
+  f.initial[0].seeking = false; f.initial[0].dispatch('seeked');
+  assert.equal(ack(f, second).ok, true); assert.equal(f.initial[0].currentTime, 30);
+});
+check('rate changes acknowledge the real applied speed', () => {
+  const f = playingFixture(); const id = f.control('rate', 1.5);
+  assert.equal(ack(f, id).ok, true); assert.equal(f.initial[0].playbackRate, 1.5);
+  const bad = f.control('rate', 8); assert.equal(ack(f, bad).ok, false);
+  assert.equal(f.initial[0].playbackRate, 1.5);
+});
+check('wrong-frame, element, attempt and navigation commands are ignored', () => {
+  const f = playingFixture();
+  f.control('pause', undefined, {token: 'other-frame'});
+  f.control('pause', undefined, {elementId: 'other-video'});
+  f.control('pause', undefined, {attempt: 999});
+  f.control('pause', undefined, {navigation: 1});
+  assert.equal(f.initial[0].paused, false);
+});
+check('commands cannot affect inline media after fullscreen exit', () => {
+  const f = playingFixture(); f.document.fullscreenElement = null; f.document.dispatch('fullscreenchange');
+  f.control('pause'); assert.equal(f.initial[0].paused, false);
+});
+check('ordinary site-created fullscreen never becomes an add-on control target', () => {
+  const f = enabledFixture(); f.document.fullscreenElement = f.initial[0]; f.document.dispatch('fullscreenchange');
+  assert.equal(f.messages.filter(m => m.type === 'fullscreenActive').length, 0);
+  f.control('pause'); assert.equal(f.initial[0].paused, false);
+});
+check('command replies preserve same-URL video identities and do not drop sibling videos', () => {
+  const f = enabledFixture([video(), video()]); f.click();
+  const id = f.control('pause'); assert.equal(ack(f, id).videos.length, 2);
+  assert.equal(new Set(ack(f, id).videos.map(v => v.elementId)).size, 2);
+});
+check('pagehide releases seek listeners and sends no late acknowledgement', () => {
+  const f = playingFixture(); f.initial[0].seeking = true;
+  const id = f.control('seek', 25); f.window.dispatch('pagehide');
+  f.initial[0].seeking = false; f.initial[0].dispatch('seeked'); f.flush();
+  assert.equal(ack(f, id), undefined); assert.equal(f.timers.size, 0);
+});
+check('replayed commands cannot reapply a previous pause', () => {
+  const f = playingFixture(); const first = f.control('pause'); f.control('play');
+  f.control('pause', undefined, {commandId: first}); assert.equal(f.initial[0].paused, false);
 });
 console.log(checks + ' live-video script checks passed; no device tests were run.');

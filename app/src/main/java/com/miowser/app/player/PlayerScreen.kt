@@ -1956,7 +1956,7 @@ private fun PlaybackSpeedIndicator(speed: Float) {
 }
 
 @Composable
-private fun PlayerCenterControls(
+internal fun PlayerCenterControls(
     isPlaying: Boolean,
     isBuffering: Boolean,
     playlistActive: Boolean,
@@ -1965,7 +1965,8 @@ private fun PlayerCenterControls(
     onReplay: () -> Unit,
     onPlayPause: () -> Unit,
     onForward: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    seekEnabled: Boolean = true
 ) {
     Row(
         modifier = modifier,
@@ -1973,6 +1974,7 @@ private fun PlayerCenterControls(
         verticalAlignment = Alignment.CenterVertically
     ) {
         PlayerTransportButton(Icons.Rounded.Replay10, "Rewind 10 seconds", onReplay,
+            enabled = seekEnabled,
             size = if (playlistActive) 48.dp else 56.dp,
             iconSize = if (playlistActive) 31.dp else 36.dp)
         if (playlistActive) PlayerTransportButton(
@@ -2004,6 +2006,7 @@ private fun PlayerCenterControls(
             Icons.Rounded.SkipNext, "Next video", { onNextVideo?.invoke() },
             enabled = onNextVideo != null, size = 40.dp, iconSize = 27.dp)
         PlayerTransportButton(Icons.Rounded.Forward10, "Forward 10 seconds", onForward,
+            enabled = seekEnabled,
             size = if (playlistActive) 48.dp else 56.dp,
             iconSize = if (playlistActive) 31.dp else 36.dp)
     }
@@ -2216,7 +2219,7 @@ private fun PlayerTimerContent(timeline: PlayerTimelineState, modifier: Modifier
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PlayerBufferedTimeline(
+internal fun PlayerBufferedTimeline(
     positionMs: Long,
     bufferedPositionMs: Long,
     durationMs: Long,
@@ -2973,7 +2976,7 @@ private fun PlayerTrackChoiceRow(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RotationPlayerButton(
+internal fun RotationPlayerButton(
     isLandscape: Boolean,
     locked: Boolean,
     onRotate: () -> Unit,
@@ -3006,7 +3009,7 @@ private fun RotationPlayerButton(
 }
 
 @Composable
-private fun RoundPlayerButton(
+internal fun RoundPlayerButton(
     icon: ImageVector,
     contentDescription: String,
     onClick: () -> Unit,

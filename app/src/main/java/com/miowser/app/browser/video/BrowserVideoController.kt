@@ -1,0 +1,124 @@
+package com.miowser.app.browser.video
+
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+internal enum class BrowserVideoAction(val wireName: String, val family: String) {
+    PLAY("play", "transport"), PAUSE("pause", "transport"), SEEK("seek", "seek"),
+    SKIP("skip", "seek"), RATE("rate", "rate"), RICH_UI("richUi", "ui"), SNAPSHOT("snapshot", "snapshot")
+}
+
+internal data class BrowserVideoCommand(val owner: LiveVideoId, val attempt: Long,
+    val action: BrowserVideoAction, val value: Double? = null)
+
+internal data class BrowserSeekWindow(val startMs: Long, val endMs: Long) {
+    val durationMs: Long get() = (endMs - startMs).coerceAtLeast(0)
+}
+
+internal fun LiveVideoState.browserSeekWindow(): BrowserSeekWindow? = when {
+    seekable.isNotEmpty() -> BrowserSeekWindow(seekable.minOf { it.startMs }, seekable.maxOf { it.endMs })
+    durationMs != null && durationMs > 0 && readyState >= 1 -> BrowserSeekWindow(0, durationMs)
+    else -> null
+}
+
+internal data class BrowserVideoPlaybackState(
+    val session: LiveVideoSession? = null,
+    val attempt: Long = 0,
+    val pendingSeekMs: Long? = null,
+    val message: String? = null
+) {
+    val canSeek: Boolean get() = session?.state?.browserSeekWindow()?.durationMs?.let { it > 0 } == true
+}
+
+/** UI-facing contract for this add-on; the existing Media3 player keeps its own backend. */
+internal interface BrowserPlaybackControls {
+    val state: StateFlow<BrowserVideoPlaybackState>
+    fun playPause()
+    fun skip(deltaMs: Long)
+    fun seekTo(positionMs: Long)
+    fun setSpeed(speed: Double)
+    fun setRichUi(attached: Boolean)
+    fun clearMessage()
+}
+
+/** Main-owner state. Commands never contain a URL and can only address the bound fullscreen video. */
+internal class BrowserVideoController : BrowserPlaybackControls {
+    private val mutable = MutableStateFlow(BrowserVideoPlaybackState())
+    override val state = mutable.asStateFlow()
+    private var sender: ((BrowserVideoCommand) -> Boolean)? = null
+    private var desiredPlaying: Boolean? = null
+
+    fun connect(sender: (BrowserVideoCommand) -> Boolean) { this.sender = sender }
+    fun attach(session: LiveVideoSession, attempt: Long) {
+        if (mutable.value.session?.id == session.id && mutable.value.attempt == attempt) {
+            sample(session)
+        } else {
+            desiredPlaying = null
+            mutable.value = BrowserVideoPlaybackState(session, attempt)
+        }
+    }
+    fun sample(session: LiveVideoSession) {
+        if (mutable.value.session?.id != session.id) return
+        if (desiredPlaying == session.state.playing) desiredPlaying = null
+        mutable.value = mutable.value.copy(session = session)
+    }
+    fun detach() { desiredPlaying = null; mutable.value = BrowserVideoPlaybackState() }
+    fun disconnect() { detach(); sender = null }
+
+    override fun playPause() {
+        val sample = mutable.value.session?.state ?: return
+        val target = !(desiredPlaying ?: sample.playing)
+        desiredPlaying = target
+        if (!send(if (target) BrowserVideoAction.PLAY else BrowserVideoAction.PAUSE)) desiredPlaying = null
+    }
+    override fun skip(deltaMs: Long) {
+        if (!mutable.value.canSeek) return
+        val position = mutable.value.session?.state?.positionMs ?: return
+        val window = mutable.value.session?.state?.browserSeekWindow() ?: return
+        val delta = deltaMs.coerceIn(-60_000, 60_000)
+        mutable.value = mutable.value.copy(pendingSeekMs = (position + delta).coerceIn(window.startMs, window.endMs))
+        // The page applies this delta to its fresh currentTime, not this sampled clock value.
+        send(BrowserVideoAction.SKIP, delta / 1000.0)
+    }
+    override fun seekTo(positionMs: Long) {
+        val sample = mutable.value.session?.state ?: return
+        val window = sample.browserSeekWindow() ?: return
+        val target = sample.seekTarget(positionMs) ?: positionMs.coerceIn(window.startMs, window.endMs)
+        mutable.value = mutable.value.copy(pendingSeekMs = target)
+        send(BrowserVideoAction.SEEK, target / 1000.0)
+    }
+    override fun setSpeed(speed: Double) {
+        if (speed.isFinite() && speed in 0.25..3.0) send(BrowserVideoAction.RATE, speed)
+    }
+    override fun setRichUi(attached: Boolean) {
+        send(BrowserVideoAction.RICH_UI, if (attached) 1.0 else 0.0)
+    }
+    override fun clearMessage() { mutable.value = mutable.value.copy(message = null) }
+
+    fun started(action: BrowserVideoAction) {
+        if (action.family == "seek" && mutable.value.pendingSeekMs != null) {
+            mutable.value = mutable.value.copy(pendingSeekMs = mutable.value.session?.state?.positionMs)
+        }
+    }
+
+    fun completed(action: BrowserVideoAction, ok: Boolean) {
+        if (mutable.value.session == null) return
+        if (action.family == "transport") desiredPlaying = null
+        mutable.value = mutable.value.copy(
+            pendingSeekMs = if (action.family == "seek") null else mutable.value.pendingSeekMs,
+            message = if (ok) null else when (action.family) {
+                "seek" -> "The website didn't confirm that seek. Try another position."
+                "rate" -> "The website couldn't apply that playback speed."
+                else -> "The website couldn't complete that player action."
+            })
+    }
+
+    private fun send(action: BrowserVideoAction, value: Double? = null): Boolean {
+        val current = mutable.value
+        val owner = current.session?.id ?: return false
+        val sent = sender?.invoke(BrowserVideoCommand(owner, current.attempt, action, value)) == true
+        if (!sent) completed(action, false)
+        return sent
+    }
+}

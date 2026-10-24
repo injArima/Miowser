@@ -87,8 +87,8 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             record.interacted = true; record.lastInteraction = performance.now();
             api.interacted();
             pending = true;
-            restore = {video: video, controls: video.controls};
-            // Until step 4 supplies rich controls, retain a usable browser fullscreen player.
+            restore = {video: video, record: record, attempt: api.entering(record), controls: video.controls};
+            // Keep browser controls until the native rich overlay confirms it is attached.
             video.controls = true;
             hide();
             try {
@@ -184,7 +184,12 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             });
         }
         function fullscreenChanged() {
-            if (restore && document.fullscreenElement !== restore.video) { pending = false; restoreControls(); }
+            if (restore && document.fullscreenElement === restore.video) {
+                api.fullscreen(restore.record, restore.attempt, true);
+            } else if (restore) {
+                api.fullscreen(restore.record, restore.attempt, false);
+                pending = false; restoreControls();
+            }
             schedule();
         }
         document.addEventListener('fullscreenchange', fullscreenChanged);
@@ -197,6 +202,15 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 schedule();
             },
             schedule: schedule,
+            owner: function () {
+                return restore && document.fullscreenElement === restore.video ? restore : null;
+            },
+            rich: function (elementId, attempt, attached) {
+                if (!restore || restore.record.id !== elementId || restore.attempt !== attempt ||
+                    document.fullscreenElement !== restore.video || !restore.video.isConnected) return false;
+                restore.video.controls = !attached;
+                return true;
+            },
             destroy: function () {
                 disposed = true;
                 if (frame !== null) window.cancelAnimationFrame(frame);

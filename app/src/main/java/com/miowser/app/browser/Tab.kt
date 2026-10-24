@@ -49,6 +49,7 @@ import com.miowser.app.grabber.installVideoSnifferScript
 import com.miowser.app.browser.video.LiveVideoSession
 import com.miowser.app.browser.video.LiveVideoTracker
 import com.miowser.app.browser.video.VideoAssistantButtonPolicy
+import com.miowser.app.browser.video.BrowserVideoController
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -217,6 +218,9 @@ class Tab(
     private val detectionIndexes = mutableMapOf<String, Int>()
     private var grabberBridge: GrabberBridge? = null
     private var liveVideoTracker: LiveVideoTracker? = null
+    internal val browserVideoPlayer = BrowserVideoController()
+    internal fun startBrowserVideoFullscreen() { liveVideoTracker?.onNativeFullscreenShown() }
+    internal fun finishBrowserVideoFullscreen() { liveVideoTracker?.onNativeFullscreenHidden() }
     private var videoButtonPolicy = VideoAssistantButtonPolicy()
     internal fun updateVideoAssistantButton(policy: VideoAssistantButtonPolicy) {
         if (videoButtonPolicy == policy) return
@@ -806,7 +810,7 @@ class Tab(
             )
             installVideoSnifferScript() // must also run before loadUrl()
             // Add-on telemetry only; the existing grabber and playback entry points stay intact.
-            liveVideoTracker = LiveVideoTracker(this@Tab.id, this, liveVideoState, videoButtonPolicy,
+            liveVideoTracker = LiveVideoTracker(this@Tab.id, this, liveVideoState, videoButtonPolicy, browserVideoPlayer,
                 onFullscreenFailure = {
                     if (alive.get() && videoButtonPolicy.enabled) android.widget.Toast.makeText(tabContext,
                         "This page couldn't open video fullscreen. Its original player is still available.",
@@ -1043,6 +1047,7 @@ class Tab(
 
                 override fun onHideCustomView() {
                     if (!alive.get()) return
+                    liveVideoTracker?.onNativeFullscreenHidden()
                     onFullscreenVideoHidden(this@Tab.id)
                 }
 

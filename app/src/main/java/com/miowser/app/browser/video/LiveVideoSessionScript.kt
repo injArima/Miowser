@@ -12,6 +12,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
     var binding = null, timer = null, heartbeat = null, observer = null;
     var intersection = null, resize = null, running = false, lastSent = -1000;
     var assistant = null;
+    var controls = null, fullscreenSerial = 0;
     var removed = new Set(), listeners = [];
     var MAX_VIDEOS = 8, UPDATE_MS = 500;
 
@@ -51,7 +52,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             elementId: record.id, source: kind === 'data' || source.length > 8192 ? null : source,
             sourceKind: kind, position: finite(video.currentTime), duration: finite(video.duration),
             playing: !video.paused && !video.ended, ended: !!video.ended,
-            buffering: !video.paused && video.readyState < 3, muted: !!video.muted,
+            buffering: !video.paused && (video.readyState < 3 || !!video.seeking), muted: !!video.muted,
             speed: finite(video.playbackRate), width: video.videoWidth || 0, height: video.videoHeight || 0,
             visible: visible, intersection: visible ? record.ratio : 0,
             bounds: {left: finite(rect.left), top: finite(rect.top), width: finite(rect.width),
@@ -62,8 +63,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         record.interacted = false;
         return result;
     }
-    function flush() {
-        timer = null;
+    function packet(type, extra) {
         if (!running || !binding) return;
         var states = [];
         videos.forEach(function (record) {
@@ -71,12 +71,18 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             else unwatch(record);
         });
         // Keep string-sized payloads bounded even when a page uses very long signed URLs.
-        var message = {type: 'state', documentId: documentId, navigation: binding.navigation,
+        var message = {type: type, documentId: documentId, navigation: binding.navigation,
             token: binding.token, sequence: sequence++, videos: states, removed: Array.from(removed)};
+        if (extra) Object.keys(extra).forEach(function (key) { message[key] = extra[key]; });
         if (JSON.stringify(message).length > 24576) states.forEach(function (state) { state.source = null; });
         removed.clear();
-        lastSent = performance.now();
         send(message);
+    }
+    function flush() {
+        timer = null;
+        if (!running || !binding) return;
+        packet('state');
+        lastSent = performance.now();
         if (videos.size === 0) {
             send({type: 'retire', documentId: documentId, navigation: binding.navigation, token: binding.token});
             binding = null;
@@ -155,9 +161,22 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             records: function () { return Array.from(videos.values()); },
             bound: function () { return running && binding !== null; },
             interacted: schedule,
+            entering: function () { return ++fullscreenSerial; },
+            fullscreen: function (record, attempt, active) {
+                packet(active ? 'fullscreenActive' : 'fullscreenEnded', {elementId: record.id, attempt: attempt});
+                if (!active && controls) controls.release();
+            },
             failed: function () {
                 if (running && binding) send({type: 'fullscreenError', documentId: documentId,
                     navigation: binding.navigation, token: binding.token});
+            }
+        });
+        if (window.__miowserCreateVideoControls) controls = window.__miowserCreateVideoControls({
+            owner: function () { return assistant ? assistant.owner() : null; },
+            rich: function (id, attempt, attached) { return assistant && assistant.rich(id, attempt, attached); },
+            reply: function (type, command, ok) {
+                packet(type, {commandId: command.commandId, elementId: command.elementId,
+                    attempt: command.attempt, ok: ok});
             }
         });
         if (window.IntersectionObserver) intersection = new IntersectionObserver(function (entries) {
@@ -218,6 +237,8 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         if (binding) send({type: 'retire', documentId: documentId,
             navigation: binding.navigation, token: binding.token});
         running = false;
+        if (controls) controls.destroy();
+        controls = null;
         if (assistant) assistant.destroy();
         assistant = null;
         if (timer !== null) clearTimeout(timer);
@@ -248,6 +269,11 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             if (message.type === 'buttonPolicy' && binding && message.documentId === documentId &&
                 message.navigation === binding.navigation && message.token === binding.token) {
                 if (assistant) assistant.policy(message.button);
+                return;
+            }
+            if (message.type === 'control' && binding && message.documentId === documentId &&
+                message.navigation === binding.navigation && message.token === binding.token) {
+                if (controls) controls.receive(message);
                 return;
             }
             if (message.type !== 'bind' || message.documentId !== documentId ||

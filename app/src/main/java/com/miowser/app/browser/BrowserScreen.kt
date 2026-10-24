@@ -106,6 +106,7 @@ import com.miowser.app.adblock.AdBlockFilters
 import com.miowser.app.adblock.SiteProtection
 import com.miowser.app.bookmarks.BookmarkList
 import com.miowser.app.browser.video.VideoAssistantButtonPolicy
+import com.miowser.app.browser.video.BrowserVideoPlayerOverlay
 import com.miowser.app.downloader.Download
 import com.miowser.app.downloader.DownloadConflictReason
 import com.miowser.app.downloader.DownloadedFileOpener
@@ -298,6 +299,7 @@ fun BrowserScreen(
     fun exitWebFullscreen() {
         val current = fullscreenVideo ?: return
         fullscreenVideo = null
+        tabController.tabs.firstOrNull { it.id == current.tabId }?.finishBrowserVideoFullscreen()
         (current.view.parent as? ViewGroup)?.removeView(current.view)
         current.callback.onCustomViewHidden()
     }
@@ -447,6 +449,7 @@ fun BrowserScreen(
         if (ownerId == activeTabId && !showingHub && activeScreen == null && playbackRequest == null) {
             exitWebFullscreen()
             fullscreenVideo = WebFullscreenVideo(ownerId, view, callback)
+            tabController.tabs.firstOrNull { it.id == ownerId }?.startBrowserVideoFullscreen()
         } else {
             callback.onCustomViewHidden()
         }
@@ -2963,20 +2966,25 @@ fun BrowserScreen(
             fullscreen.tabId == activeTabId && !showingHub && activeScreen == null && playbackRequest == null
         }?.let { fullscreen ->
             key(fullscreen.view) {
-                AndroidView(
-                    modifier = Modifier.fillMaxSize().zIndex(2f),
-                    factory = { hostContext ->
-                        FrameLayout(hostContext).apply {
-                            setBackgroundColor(android.graphics.Color.BLACK)
-                            (fullscreen.view.parent as? ViewGroup)?.removeView(fullscreen.view)
-                            addView(fullscreen.view, FrameLayout.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT
-                            ))
-                        }
-                    },
-                    onRelease = { host -> host.removeAllViews() }
-                )
+                Box(Modifier.fillMaxSize().zIndex(2f)) {
+                    AndroidView(
+                        modifier = Modifier.fillMaxSize(),
+                        factory = { hostContext ->
+                            FrameLayout(hostContext).apply {
+                                setBackgroundColor(android.graphics.Color.BLACK)
+                                (fullscreen.view.parent as? ViewGroup)?.removeView(fullscreen.view)
+                                addView(fullscreen.view, FrameLayout.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT
+                                ))
+                            }
+                        },
+                        onRelease = { host -> host.removeAllViews() }
+                    )
+                    tabs.firstOrNull { it.id == fullscreen.tabId }?.let { owner ->
+                        BrowserVideoPlayerOverlay(owner.browserVideoPlayer, owner.title, ::exitWebFullscreen)
+                    }
+                }
             }
         }
     }
