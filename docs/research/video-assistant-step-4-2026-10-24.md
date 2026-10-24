@@ -1,5 +1,8 @@
 # Video Assistant step 4 — browser-backed core player controls
 
+Follow-up: the user verified this step works perfectly. Supported additional
+controls are implemented in [step 5](video-assistant-step-5-2026-10-24.md).
+
 ## Result
 
 Videos opened with the floating Miowser action now receive a core player overlay

@@ -34,9 +34,15 @@ checklist](video-assistant-step-3-2026-10-24.md).
 
 The user confirmed step 3 works perfectly. Step 4 adds an owned browser-backed
 controller and reuses the existing transport/timeline/speed/rotation UI, while
-keeping native playback independent. Local checks passed; actual controls and
-seeking still need the user's device checks. See
+keeping native playback independent. Local checks passed, and the user confirmed
+step 4 works perfectly. See
 [the step 4 report](video-assistant-step-4-2026-10-24.md).
+
+Step 5 adds the shared gestures, temporary 2× hold, brightness/volume, mute,
+Fit/Zoom/Fill, control lock, exposed HTML caption/audio selection and explicit
+browser-owned PiP. Local checks and the normal debug APK build passed; device
+checks remain with the user. Unsupported native-only features retain their
+existing routes. See [the step 5 report and checklist](video-assistant-step-5-2026-10-24.md).
 
 Samsung's inspected **Video Assistant → Fullscreen** path controls a browser-backed
 media session. It does not first ask the user to select a detected URL and open
