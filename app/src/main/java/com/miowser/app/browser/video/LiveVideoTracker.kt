@@ -38,7 +38,6 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     private var pruneScheduled = false
     private var buttonPolicy = initialButtonPolicy
     private var lastFailureAt = -10_000L
-    private var toolbarTicket: String? = null
     private data class Owner(val id: LiveVideoId, val attempt: Long)
     private data class Pending(val id: Long, val command: BrowserVideoCommand, val timeout: Runnable)
     private var owner: Owner? = null
@@ -94,7 +93,6 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     }
 
     fun onNavigationStarted() {
-        toolbarTicket = null
         accepting = false
         onNativeFullscreenHidden("The page changed. Return to the website to open its current video.")
         channels.forEach { (proxy, channel) ->
@@ -118,36 +116,6 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     fun activeVideo(): LiveVideoSession? {
         registry.prune(SystemClock.elapsedRealtime(), protectedOwner())
         return registry.active()
-    }
-
-    /** Arms only this frame's current video; fullscreen still requires a real page tap. */
-    fun armToolbarEntry(target: BrowserVideoToolbarTarget): String? {
-        if (!buttonPolicy.enabled || !accepting || retired || nativeFullscreen || owner != null) return null
-        registry.prune(SystemClock.elapsedRealtime())
-        val session = registry.snapshot().firstOrNull { it.id == target.id } ?: return null
-        if (session.state.sourceRevision != target.sourceRevision ||
-            browserVideoToolbarTarget(registry.snapshot()) != target) return null
-        cancelToolbarEntry()
-        val entry = channels.entries.firstOrNull { it.value.frameId == target.id.frameId &&
-            it.value.document == target.id.documentId && it.value.navigation == target.id.navigation } ?: return null
-        val ticket = UUID.randomUUID().toString()
-        return runCatching {
-            entry.key.postMessage(JSONObject().put("type", "armToolbarEntry").put("documentId", entry.value.document)
-                .put("navigation", entry.value.navigation).put("token", entry.value.token)
-                .put("elementId", target.id.elementId).put("sourceRevision", target.sourceRevision).toString())
-            toolbarTicket = ticket
-            ticket
-        }.getOrNull()
-    }
-
-    fun cancelToolbarEntry(ticket: String? = null) {
-        if (ticket != null && ticket != toolbarTicket) return
-        toolbarTicket = null
-        channels.forEach { (proxy, channel) ->
-            runCatching { proxy.postMessage(JSONObject().put("type", "cancelToolbarEntry")
-                .put("documentId", channel.document).put("navigation", channel.navigation)
-                .put("token", channel.token).toString()) }
-        }
     }
 
     private fun receive(text: String, origin: String, mainFrame: Boolean, proxy: JavaScriptReplyProxy) {
@@ -299,7 +267,6 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     }
 
     fun onHostPaused(pip: Boolean) {
-        cancelToolbarEntry()
         cancelRecovery()
         recovery.pause()
         ownerMessage("suspendFullscreen", pip = pip)
@@ -450,12 +417,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
             ranges(json.optJSONArray("buffered")), json.optInt("readyState").coerceIn(0, 4),
             json.optLong("sourceRevision").coerceAtLeast(0), json.optBoolean("interacted"),
             tracks("captions", 16), tracks("audioTracks", 8),
-            BrowserVideoScale.entries.firstOrNull { it.css == json.optString("scale") } ?: BrowserVideoScale.FIT,
-            when (json.optString("assistantAction")) {
-                "row" -> VideoAssistantAction.ROW
-                "toolbar" -> VideoAssistantAction.TOOLBAR
-                else -> VideoAssistantAction.NONE
-            })
+            BrowserVideoScale.entries.firstOrNull { it.css == json.optString("scale") } ?: BrowserVideoScale.FIT)
     }
 
     companion object {

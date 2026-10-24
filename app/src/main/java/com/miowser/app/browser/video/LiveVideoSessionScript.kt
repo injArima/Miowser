@@ -86,8 +86,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             bounds: {left: finite(rect.left), top: finite(rect.top), width: finite(rect.width),
                 height: finite(rect.height), viewportWidth: window.innerWidth, viewportHeight: window.innerHeight},
             seekable: ranges(video.seekable), buffered: ranges(video.buffered), readyState: video.readyState,
-            sourceRevision: record.sourceRevision, interacted: record.interacted,
-            assistantAction: record.assistantAction || 'none'
+            sourceRevision: record.sourceRevision, interacted: record.interacted
         };
         var owner = assistant ? assistant.owner() : null;
         if (owner && owner.record === record) {
@@ -202,7 +201,6 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         if (window.__miowserCreateVideoButton) assistant = window.__miowserCreateVideoButton({
             records: function () { return Array.from(videos.values()); },
             bound: function () { return running && binding !== null; },
-            refreshSource: refreshSource,
             interacted: schedule,
             entering: function () { return ++fullscreenSerial; },
             fullscreen: function (record, attempt, active) {
@@ -270,10 +268,9 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         }, true);
         listen(document, 'visibilitychange', visibility);
         listen(window, 'scroll', schedule, {passive: true, capture: true});
-        function layoutChanged() { if (assistant) assistant.layoutChanged(); schedule(); }
-        listen(window, 'resize', layoutChanged, {passive: true});
+        listen(window, 'resize', schedule, {passive: true});
         if (window.visualViewport) {
-            listen(window.visualViewport, 'resize', layoutChanged, {passive: true});
+            listen(window.visualViewport, 'resize', schedule, {passive: true});
             listen(window.visualViewport, 'scroll', schedule, {passive: true});
         }
         hello();
@@ -322,15 +319,6 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             if (message.type === 'control' && binding && message.documentId === documentId &&
                 message.navigation === binding.navigation && message.token === binding.token) {
                 if (controls) controls.receive(message);
-                return;
-            }
-            if ((message.type === 'armToolbarEntry' || message.type === 'cancelToolbarEntry') && binding &&
-                message.documentId === documentId && message.navigation === binding.navigation && message.token === binding.token) {
-                if (assistant) {
-                    if (message.type === 'cancelToolbarEntry') assistant.cancelArm();
-                    else if (typeof message.elementId === 'string' && Number.isSafeInteger(message.sourceRevision))
-                        assistant.arm(message.elementId, message.sourceRevision);
-                }
                 return;
             }
             if (['releaseFullscreen', 'suspendFullscreen', 'resumeFullscreen', 'fallbackFullscreen'].indexOf(message.type) >= 0 &&

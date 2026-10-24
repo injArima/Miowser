@@ -1,5 +1,8 @@
 # Samsung Internet: single-tap entry and external placement recheck
 
+Follow-up: the user approved removing the two-step route and
+[restoring the consistent floating button](video-assistant-single-tap-restored-2026-10-25.md).
+
 ## Conclusion
 
 The two-step toolbar entry introduced in Miowser is a regression in interaction,

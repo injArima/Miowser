@@ -1,5 +1,9 @@
 # Video assistant action below the player
 
+**Superseded:** the user rejected the two-step toolbar interaction and authorized
+[restoring the single-tap floating action](video-assistant-single-tap-restored-2026-10-25.md).
+The implementation and checks below are historical, not the current behavior.
+
 ## Result
 
 The browser-backed video action now uses a dedicated row immediately below the

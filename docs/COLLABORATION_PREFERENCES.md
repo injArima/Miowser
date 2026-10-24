@@ -15,13 +15,12 @@ Recorded from the user's instruction on 2026-10-25.
 
 ## Video action placement and interaction
 
-The user approved a dedicated row immediately below the detected player, aligned
-right, with a browser-toolbar fallback for frames/layouts that cannot safely
-reserve that space. Implementation and the user's device checklist are recorded
-in [the placement report](research/video-assistant-below-player-2026-10-25.md).
+Uniform single-tap entry is required. The user rejected the toolbar's extra page
+tap and explicitly authorized restoring the original in-frame floating button.
+That restoration supersedes the earlier below-player row and toolbar fallback;
+see [the restoration report](research/video-assistant-single-tap-restored-2026-10-25.md).
 
-The user subsequently rejected the toolbar's extra page tap. Uniform single-tap
-entry is required; the earlier approval must not be treated as acceptance of a
-multi-step experience. The Samsung reinspection and proposed correction are in
-[the single-tap report](research/samsung-single-tap-recheck-2026-10-25.md). Discuss
-the revised route before replacing the working browser-player entry path again.
+Samsung's external-placement findings remain in
+[the reinspection report](research/samsung-single-tap-recheck-2026-10-25.md).
+Discuss and prove a revised external-placement route before replacing the
+working browser-player entry path again. Placement must not add activation steps.
