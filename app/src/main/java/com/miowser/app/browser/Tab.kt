@@ -48,6 +48,7 @@ import com.miowser.app.grabber.MediaProbe
 import com.miowser.app.grabber.installVideoSnifferScript
 import com.miowser.app.browser.video.LiveVideoSession
 import com.miowser.app.browser.video.LiveVideoTracker
+import com.miowser.app.browser.video.VideoAssistantButtonPolicy
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -216,6 +217,12 @@ class Tab(
     private val detectionIndexes = mutableMapOf<String, Int>()
     private var grabberBridge: GrabberBridge? = null
     private var liveVideoTracker: LiveVideoTracker? = null
+    private var videoButtonPolicy = VideoAssistantButtonPolicy()
+    internal fun updateVideoAssistantButton(policy: VideoAssistantButtonPolicy) {
+        if (videoButtonPolicy == policy) return
+        videoButtonPolicy = policy
+        liveVideoTracker?.updateButtonPolicy(policy)
+    }
     /** Separate live playback state; never use the grabber's highest discovered resolution here. */
     private val liveVideoState = MutableStateFlow<List<LiveVideoSession>>(emptyList())
     val liveVideoSessions: StateFlow<List<LiveVideoSession>> = liveVideoState.asStateFlow()
@@ -799,8 +806,12 @@ class Tab(
             )
             installVideoSnifferScript() // must also run before loadUrl()
             // Add-on telemetry only; the existing grabber and playback entry points stay intact.
-            liveVideoTracker = LiveVideoTracker(this@Tab.id, this, liveVideoState)
-                .also { it.install() }
+            liveVideoTracker = LiveVideoTracker(this@Tab.id, this, liveVideoState, videoButtonPolicy,
+                onFullscreenFailure = {
+                    if (alive.get() && videoButtonPolicy.enabled) android.widget.Toast.makeText(tabContext,
+                        "This page couldn't open video fullscreen. Its original player is still available.",
+                        android.widget.Toast.LENGTH_LONG).show()
+                }).also { it.install() }
 
             // A deliberate depth threshold: ordinary small scrolls should not grow another floating
             // control over the page. One visible WebView height is an intuitive "about one screen"

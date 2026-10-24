@@ -1,6 +1,6 @@
 package com.miowser.app.browser.video
 
-/** Read-only, per-document telemetry. No source assignment or playback commands. */
+/** Per-document telemetry and a frame-local button. No URL extraction or native-player handoff. */
 internal const val LIVE_VIDEO_SESSION_SCRIPT = """
 (function () {
     'use strict';
@@ -11,6 +11,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
     var videos = new Map(), ids = new WeakMap(), nextId = 0, sequence = 0;
     var binding = null, timer = null, heartbeat = null, observer = null;
     var intersection = null, resize = null, running = false, lastSent = -1000;
+    var assistant = null;
     var removed = new Set(), listeners = [];
     var MAX_VIDEOS = 8, UPDATE_MS = 500;
 
@@ -84,6 +85,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         }
     }
     function schedule() {
+        if (assistant) assistant.schedule();
         if (!running || !binding || timer !== null) return;
         timer = setTimeout(flush, Math.max(0, UPDATE_MS - (performance.now() - lastSent)));
     }
@@ -114,7 +116,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
                 video.addEventListener(type, schedule);
                 record.cleanups.push(function () { video.removeEventListener(type, schedule); });
             });
-        function interaction() { record.interacted = true; schedule(); }
+        function interaction() { record.interacted = true; record.lastInteraction = performance.now(); schedule(); }
         video.addEventListener('pointerdown', interaction, {passive: true});
         record.cleanups.push(function () { video.removeEventListener('pointerdown', interaction); });
         if (intersection) intersection.observe(video);
@@ -149,13 +151,26 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
     function start() {
         if (running) return;
         running = true;
+        if (window.__miowserCreateVideoButton) assistant = window.__miowserCreateVideoButton({
+            records: function () { return Array.from(videos.values()); },
+            bound: function () { return running && binding !== null; },
+            interacted: schedule,
+            failed: function () {
+                if (running && binding) send({type: 'fullscreenError', documentId: documentId,
+                    navigation: binding.navigation, token: binding.token});
+            }
+        });
         if (window.IntersectionObserver) intersection = new IntersectionObserver(function (entries) {
             entries.forEach(function (entry) {
                 var record = videos.get(ids.get(entry.target));
-                if (record) record.ratio = entry.isIntersecting ? entry.intersectionRatio : 0;
+                if (record) {
+                    record.ratio = entry.isIntersecting ? entry.intersectionRatio : 0;
+                    record.intersectionBounds = entry.boundingClientRect;
+                    record.intersectionRect = entry.intersectionRect;
+                }
             });
             schedule();
-        }, {threshold: [0, 0.25, 0.75, 1]});
+        }, {threshold: [0, 0.05, 0.1, 0.25, 0.5, 0.75, 1]});
         if (window.ResizeObserver) resize = new ResizeObserver(schedule);
         observer = new MutationObserver(function (mutations) {
             // Remove detached elements before adding replacements, so a full table can make room.
@@ -192,6 +207,10 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         listen(document, 'visibilitychange', visibility);
         listen(window, 'scroll', schedule, {passive: true, capture: true});
         listen(window, 'resize', schedule, {passive: true});
+        if (window.visualViewport) {
+            listen(window.visualViewport, 'resize', schedule, {passive: true});
+            listen(window.visualViewport, 'scroll', schedule, {passive: true});
+        }
         hello();
     }
     function stop() {
@@ -199,6 +218,8 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         if (binding) send({type: 'retire', documentId: documentId,
             navigation: binding.navigation, token: binding.token});
         running = false;
+        if (assistant) assistant.destroy();
+        assistant = null;
         if (timer !== null) clearTimeout(timer);
         timer = null;
         clearInterval(heartbeat);
@@ -220,13 +241,20 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             var message = JSON.parse(event.data);
             if (message.type === 'reset' && message.documentId === documentId) {
                 binding = null;
+                if (assistant) assistant.policy(null);
                 if (document.visibilityState !== 'hidden') hello();
+                return;
+            }
+            if (message.type === 'buttonPolicy' && binding && message.documentId === documentId &&
+                message.navigation === binding.navigation && message.token === binding.token) {
+                if (assistant) assistant.policy(message.button);
                 return;
             }
             if (message.type !== 'bind' || message.documentId !== documentId ||
                 !Number.isSafeInteger(message.navigation) || typeof message.token !== 'string' ||
                 message.token.length > 80) return;
             binding = {navigation: message.navigation, token: message.token};
+            if (assistant) assistant.policy(message.button);
             schedule();
         } catch (ignored) {}
     };

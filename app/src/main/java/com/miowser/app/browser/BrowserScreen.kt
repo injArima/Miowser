@@ -69,6 +69,7 @@ import android.content.ClipData
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -104,6 +105,7 @@ import com.miowser.app.adblock.AdBlock
 import com.miowser.app.adblock.AdBlockFilters
 import com.miowser.app.adblock.SiteProtection
 import com.miowser.app.bookmarks.BookmarkList
+import com.miowser.app.browser.video.VideoAssistantButtonPolicy
 import com.miowser.app.downloader.Download
 import com.miowser.app.downloader.DownloadConflictReason
 import com.miowser.app.downloader.DownloadedFileOpener
@@ -265,6 +267,9 @@ fun BrowserScreen(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    var videoButtonForeground by remember(lifecycleOwner) {
+        mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+    }
     val keyboardController = LocalSoftwareKeyboardController.current
     val clipboard = LocalClipboard.current
     val motion = LocalMotionPolicy.current
@@ -3094,6 +3099,31 @@ fun BrowserScreen(
             }
         }
     }
+    val videoButtonBackground = MaterialTheme.colorScheme.primaryContainer.toArgb()
+    val videoButtonForegroundColor = MaterialTheme.colorScheme.onPrimaryContainer.toArgb()
+    val videoButtonAppearance = remember(videoButtonBackground, videoButtonForegroundColor, motion.reduced) {
+        VideoAssistantButtonPolicy(
+            background = String.format(java.util.Locale.ROOT, "#%06X", videoButtonBackground and 0xFFFFFF),
+            foreground = String.format(java.util.Locale.ROOT, "#%06X", videoButtonForegroundColor and 0xFFFFFF),
+            reducedMotion = motion.reduced
+        )
+    }
+    val allowVideoButton = videoButtonForeground && !showingHub && activeScreen == null &&
+        playbackRequest == null && fullscreenVideo == null && !showOverflowMenu &&
+        !showBrowserDownloads && !showBackupRestore && !openingTabs &&
+        showSiteInfoTabId == null && showZoomTabId == null && showTextSizeTabId == null &&
+        pendingLinkMenu == null && pendingNewTabRequest == null && pendingHttpNavigation == null &&
+        pendingCertificateError == null && pendingDownloadConflict == null && pendingBlobAction == null &&
+        pendingWebPermission == null && pendingRuntimePermission == null && pendingGeolocation == null &&
+        pendingRuntimeGeolocation == null && fileSelection.ownerId == null && !showPrivateStartConfirmation &&
+        !confirmClearCookiesAndSiteData && !storageRequestActive && pendingExternalUrl == null
+    val enabledVideoButtonAppearance = remember(videoButtonAppearance) { videoButtonAppearance.copy(enabled = true) }
+    SideEffect {
+        tabs.forEach { tab ->
+            val enabled = allowVideoButton && tab.id == activeTabId && !tab.isShowingHome && tab.pageError == null
+            tab.updateVideoAssistantButton(if (enabled) enabledVideoButtonAppearance else videoButtonAppearance)
+        }
+    }
     LaunchedEffect(startupReady, AppSettings.current.javaScriptEnabled, AppSettings.current.cookiesEnabled,
         AppSettings.current.popupsEnabled) {
         if (!startupReady) return@LaunchedEffect
@@ -3128,12 +3158,14 @@ fun BrowserScreen(
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_RESUME -> {
+                    videoButtonForeground = true
                     tabController.onForeground()
                     if (!showingHub && activeScreen == null && playbackRequest == null) {
                         tabs.firstOrNull { it.id == activeTabId }?.liveWebView?.onResume()
                     }
                 }
                 Lifecycle.Event.ON_PAUSE -> {
+                    videoButtonForeground = false
                     if (!showingHub) tabs.firstOrNull { it.id == activeTabId }?.markActive()
                     tabs.forEach { it.liveWebView?.onPause() }
                     // Final checkpoint in addition to the foreground session-change observer.

@@ -16,9 +16,11 @@ import org.json.JSONObject
 import java.util.IdentityHashMap
 import java.util.UUID
 
-/** Read-only frame telemetry for the add-on. It never plays, pauses, seeks, probes or downloads. */
+/** Telemetry and button presentation; native code never starts or changes video playback here. */
 internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
-    private val mutableSessions: MutableStateFlow<List<LiveVideoSession>>) {
+    private val mutableSessions: MutableStateFlow<List<LiveVideoSession>>,
+    initialButtonPolicy: VideoAssistantButtonPolicy = VideoAssistantButtonPolicy(),
+    private val onFullscreenFailure: () -> Unit = {}) {
     private data class Channel(val frameId: Long, val document: String, val token: String,
         val navigation: Long, val connectedAt: Long, var lastUpdate: Long = -1,
         var lastHello: Long = connectedAt)
@@ -33,6 +35,8 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     private var helloWindow = 0L
     private var helloCount = 0
     private var pruneScheduled = false
+    private var buttonPolicy = initialButtonPolicy
+    private var lastFailureAt = -10_000L
     val supported = WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) &&
         WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)
 
@@ -68,7 +72,8 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
                 if (text.length > MAX_MESSAGE_CHARS) return@addWebMessageListener
                 receive(text, origin.toString().take(1024), mainFrame, proxy)
             }
-            script = WebViewCompat.addDocumentStartJavaScript(webView, LIVE_VIDEO_SESSION_SCRIPT, setOf("*"))
+            script = WebViewCompat.addDocumentStartJavaScript(webView,
+                VIDEO_ASSISTANT_BUTTON_SCRIPT + LIVE_VIDEO_SESSION_SCRIPT, setOf("*"))
         } catch (_: RuntimeException) {
             // An optional feature/provider mismatch must not stop a tab from opening.
             retire()
@@ -77,6 +82,10 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
 
     fun onNavigationStarted() {
         accepting = false
+        channels.forEach { (proxy, channel) ->
+            runCatching { proxy.postMessage(JSONObject().put("type", "reset")
+                .put("documentId", channel.document).toString()) }
+        }
         channels.clear()
         registry.reset()
         mutableSessions.value = emptyList()
@@ -120,11 +129,19 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
                     acknowledge(proxy, channel)
                     publish()
                 }
-                "state", "retire" -> {
+                "state", "retire", "fullscreenError" -> {
                     val channel = channels[proxy] ?: return
                     if (channel.document != document || channel.navigation != registry.navigation ||
                         json.optLong("navigation", -1) != channel.navigation ||
                         json.optString("token") != channel.token) return
+                    if (json.optString("type") == "fullscreenError") {
+                        val now = SystemClock.elapsedRealtime()
+                        if (buttonPolicy.enabled && now - lastFailureAt >= 3_000) {
+                            lastFailureAt = now
+                            onFullscreenFailure()
+                        }
+                        return
+                    }
                     if (json.optString("type") == "retire") {
                         channels.remove(proxy)
                         registry.closeFrame(channel.frameId)
@@ -150,8 +167,22 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
 
     private fun acknowledge(proxy: JavaScriptReplyProxy, channel: Channel) {
         runCatching { proxy.postMessage(JSONObject().put("type", "bind").put("documentId", channel.document)
-            .put("navigation", channel.navigation).put("token", channel.token).toString()) }
+            .put("navigation", channel.navigation).put("token", channel.token).put("button", policyJson()).toString()) }
     }
+
+    fun updateButtonPolicy(next: VideoAssistantButtonPolicy) {
+        if (retired || next == buttonPolicy) return
+        buttonPolicy = next
+        channels.forEach { (proxy, channel) ->
+            runCatching { proxy.postMessage(JSONObject().put("type", "buttonPolicy")
+                .put("documentId", channel.document).put("navigation", channel.navigation)
+                .put("token", channel.token).put("button", policyJson()).toString()) }
+        }
+    }
+
+    private fun policyJson() = JSONObject().put("enabled", buttonPolicy.enabled)
+        .put("background", buttonPolicy.background).put("foreground", buttonPolicy.foreground)
+        .put("reducedMotion", buttonPolicy.reducedMotion)
 
     private fun publish() {
         mutableSessions.value = registry.snapshot()
