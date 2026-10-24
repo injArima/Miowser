@@ -1,6 +1,8 @@
 # Miowser project status
 
-Last updated: 2026-09-21
+Last updated: 2026-09-21 (collaboration preferences updated 2026-10-25)
+
+Current working preferences: [Collaboration preferences](docs/COLLABORATION_PREFERENCES.md).
 
 ## Product direction
 
@@ -42,7 +44,7 @@ Last updated: 2026-09-21
   icon and open Android's installer, and other files use an installed system handler. Download
   preflight also detects active-source and completed-name conflicts, with refresh/replace/renamed
   copy choices. This enhancement is implemented and awaiting the user's runtime verification.
-- Commit only after an explicit `commit this` request.
+- Commit and push changes regularly, as subsequently authorized by the user.
 
 ## Pending work
 
