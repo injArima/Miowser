@@ -6,6 +6,10 @@ executed and no phone/app data was accessed.
 
 ## Main finding
 
+The [single-tap and placement recheck](samsung-single-tap-recheck-2026-10-25.md)
+adds evidence for Samsung's below-right default and native action routing, and
+records the user's rejection of Miowser's subsequent two-step toolbar route.
+
 ### Approved scope and execution update
 
 The subsequent user decision is to build this as an **additional feature**, reuse

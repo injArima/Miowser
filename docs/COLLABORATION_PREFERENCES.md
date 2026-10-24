@@ -13,9 +13,15 @@ Recorded from the user's instruction on 2026-10-25.
 - Commit and push changes to GitHub regularly so earlier versions can be restored,
   as authorized by the user during the browser video assistant work.
 
-## Agreed video action placement
+## Video action placement and interaction
 
 The user approved a dedicated row immediately below the detected player, aligned
 right, with a browser-toolbar fallback for frames/layouts that cannot safely
 reserve that space. Implementation and the user's device checklist are recorded
 in [the placement report](research/video-assistant-below-player-2026-10-25.md).
+
+The user subsequently rejected the toolbar's extra page tap. Uniform single-tap
+entry is required; the earlier approval must not be treated as acceptance of a
+multi-step experience. The Samsung reinspection and proposed correction are in
+[the single-tap report](research/samsung-single-tap-recheck-2026-10-25.md). Discuss
+the revised route before replacing the working browser-player entry path again.
