@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="browser_video_open">Play in Miowser</string>
+    <string name="browser_video_tap_to_open">Tap the video within 10 seconds to open it in Miowser</string>
+    <string name="browser_video_unavailable">The video changed. Play it on the page and try again.</string>
     <string name="app_name">Miowser</string>
     <string name="shortcut_browser">Browser</string>
     <string name="shortcut_browser_long">Open browser</string>

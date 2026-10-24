@@ -234,6 +234,9 @@ class Tab(
     private val liveVideoState = MutableStateFlow<List<LiveVideoSession>>(emptyList())
     val liveVideoSessions: StateFlow<List<LiveVideoSession>> = liveVideoState.asStateFlow()
     fun activeLiveVideo(): LiveVideoSession? = liveVideoTracker?.activeVideo()
+    internal fun armBrowserVideoToolbar(target: com.miowser.app.browser.video.BrowserVideoToolbarTarget): String? =
+        liveVideoTracker?.armToolbarEntry(target)
+    internal fun cancelBrowserVideoToolbar(ticket: String? = null) { liveVideoTracker?.cancelToolbarEntry(ticket) }
     internal var hasPlayingMedia by mutableStateOf(false)
         private set
     private val probeHandles = java.util.concurrent.ConcurrentHashMap.newKeySet<com.miowser.app.grabber.MediaProbeHandle>()

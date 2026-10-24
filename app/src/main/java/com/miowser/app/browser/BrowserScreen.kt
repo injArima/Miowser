@@ -3,6 +3,7 @@ package com.miowser.app.browser
 import com.miowser.app.ui.theme.LocalMotionPolicy
 import com.miowser.app.ui.theme.MotionTokens
 import com.miowser.app.BuildConfig
+import com.miowser.app.R
 import android.content.Intent
 import android.Manifest
 import android.app.Activity
@@ -106,6 +107,7 @@ import com.miowser.app.adblock.AdBlockFilters
 import com.miowser.app.adblock.SiteProtection
 import com.miowser.app.bookmarks.BookmarkList
 import com.miowser.app.browser.video.VideoAssistantButtonPolicy
+import com.miowser.app.browser.video.BrowserVideoToolbarAction
 import com.miowser.app.browser.video.BrowserVideoPlayerOverlay
 import com.miowser.app.browser.video.BrowserVideoSurface
 import com.miowser.app.browser.video.keepBrowserRendererForPip
@@ -1571,6 +1573,16 @@ fun BrowserScreen(
         onDispose { controller?.show(WindowInsetsCompat.Type.systemBars()) }
     }
 
+    val allowVideoButton = videoButtonForeground && !showingHub && activeScreen == null &&
+        playbackRequest == null && fullscreenVideo == null && !showOverflowMenu &&
+        !showBrowserDownloads && !showBackupRestore && !openingTabs &&
+        showSiteInfoTabId == null && showZoomTabId == null && showTextSizeTabId == null &&
+        pendingLinkMenu == null && pendingNewTabRequest == null && pendingHttpNavigation == null &&
+        pendingCertificateError == null && pendingDownloadConflict == null && pendingBlobAction == null &&
+        pendingWebPermission == null && pendingRuntimePermission == null && pendingGeolocation == null &&
+        pendingRuntimeGeolocation == null && fileSelection.ownerId == null && !showPrivateStartConfirmation &&
+        !confirmClearCookiesAndSiteData && !storageRequestActive && pendingExternalUrl == null
+
     // Everything visual lives inside this one Box so SnackbarHost (added at the very end) can sit
     // structurally above the browser Scaffold, every full-page Screen overlay, the overflow menu,
     // and the player alike — a bubble triggered from any of them (Copy URL on Detected Media,
@@ -1649,7 +1661,14 @@ fun BrowserScreen(
                 }
             },
             bottomBar = {
-                Box(modifier = Modifier.onSizeChanged { bottomBarHeightPx = it.height }) {
+                Column(modifier = Modifier.onSizeChanged { bottomBarHeightPx = it.height }) {
+                    val toolbarTab = activeTab
+                    BrowserVideoToolbarAction(toolbarTab, enabled = allowVideoButton && startupReady) { ticket ->
+                        if (ticket != null) showActionSnackbar(context.getString(R.string.browser_video_tap_to_open),
+                            actionLabel = "Cancel", onDismiss = { toolbarTab?.cancelBrowserVideoToolbar(ticket) },
+                            onAction = { toolbarTab?.cancelBrowserVideoToolbar(ticket) })
+                        else showActionSnackbar(context.getString(R.string.browser_video_unavailable))
+                    }
                     BottomBar(
                         canGoBack = activeTab?.canGoBack == true,
                         canGoForward = activeTab?.canGoForward == true,
@@ -3110,15 +3129,6 @@ fun BrowserScreen(
             reducedMotion = motion.reduced
         )
     }
-    val allowVideoButton = videoButtonForeground && !showingHub && activeScreen == null &&
-        playbackRequest == null && fullscreenVideo == null && !showOverflowMenu &&
-        !showBrowserDownloads && !showBackupRestore && !openingTabs &&
-        showSiteInfoTabId == null && showZoomTabId == null && showTextSizeTabId == null &&
-        pendingLinkMenu == null && pendingNewTabRequest == null && pendingHttpNavigation == null &&
-        pendingCertificateError == null && pendingDownloadConflict == null && pendingBlobAction == null &&
-        pendingWebPermission == null && pendingRuntimePermission == null && pendingGeolocation == null &&
-        pendingRuntimeGeolocation == null && fileSelection.ownerId == null && !showPrivateStartConfirmation &&
-        !confirmClearCookiesAndSiteData && !storageRequestActive && pendingExternalUrl == null
     val enabledVideoButtonAppearance = remember(videoButtonAppearance) { videoButtonAppearance.copy(enabled = true) }
     SideEffect {
         tabs.forEach { tab ->

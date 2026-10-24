@@ -8,6 +8,24 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         var policy = {enabled: false}, host = null, button = null, icon = null, insetProbe = null;
         var selected = null, frame = null, animation = null, disposed = false, pending = false;
         var restore = null, entryTimeout = null;
+        var rowAnchor = null, rowRecord = null, failedRecord = null, rowAttempts = 0;
+        var offered = null, offeredMode = 'none', armed = null, armTimeout = null, attemptRecord = null;
+        function availability(record, mode) {
+            if (offered === record && offeredMode === mode) return;
+            if (offered) offered.assistantAction = 'none';
+            offered = record; offeredMode = mode;
+            if (record) record.assistantAction = mode;
+            api.interacted();
+        }
+        function cancelArm() {
+            armed = null;
+            if (armTimeout !== null) clearTimeout(armTimeout);
+            armTimeout = null;
+        }
+        function removeRow() {
+            if (host && host.parentElement) host.remove();
+            rowAnchor = rowRecord = null;
+        }
         function cancelEntryTimeout() {
             if (entryTimeout !== null) clearTimeout(entryTimeout);
             entryTimeout = null;
@@ -18,6 +36,9 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         }
         function hide() {
             selected = null;
+            availability(null, 'none');
+            cancelArm();
+            if (rowRecord && !rowRecord.video.isConnected) removeRow();
             if (animation) { animation.cancel(); animation = null; }
             if (button) {
                 button.hidden = true; button.disabled = true;
@@ -161,15 +182,16 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             api.failed();
             schedule();
         }
-        function click(event) {
+        function enter(event, record) {
             // Page scripts cannot programmatically activate this action.
             if (!event.isTrusted || disposed || pending || !policy.enabled || !api.bound() ||
-                document.fullscreenElement || !selected || !eligible(selected)) return;
-            var view = viewport(), currentBox = clip(selected, view);
+                !document.fullscreenEnabled || document.visibilityState === 'hidden' ||
+                document.fullscreenElement || !record || !eligible(record)) return;
+            var view = viewport(), currentBox = clip(record, view);
             if ((currentBox.right - currentBox.left) * view.scale < 120 ||
                 (currentBox.bottom - currentBox.top) * view.scale < 80) { hide(); return; }
             event.preventDefault(); event.stopPropagation();
-            var record = selected, video = record.video;
+            var video = record.video;
             record.interacted = true; record.lastInteraction = performance.now();
             api.interacted();
             pending = true;
@@ -188,19 +210,36 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 var result = video.requestFullscreen();
                 if (result && typeof result.catch === 'function') result.catch(function () { failed(entry); });
             } catch (ignored) { failed(entry); }
+            return true;
+        }
+        function click(event) { enter(event, selected); }
+        function toolbarTap(event) {
+            if (!armed || !event.isTrusted) return;
+            var intent = armed, record = intent.record;
+            api.refreshSource(record);
+            if (!eligible(record) || record.sourceRevision !== intent.revision) { cancelArm(); return; }
+            var box = clip(record, viewport());
+            if (event.clientX < box.left || event.clientX > box.right ||
+                event.clientY < box.top || event.clientY > box.bottom) return;
+            // Do not consume links, form controls or the website's explicit player buttons.
+            var target = event.target;
+            if (target && target.closest && target.closest('a,button,input,select,textarea,[role="button"]')) return;
+            cancelArm();
+            if (enter(event, record) && event.stopImmediatePropagation) event.stopImmediatePropagation();
         }
         function makeButton() {
             if (host) return;
             host = document.createElement('div');
             host.setAttribute('data-miowser-video-assistant', '');
-            setStyles(host, {'all': 'initial', 'position': 'fixed', 'left': '0', 'top': '0',
-                'width': '0', 'height': '0', 'pointer-events': 'none', 'z-index': '2147483646'});
+            // A normal-flow row reserves space; never move/wrap the video or cover page text.
+            setStyles(host, {'all': 'initial', 'display': 'block', 'position': 'relative',
+                'box-sizing': 'border-box', 'clear': 'both', 'pointer-events': 'none'});
             var shadow = host.attachShadow({mode: 'closed'});
             button = document.createElement('button');
             button.type = 'button'; button.hidden = true;
             button.setAttribute('aria-label', 'Open video fullscreen with Miowser');
             button.title = 'Open video fullscreen with Miowser';
-            setStyles(button, {'all': 'initial', 'box-sizing': 'border-box', 'position': 'fixed',
+            setStyles(button, {'all': 'initial', 'box-sizing': 'border-box', 'position': 'absolute',
                 'display': 'flex', 'align-items': 'center', 'justify-content': 'center',
                 'pointer-events': 'none', 'visibility': 'hidden', 'cursor': 'pointer', 'border': '1px solid rgba(255,255,255,.2)',
                 'box-shadow': '0 2px 8px rgba(0,0,0,.3)', 'outline-offset': '3px',
@@ -230,39 +269,119 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 'padding-right': 'env(safe-area-inset-right, 0px)', 'padding-bottom': 'env(safe-area-inset-bottom, 0px)',
                 'padding-left': 'env(safe-area-inset-left, 0px)'});
             shadow.appendChild(insetProbe);
-            document.documentElement.appendChild(host);
+        }
+        function placeRow(record, view) {
+            if (attemptRecord !== record) { attemptRecord = record; failedRecord = null; rowAttempts = 0; }
+            // A child frame cannot reserve space in its embedding page. Keep its DOM untouched.
+            if (window.top !== window) return false;
+            var video = record.video, rect = video.getBoundingClientRect();
+            var size = 48 / view.scale, gap = 8 / view.scale, height = size + gap * 2;
+            if (rowRecord !== record || !rowAnchor || !rowAnchor.isConnected ||
+                !host || host.parentElement !== rowAnchor.parentElement) {
+                removeRow();
+                if (failedRecord === record) return false;
+                // Stop retrying if a provider repeatedly removes the row during re-rendering.
+                if (++rowAttempts > 3) { failedRecord = record; return false; }
+                var anchor = video, parent = null;
+                for (var i = 0; anchor && i < 12; i++, anchor = anchor.parentElement) {
+                    var candidate = anchor.parentElement;
+                    if (!candidate || !/^(BODY|DIV|MAIN|SECTION|ARTICLE)$/.test(candidate.tagName)) continue;
+                    var a = anchor.getBoundingClientRect(), style = window.getComputedStyle(anchor);
+                    var flow = window.getComputedStyle(candidate);
+                    if (Math.abs(a.top - rect.top) > 24 || Math.abs(a.top + a.height - rect.top - rect.height) > 24 ||
+                        a.width < rect.width - 1 || a.width > rect.width + 48 ||
+                        /absolute|fixed|sticky/.test(style.position) || style.cssFloat && style.cssFloat !== 'none' ||
+                        flow.display !== 'block' || /fixed|sticky/.test(flow.position) ||
+                        /hidden|clip/.test(flow.overflowY)) continue;
+                    parent = candidate; break;
+                }
+                if (!parent) { failedRecord = record; return false; }
+                // The row must push following content down, not overflow a fixed-height player.
+                // A scroll container owns its own flow; normal ancestors must grow with the row.
+                var reservations = [], container = parent;
+                for (var n = 0; container && container !== document.body &&
+                    container !== document.documentElement && n < 12; n++, container = container.parentElement) {
+                    var containerStyle = window.getComputedStyle(container);
+                    if (/fixed|sticky/.test(containerStyle.position)) { failedRecord = record; return false; }
+                    if (/auto|scroll/.test(containerStyle.overflowY)) break;
+                    reservations.push({element: container, height: container.getBoundingClientRect().height});
+                }
+                makeButton();
+                parent.insertBefore(host, anchor.nextSibling);
+                rowAnchor = anchor; rowRecord = record;
+                setStyles(host, {'height': height + 'px'});
+                if (reservations.some(function (item) {
+                    return item.element.getBoundingClientRect().height < item.height + height - 1;
+                })) { removeRow(); failedRecord = record; return false; }
+            }
+            var parentRect = host.parentElement.getBoundingClientRect();
+            var parentStyle = window.getComputedStyle(host.parentElement);
+            var offset = Math.max(0, rect.left - parentRect.left - (parseFloat(parentStyle.paddingLeft) || 0) -
+                (parseFloat(parentStyle.borderLeftWidth) || 0));
+            setStyles(host, {'width': rect.width + 'px', 'max-width': '100%', 'height': height + 'px',
+                'margin-left': offset + 'px'});
+            setStyles(button, {'right': gap + 'px', 'top': gap + 'px',
+                'width': size + 'px', 'height': size + 'px', 'border-radius': (16 / view.scale) + 'px',
+                'background-color': policy.background, 'color': policy.foreground});
+            setStyles(icon, {'width': (28 / view.scale) + 'px', 'height': (28 / view.scale) + 'px'});
+            var row = host.getBoundingClientRect(), current = video.getBoundingClientRect();
+            var following = host.nextElementSibling, overlapsFollowing = false;
+            for (var s = 0; following && s < 4; s++, following = following.nextElementSibling) {
+                var followingRect = following.getBoundingClientRect();
+                if (followingRect.width <= 0 || followingRect.height <= 0) continue;
+                overlapsFollowing = followingRect.top < row.top + row.height - 1 &&
+                    followingRect.top + followingRect.height > row.top &&
+                    followingRect.left < row.left + row.width && followingRect.left + followingRect.width > row.left;
+                break;
+            }
+            // Reject layouts that overlap the player, reorder the row or resize the video.
+            if (row.top < current.top + current.height - 1 || row.top > current.top + current.height + 32 ||
+                Math.abs(current.width - rect.width) > 1 || Math.abs(current.height - rect.height) > 1 ||
+                row.width < size + gap * 2 || row.height < height - 1 || overlapsFollowing) {
+                removeRow(); failedRecord = record; return false;
+            }
+            var insets = window.getComputedStyle(insetProbe);
+            var x = row.left + row.width - gap - size, y = row.top + gap;
+            var visible = x >= view.left + (parseFloat(insets.paddingLeft) || 0) &&
+                y >= view.top + (parseFloat(insets.paddingTop) || 0) &&
+                x + size <= view.left + view.width - (parseFloat(insets.paddingRight) || 0) &&
+                y + size <= view.top + view.height - (parseFloat(insets.paddingBottom) || 0);
+            // Check row clipping too, including ancestors above the insertion container.
+            if (visible) {
+                var rowClip = clip({video: host}, view);
+                visible = x >= rowClip.left && y >= rowClip.top && x + size <= rowClip.right && y + size <= rowClip.bottom;
+            }
+            return visible;
         }
         function update() {
             frame = null;
             if (disposed || !policy.enabled || !api.bound() || document.visibilityState === 'hidden' ||
                 !document.fullscreenEnabled || document.fullscreenElement || pending) { hide(); return; }
-            var view = viewport(), best = null, bestBox = null, bestScore = -1, bestInteraction = -1;
+            var view = viewport(), best = null, bestScore = -1, bestInteraction = -1;
             api.records().forEach(function (record) {
                 if (!eligible(record)) return;
                 var box = clip(record, view), width = box.right - box.left, height = box.bottom - box.top;
                 if (width * view.scale < 120 || height * view.scale < 80) return;
                 var interaction = record.lastInteraction || 0, score = width * height;
                 if (interaction > bestInteraction || (interaction === bestInteraction && score > bestScore)) {
-                    best = record; bestBox = box; bestScore = score; bestInteraction = interaction;
+                    best = record; bestScore = score; bestInteraction = interaction;
                 }
             });
-            if (!best) { hide(); return; }
-            makeButton();
-            if (!host.isConnected) document.documentElement.appendChild(host);
-            var size = 48 / view.scale, gap = 8 / view.scale;
-            var insets = window.getComputedStyle(insetProbe);
-            var left = Math.max(bestBox.left, view.left + (parseFloat(insets.paddingLeft) || 0));
-            var top = Math.max(bestBox.top, view.top + (parseFloat(insets.paddingTop) || 0));
-            var right = Math.min(bestBox.right, view.left + view.width - (parseFloat(insets.paddingRight) || 0));
-            var bottom = Math.min(bestBox.bottom, view.top + view.height - (parseFloat(insets.paddingBottom) || 0));
-            if (right - left < size + gap * 2 || bottom - top < size + gap * 2) { hide(); return; }
+            if (!best) { hide(); if (rowRecord && !rowRecord.video.isConnected) removeRow(); return; }
+            if (rowRecord && rowRecord !== best) { removeRow(); failedRecord = null; rowAttempts = 0; }
+            if (!placeRow(best, view)) {
+                if (button) { button.hidden = true; button.disabled = true;
+                    setStyles(button, {'visibility': 'hidden', 'pointer-events': 'none'}); }
+                selected = null;
+                availability(best, 'toolbar');
+                if (armed && armed.record !== best) cancelArm();
+                return;
+            }
             var appearing = button.hidden;
-            setStyles(button, {'left': (right - gap - size) + 'px', 'top': (top + gap) + 'px',
-                'width': size + 'px', 'height': size + 'px', 'border-radius': (16 / view.scale) + 'px',
-                'background-color': policy.background, 'color': policy.foreground,
-                'visibility': 'visible', 'pointer-events': 'auto'});
-            setStyles(icon, {'width': (28 / view.scale) + 'px', 'height': (28 / view.scale) + 'px'});
+            setStyles(button, {'visibility': 'visible', 'pointer-events': 'auto'});
             selected = best;
+            availability(best, 'row');
+            cancelArm();
             button.hidden = false; button.disabled = false;
             var reduced = policy.reducedMotion || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
             if (appearing && !reduced && button.animate) animation = button.animate(
@@ -286,7 +405,21 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             schedule();
         }
         document.addEventListener('fullscreenchange', fullscreenChanged);
+        document.addEventListener('click', toolbarTap, true);
         return {
+            arm: function (elementId, revision) {
+                cancelArm();
+                var record = offered;
+                if (!policy.enabled || !api.bound() || pending || !document.fullscreenEnabled ||
+                    document.fullscreenElement || document.visibilityState === 'hidden' || offeredMode !== 'toolbar' ||
+                    !record || record.id !== elementId || !eligible(record)) return;
+                api.refreshSource(record);
+                if (record.sourceRevision !== revision) return;
+                armed = {record: record, revision: revision};
+                armTimeout = setTimeout(cancelArm, 10000);
+            },
+            cancelArm: cancelArm,
+            layoutChanged: function () { failedRecord = null; rowAttempts = 0; schedule(); },
             policy: function (next) {
                 policy = {enabled: next && next.enabled === true,
                     background: next && /^#[0-9a-f]{6}$/i.test(next.background) ? next.background : '#303038',
@@ -329,7 +462,8 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 frame = null;
                 hide(); restoreControls();
                 document.removeEventListener('fullscreenchange', fullscreenChanged);
-                if (host) host.remove();
+                document.removeEventListener('click', toolbarTap, true);
+                removeRow();
                 host = button = icon = insetProbe = null;
             }
         };

@@ -13,10 +13,9 @@ Recorded from the user's instruction on 2026-10-25.
 - Commit and push changes to GitHub regularly so earlier versions can be restored,
   as authorized by the user during the browser video assistant work.
 
-## Pending placement decision
+## Agreed video action placement
 
-The user proposes moving the browser video assistant action from inside the
-playing video to immediately below its frame, aligned right. Discuss whether to
-reserve a dedicated row to avoid covering page content, and how to offer the
-action for embedded frames where rendering outside the frame is constrained.
-The placement change is not implemented yet.
+The user approved a dedicated row immediately below the detected player, aligned
+right, with a browser-toolbar fallback for frames/layouts that cannot safely
+reserve that space. Implementation and the user's device checklist are recorded
+in [the placement report](research/video-assistant-below-player-2026-10-25.md).

@@ -44,8 +44,27 @@ class Element extends Events {
   getAttribute(key) { return Object.hasOwn(this.attributes, key) ? this.attributes[key] : null; }
   removeAttribute(key) { delete this.attributes[key]; }
   appendChild(child) {
+    if (child.parentElement?.children?.includes(child)) child.remove();
     this.children.push(child); child.parentElement = this;
     child.setConnected?.(this.isConnected); return child;
+  }
+  insertBefore(child, next) {
+    this.appendChild(child);
+    if (next && this.children.includes(next)) {
+      this.children.pop(); this.children.splice(this.children.indexOf(next), 0, child);
+    }
+    return child;
+  }
+  get nextSibling() { return this.parentElement?.children[this.parentElement.children.indexOf(this) + 1] || null; }
+  get nextElementSibling() { return this.nextSibling; }
+  getBoundingClientRect() {
+    if (this.getAttribute('data-miowser-video-assistant') !== null) {
+      const children = this.parentElement.children, before = children[children.indexOf(this) - 1];
+      const a = before?.getBoundingClientRect() || {left: 0, top: 0, width: 1080, height: 0};
+      return {left: a.left, top: a.top + a.height,
+        width: parseFloat(this.style.width) || 0, height: parseFloat(this.style.height) || 0};
+    }
+    return {left: 0, top: 0, width: 1080, height: 1920};
   }
   setConnected(connected) {
     this.isConnected = connected;
@@ -53,17 +72,19 @@ class Element extends Events {
     this.shadow?.setConnected(connected);
   }
   attachShadow() { this.shadow = new Element('shadow'); return this.shadow; }
-  remove() { this.parentElement.children = this.parentElement.children.filter(child => child !== this); this.setConnected(false); }
+  remove() { if (this.parentElement) this.parentElement.children = this.parentElement.children.filter(child => child !== this);
+    this.parentElement = null; this.setConnected(false); }
   animate() { this.animationCount++; return { cancel() {} }; }
   querySelectorAll() { return []; }
 }
 function video(source = 'blob:https://site.test/video') {
-  return Object.assign(new Events(), {
+  const element = Object.assign(new Events(), {
     tagName: 'VIDEO', nodeType: 1, isConnected: true, currentSrc: source, src: source, srcObject: null,
     currentTime: 12, duration: 45, paused: false, ended: false, muted: false,
     playbackRate: 1, readyState: 4, videoWidth: 1280, videoHeight: 720, controls: false,
     seeking: false,
     style: style(), textTracks: tracks([]), audioTracks: tracks([]),
+    setConnected(connected) { this.isConnected = connected; },
     attributes: {}, setAttribute: Element.prototype.setAttribute, getAttribute: Element.prototype.getAttribute,
     removeAttribute: Element.prototype.removeAttribute,
     play() { this.paused = false; this.dispatch('play'); return {then(resolve) {resolve();}}; },
@@ -73,13 +94,27 @@ function video(source = 'blob:https://site.test/video') {
     getBoundingClientRect: () => ({ left: 0, top: 10, width: 640, height: 360 }),
     querySelectorAll: () => []
   });
+  Object.defineProperty(element, 'nextSibling', {get() {
+    return this.parentElement?.children[this.parentElement.children.indexOf(this) + 1] || null;
+  }});
+  return element;
 }
 function fixture(initial = [video()]) {
   const messages = [], timers = new Map(), intervals = new Map(), children = [], animationFrames = new Map();
   const elements = [], root = new Element('html'); root.setConnected(true);
+  const body = new Element('body'); root.appendChild(body);
+  initial.forEach(v => {
+    let child = v;
+    for (let i = 0; child.parentElement && i < 16; i++) {
+      const parent = child.parentElement;
+      if (!parent.children.includes(child)) parent.children.push(child);
+      child = parent;
+    }
+    body.appendChild(child);
+  });
   const mutations = [], intersections = [];
   let time = 1000, next = 1;
-  const document = Object.assign(new Events(), { visibilityState: 'visible', documentElement: root,
+  const document = Object.assign(new Events(), { visibilityState: 'visible', documentElement: root, body, scrollingElement: root,
     fullscreenEnabled: true, fullscreenElement: null,
     exitFullscreen() { this.fullscreenElement = null; this.dispatch('fullscreenchange'); return {catch() {}}; },
     querySelectorAll: () => initial.filter(v => v.isConnected),
@@ -98,9 +133,10 @@ function fixture(initial = [video()]) {
     requestAnimationFrame: fn => { animationFrames.set(next, fn); return next++; },
     cancelAnimationFrame: id => animationFrames.delete(id),
     matchMedia: () => ({ matches: false }),
-    getComputedStyle: element => ({ display: 'block', visibility: 'visible', opacity: '1',
+    getComputedStyle: element => ({ display: 'block', visibility: 'visible', opacity: '1', position: 'static', cssFloat: 'none',
       overflowX: 'visible', overflowY: 'visible', paddingLeft: '0px', paddingRight: '0px',
       paddingTop: '0px', paddingBottom: '0px', objectFit: element.style?.getPropertyValue('object-fit') || 'contain', ...element.computed }) });
+  window.top = window;
   const bridge = { postMessage: text => messages.push(JSON.parse(text)) };
   window.MiowserLiveVideo = bridge;
   class MutationObserver {
@@ -289,6 +325,7 @@ check('user interaction is reported once rather than repeated by clock ticks', (
 function enabledFixture(initial) {
   const f = fixture(initial); f.bind(); f.policy(true); f.flush(); return f;
 }
+function bodyRow(f) { return f.elements.find(e => e.getAttribute('data-miowser-video-assistant') !== null && e.isConnected); }
 check('floating action is visible only after app policy enables it', () => {
   const f = fixture(); f.bind(); f.flush(); assert.equal(f.button(), undefined);
   f.policy(true); f.flush();
@@ -354,29 +391,34 @@ check('synchronous fullscreen failure does not strand the button', () => {
   const f = enabledFixture(); f.initial[0].requestFullscreen = () => { throw new Error('unsupported'); };
   f.click(); f.flush(); assert.equal(f.button().hidden, false); assert.equal(f.initial[0].controls, false);
 });
-check('button stays inside the clipped visible video', () => {
+check('the action is in its own row below a partially clipped video', () => {
   const v = video(); v.getBoundingClientRect = () => ({ left: -100, top: -30, width: 640, height: 360 });
   const f = enabledFixture([v]), b = f.button();
-  assert.equal(b.style.top, '8px'); assert.equal(b.style.left, '484px');
+  assert.equal(b.style.top, '8px'); assert.equal(b.style.right, '8px');
+  assert.equal(f.document.body.children[1].getBoundingClientRect().top, 330);
+  assert.equal(f.document.body.children[1].style.height, '64px');
 });
 check('overflow-clipping ancestors constrain placement', () => {
   const v = video(), parent = new Element('div');
   parent.getBoundingClientRect = () => ({ left: 200, top: 20, right: 400, bottom: 140, width: 200, height: 120 });
   parent.computed = { overflowX: 'hidden', overflowY: 'hidden' }; v.parentElement = parent;
-  const f = enabledFixture([v]); assert.equal(f.button().style.left, '344px'); assert.equal(f.button().style.top, '28px');
+  const f = enabledFixture([v]); f.flush();
+  assert.notEqual(f.button()?.hidden, false); assert.equal(f.state().videos[0].assistantAction, 'toolbar');
 });
 check('pinch-zoom viewport preserves the apparent touch target size', () => {
   const f = enabledFixture();
   Object.assign(f.window.visualViewport, { scale: 2, offsetLeft: 200, offsetTop: 40, width: 540, height: 960 });
   f.window.visualViewport.dispatch('resize'); f.render();
   assert.equal(f.button().style.width, '24px'); assert.equal(f.button().style.height, '24px');
-  assert.equal(f.button().style.left, '612px'); assert.equal(f.button().style.top, '44px');
+  assert.equal(f.button().style.right, '4px'); assert.equal(f.button().style.top, '4px');
+  assert.equal(f.document.body.children[1].getBoundingClientRect().top, 370);
 });
 check('safe-area insets are respected inside the WebView viewport', () => {
   const f = fixture(); const original = f.window.getComputedStyle;
   f.window.visualViewport.width = 620;
   f.window.getComputedStyle = e => ({ ...original(e), ...(e.tagName === 'SPAN' ? {paddingRight: '40px'} : {}) });
-  f.bind(); f.policy(true); f.flush(); assert.equal(f.button().style.left, '524px');
+  f.bind(); f.policy(true); f.flush(); f.flush();
+  assert.notEqual(f.button()?.hidden, false); assert.equal(f.state().videos[0].assistantAction, 'toolbar');
 });
 check('small previews, hidden videos and denied fullscreen do not get a button', () => {
   const tiny = video(); tiny.getBoundingClientRect = () => ({left: 0, top: 0, width: 100, height: 60});
@@ -397,7 +439,8 @@ check('pagehide removes the host and cancels animation-frame work', () => {
 check('scroll bursts coalesce geometry work without waiting for telemetry', () => {
   const f = enabledFixture(); f.initial[0].getBoundingClientRect = () => ({left: 0, top: 100, width: 640, height: 360});
   for (let i = 0; i < 100; i++) f.window.dispatch('scroll');
-  assert.equal(f.animationFrames.size, 1); f.render(); assert.equal(f.button().style.top, '108px');
+  assert.equal(f.animationFrames.size, 1); f.render();
+  assert.equal(f.document.body.children[1].getBoundingClientRect().top, 460);
 });
 check('stale policy tokens cannot re-enable a hidden button', () => {
   const f = enabledFixture(); f.policy(false); f.flush();
@@ -841,8 +884,11 @@ function youtubeBodyFixture(rootOverflow = 'visible', containment = 'none') {
 }
 check('YouTube-shaped viewport overflow does not clip a visible video to a zero-height body', () => {
   const {f, v} = youtubeBodyFixture(); f.bind(); f.policy(true); f.flush();
-  assert.equal(f.button().hidden, false); assert.equal(f.button().style.top, '68px');
-  assert.equal(f.button().style.left, '434px'); f.click(); assert.equal(f.document.fullscreenElement, v);
+  assert.equal(f.button().hidden, false); assert.equal(f.button().style.top, '8px');
+  assert.equal(f.button().style.right, '8px');
+  const row = bodyRow(f);
+  assert.equal(row.getBoundingClientRect().top, 340);
+  f.click(); assert.equal(f.document.fullscreenElement, v);
 });
 check('viewport overflow exception still respects the actual nested player clipping', () => {
   const {f, player} = youtubeBodyFixture();
@@ -869,5 +915,133 @@ check('layout discovery never reads or changes a videos DRM session', () => {
   v.setMediaKeys = () => { throw new Error('DRM session must not be changed'); };
   f.bind(); f.policy(true); f.flush(); f.click(); f.control('richUi', 1); f.control('holdRate'); f.control('releaseRate');
   assert.equal(keyReads, 0); assert.equal(v.currentTime, 12); assert.equal(v.paused, false);
+});
+function toolbarFixture() {
+  const f = fixture(); f.window.top = {};
+  f.bind(); f.policy(true); f.flush(); f.flush();
+  f.arm = (extra = {}, credentials = {}) => {
+    const hello = f.messages.find(m => m.type === 'hello'), state = f.state().videos[0];
+    f.window.MiowserLiveVideo.onmessage({data: JSON.stringify({type: 'armToolbarEntry', documentId: hello.documentId,
+      navigation: 3, token: 'frame-token', elementId: state.elementId, sourceRevision: state.sourceRevision,
+      ...extra, ...credentials})});
+  };
+  f.tapVideo = (extra = {}) => f.document.dispatch('click', {isTrusted: true,
+    clientX: 300, clientY: 150, target: f.initial[0], preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {}, ...extra});
+  return f;
+}
+check('embedded frames leave their page DOM untouched and offer the toolbar fallback', () => {
+  const f = toolbarFixture();
+  assert.equal(bodyRow(f), undefined); assert.equal(f.button(), undefined);
+  assert.equal(f.state().videos[0].assistantAction, 'toolbar');
+  assert.equal(f.initial[0].fullscreenRequests, 0);
+});
+check('toolbar entry needs an explicit request and a trusted tap on the exact visible video', () => {
+  const f = toolbarFixture(), v = f.initial[0];
+  f.tapVideo(); assert.equal(v.fullscreenRequests, 0);
+  f.arm(); assert.equal(v.fullscreenRequests, 0);
+  f.tapVideo({isTrusted: false}); assert.equal(v.fullscreenRequests, 0);
+  f.tapVideo({clientX: 900}); assert.equal(v.fullscreenRequests, 0);
+  f.tapVideo(); assert.equal(v.fullscreenRequests, 1);
+  assert.equal(v.currentTime, 12); assert.equal(v.currentSrc, 'blob:https://site.test/video');
+  assert.equal(v.paused, false); assert.equal(v.playbackRate, 1);
+});
+check('toolbar requests from an old frame, document, navigation or source cannot arm playback', () => {
+  for (const invalid of [{token: 'old-token'}, {documentId: 'old-doc'}, {navigation: 2},
+    {elementId: 'other-video'}, {sourceRevision: 90}]) {
+    const f = toolbarFixture(); f.arm(invalid); f.tapVideo(); assert.equal(f.initial[0].fullscreenRequests, 0);
+  }
+});
+check('a source replaced after toolbar arming cannot be opened by a delayed tap', () => {
+  const f = toolbarFixture(); f.arm(); f.initial[0].currentSrc = 'blob:new-source';
+  f.tapVideo(); assert.equal(f.initial[0].fullscreenRequests, 0);
+});
+check('toolbar arming expires and cancellation restores normal page interactions', () => {
+  for (const cancel of [f => f.flush(), f => f.policy(false), f => f.window.dispatch('pagehide'),
+    f => f.window.MiowserLiveVideo.onmessage({data: JSON.stringify({type: 'cancelToolbarEntry',
+      documentId: f.state().documentId, navigation: 3, token: 'frame-token'})})]) {
+    const f = toolbarFixture(); f.arm(); cancel(f); f.tapVideo(); assert.equal(f.initial[0].fullscreenRequests, 0);
+  }
+});
+check('toolbar arming never intercepts a website link or player button', () => {
+  const f = toolbarFixture(); f.arm(); f.tapVideo({target: {closest: () => ({tagName: 'BUTTON'})}});
+  assert.equal(f.initial[0].fullscreenRequests, 0); f.tapVideo(); assert.equal(f.initial[0].fullscreenRequests, 1);
+});
+check('a fullscreen permission revoked after arming cannot be bypassed', () => {
+  const f = toolbarFixture(); f.arm(); f.document.fullscreenEnabled = false;
+  let consumed = 0;
+  f.tapVideo({preventDefault() {consumed++;}, stopImmediatePropagation() {consumed++;}});
+  assert.equal(f.initial[0].fullscreenRequests, 0); assert.equal(consumed, 0);
+});
+check('a fixed-height embedded viewport does not get a hidden or overlaid row', () => {
+  const f = fixture(); f.window.visualViewport.height = 375;
+  f.bind(); f.policy(true); f.flush(); f.flush();
+  assert.equal(f.button().hidden, true); assert.equal(f.state().videos[0].assistantAction, 'toolbar');
+  // Space is reserved, so scrolling to the row can reveal it without touching the video.
+  f.initial[0].getBoundingClientRect = () => ({left: 0, top: -100, width: 640, height: 360});
+  f.window.dispatch('scroll'); f.render(); f.flush();
+  assert.equal(f.button().hidden, false); assert.equal(f.state().videos[0].assistantAction, 'row');
+});
+check('the reserved row is stable across pause, menus and fullscreen roundtrips', () => {
+  const f = enabledFixture(), row = bodyRow(f), parent = f.initial[0].parentElement;
+  assert.equal(parent.children[1], row); assert.equal(row.style.height, '64px');
+  f.initial[0].paused = true; f.initial[0].dispatch('pause'); f.flush();
+  assert.equal(bodyRow(f), row); assert.equal(f.button().hidden, true);
+  f.initial[0].paused = false; f.initial[0].dispatch('play'); f.flush();
+  f.policy(false); f.render(); assert.equal(bodyRow(f), row);
+  f.policy(true); f.render(); f.click(); assert.equal(bodyRow(f), row);
+  f.document.fullscreenElement = null; f.document.dispatch('fullscreenchange'); f.flush();
+  assert.equal(bodyRow(f), row); assert.equal(parent, f.initial[0].parentElement);
+});
+check('provider removal retries are bounded and resize can recover the layout', () => {
+  const f = enabledFixture();
+  for (let i = 0; i < 4; i++) { bodyRow(f)?.remove(); f.mutate(); f.flush(); }
+  assert.equal(bodyRow(f), undefined); f.flush();
+  assert.equal(f.state().videos[0].assistantAction, 'toolbar');
+  const count = f.elements.length;
+  for (let i = 0; i < 30; i++) { f.window.dispatch('scroll'); f.render(); }
+  assert.equal(f.elements.length, count);
+  f.window.dispatch('resize'); f.render(); assert.equal(f.button().hidden, false);
+});
+check('a page that resizes the video when a row is inserted falls back without keeping the row', () => {
+  const f = fixture(), v = f.initial[0];
+  v.getBoundingClientRect = () => ({left: 0, top: 10, width: bodyRow(f) ? 300 : 640, height: 360});
+  f.bind(); f.policy(true); f.flush(); f.flush();
+  assert.equal(bodyRow(f), undefined); assert.equal(f.state().videos[0].assistantAction, 'toolbar');
+  assert.equal(v.getBoundingClientRect().width, 640);
+});
+check('detaching the video removes its reserved row instead of leaving empty space', () => {
+  const f = enabledFixture(), row = bodyRow(f);
+  f.initial[0].isConnected = false; f.mutate(); f.flush();
+  assert.equal(row.isConnected, false); assert.equal(bodyRow(f), undefined);
+});
+check('reserving a row pushes the title down without wrapping or moving the video', () => {
+  const v = video(), parent = new Element('div'), title = new Element('h2');
+  const rowHeight = () => parent.children.reduce((sum, child) => sum +
+    (child.getAttribute?.('data-miowser-video-assistant') !== null && child.tagName === 'DIV' ? parseFloat(child.style.height) || 0 : 0), 0);
+  parent.appendChild(v); parent.appendChild(title);
+  parent.getBoundingClientRect = () => ({left: 0, top: 10, width: 640, height: 396 + rowHeight()});
+  title.getBoundingClientRect = () => ({left: 0, top: 370 + rowHeight(), width: 640, height: 36});
+  const f = fixture([v]);
+  assert.equal(title.getBoundingClientRect().top, 370);
+  f.bind(); f.policy(true); f.flush();
+  assert.equal(f.button().hidden, false); assert.equal(title.getBoundingClientRect().top, 434);
+  assert.equal(parent.children[0], v); assert.equal(parent.children[1], bodyRow(f)); assert.equal(parent.children[2], title);
+  assert.equal(v.parentElement, parent); assert.equal(v.getBoundingClientRect().height, 360);
+});
+check('fixed-height and sticky containers cannot cause the row to overlap following page content', () => {
+  for (const position of ['relative', 'sticky']) {
+    const v = video(), parent = new Element('div');
+    parent.appendChild(v); parent.computed = {position};
+    parent.getBoundingClientRect = () => ({left: 0, top: 10, width: 640, height: 360});
+    const f = fixture([v]); f.bind(); f.policy(true); f.flush(); f.flush();
+    assert.equal(bodyRow(f), undefined); assert.equal(f.state().videos[0].assistantAction, 'toolbar');
+  }
+});
+check('an absolutely positioned title that does not move down cannot be covered by the action', () => {
+  const f = fixture(), title = new Element('h2');
+  title.getBoundingClientRect = () => ({left: 0, top: 370, width: 640, height: 40});
+  f.document.body.appendChild(title);
+  f.bind(); f.policy(true); f.flush(); f.flush();
+  assert.equal(bodyRow(f), undefined); assert.equal(f.state().videos[0].assistantAction, 'toolbar');
 });
 console.log(checks + ' live-video script checks passed; no device tests were run.');
