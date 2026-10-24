@@ -49,7 +49,18 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             // Bound work to this video's ancestors; never scan the page for layout candidates.
             var parent = video.parentElement;
             for (var i = 0; parent && parent !== document.documentElement && i < 16; i++, parent = parent.parentElement) {
-                var style = window.getComputedStyle(parent), box = parent.getBoundingClientRect();
+                // Root/body overflow can be propagated to the viewport (CSS Overflow),
+                // even when BODY's own box has zero height, as on YouTube. The viewport
+                // intersection above already handles that scrollport; it is not a local clip.
+                if (parent === document.scrollingElement) continue;
+                var style = window.getComputedStyle(parent);
+                if (parent.tagName === 'BODY' && parent.parentElement === document.documentElement) {
+                    var rootStyle = window.getComputedStyle(document.documentElement);
+                    if (rootStyle.overflowX === 'visible' && rootStyle.overflowY === 'visible' &&
+                        (!rootStyle.contain || rootStyle.contain === 'none') &&
+                        (!style.contain || style.contain === 'none') && style.display !== 'none') continue;
+                }
+                var box = parent.getBoundingClientRect();
                 if (/hidden|clip|auto|scroll/.test(style.overflowX)) {
                     result.left = Math.max(result.left, box.left); result.right = Math.min(result.right, box.right);
                 }

@@ -826,4 +826,48 @@ check('background and PiP roundtrips retain a single guard until the exact owner
   assert.equal(v.getAttribute('data-miowser-rich-controls'), token); assert.equal(controlSheets(f).length, 1); assert.equal(v.controls, false);
   f.lifecycle('releaseFullscreen', {recoveryId: 7}); assert.equal(controlSheets(f).length, 0);
 });
+function youtubeBodyFixture(rootOverflow = 'visible', containment = 'none') {
+  const v = video(), body = new Element('body'), player = new Element('div');
+  v.getBoundingClientRect = () => ({left: 0, top: 60, width: 490, height: 276});
+  player.getBoundingClientRect = () => ({left: 0, top: 56, right: 490, bottom: 340, width: 490, height: 284});
+  player.computed = {overflowX: 'hidden', overflowY: 'hidden'};
+  body.getBoundingClientRect = () => ({left: 0, top: 0, right: 490, bottom: 0, width: 490, height: 0});
+  body.computed = {overflowX: 'auto', overflowY: 'scroll', contain: containment};
+  v.parentElement = player; player.parentElement = body;
+  const f = fixture([v]); body.parentElement = f.document.documentElement;
+  f.document.body = body; f.document.scrollingElement = f.document.documentElement;
+  f.document.documentElement.computed = {overflowX: rootOverflow, overflowY: rootOverflow, contain: 'none'};
+  return {f, body, player, v};
+}
+check('YouTube-shaped viewport overflow does not clip a visible video to a zero-height body', () => {
+  const {f, v} = youtubeBodyFixture(); f.bind(); f.policy(true); f.flush();
+  assert.equal(f.button().hidden, false); assert.equal(f.button().style.top, '68px');
+  assert.equal(f.button().style.left, '434px'); f.click(); assert.equal(f.document.fullscreenElement, v);
+});
+check('viewport overflow exception still respects the actual nested player clipping', () => {
+  const {f, player} = youtubeBodyFixture();
+  player.getBoundingClientRect = () => ({left: 0, top: 56, right: 490, bottom: 95, width: 490, height: 39});
+  f.bind(); f.policy(true); f.flush(); assert.notEqual(f.button()?.hidden, false);
+});
+check('body overflow remains a local clip when the root or containment prevents propagation', () => {
+  for (const options of [['auto', 'none'], ['visible', 'paint']]) {
+    const {f} = youtubeBodyFixture(...options); f.bind(); f.policy(true); f.flush();
+    assert.notEqual(f.button()?.hidden, false);
+  }
+});
+check('a body that is itself the document scroller uses viewport bounds', () => {
+  const {f, body} = youtubeBodyFixture('auto'); f.document.scrollingElement = body;
+  f.bind(); f.policy(true); f.flush(); assert.equal(f.button().hidden, false);
+});
+check('the viewport clipping fix does not bypass an iframe fullscreen denial', () => {
+  const {f, v} = youtubeBodyFixture(); f.document.fullscreenEnabled = false;
+  f.bind(); f.policy(true); f.flush(); assert.equal(f.button(), undefined); assert.equal(v.fullscreenRequests, 0);
+});
+check('layout discovery never reads or changes a videos DRM session', () => {
+  const {f, v} = youtubeBodyFixture(); let keyReads = 0;
+  Object.defineProperty(v, 'mediaKeys', {get() { keyReads++; throw new Error('DRM is outside this feature'); }});
+  v.setMediaKeys = () => { throw new Error('DRM session must not be changed'); };
+  f.bind(); f.policy(true); f.flush(); f.click(); f.control('richUi', 1); f.control('holdRate'); f.control('releaseRate');
+  assert.equal(keyReads, 0); assert.equal(v.currentTime, 12); assert.equal(v.paused, false);
+});
 console.log(checks + ' live-video script checks passed; no device tests were run.');

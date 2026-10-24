@@ -22,6 +22,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -43,6 +44,14 @@ internal fun BoxScope.PlayerChromeScrims(viewportHeight: Dp, locked: Boolean) {
     if (!locked) Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(minOf(256.dp, viewportHeight * 0.53f))
         .background(Brush.verticalGradient(0f to Color.Transparent,
             0.35f to Color.Black.copy(alpha = 0.34f), 1f to Color.Black.copy(alpha = 0.72f))))
+}
+
+@Composable
+internal fun PlayerHoldSpeedIndicator(modifier: Modifier = Modifier) {
+    Text("2×", color = Color.White,
+        style = MaterialTheme.typography.titleMedium.copy(shadow = Shadow(Color.Black, Offset.Zero, 8f)),
+        modifier = modifier.background(Color.Black.copy(alpha = 0.60f), RoundedCornerShape(50))
+            .padding(horizontal = 12.dp, vertical = 6.dp))
 }
 
 internal enum class PlayerScaleMode(val label: String) { FIT("Fit"), ZOOM("Zoom"), FILL("Fill") }

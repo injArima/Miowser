@@ -86,6 +86,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
     var feedback by remember { mutableStateOf<PlayerGestureFeedback?>(null) }
     var feedbackSequence by remember { mutableIntStateOf(0) }
     val speedHold = remember { BrowserVideoSpeedHold() }
+    var holdingSpeed by remember { mutableStateOf(false) }
     val timeline = remember { BrowserVideoTimelineInteraction() }
     var scrubbing by remember { mutableStateOf(false) }
     var interaction by remember { mutableIntStateOf(0) }
@@ -114,7 +115,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
     BackHandler(enabled = locked && !inPip && state.controlsEnabled && !modal) { locked = false; visible = true }
     LaunchedEffect(state.phase, video.sourceRevision, inPip) {
         speedMenu = false; scaleMenu = false; adjustments = false; audioPanel = false
-        overlays.clear(); scrubbing = false; feedback = null; speedHold.stop(controller)
+        overlays.clear(); scrubbing = false; feedback = null; speedHold.stop(controller); holdingSpeed = false
         if (!state.controlsEnabled) locked = false
     }
     LaunchedEffect(video.captions.isEmpty(), video.audioTracks.size > 1) {
@@ -155,7 +156,8 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                     onTogglePlayPause = {
                         val playing = controller.state.value.session?.state?.playing == true
                         act(controller::playPause); !playing
-                    }, onStartHoldToSpeed = { speedHold.start(controller) }, onStopHoldToSpeed = { speedHold.stop(controller) },
+                    }, onStartHoldToSpeed = { speedHold.start(controller).also { holdingSpeed = it } },
+                    onStopHoldToSpeed = { speedHold.stop(controller); holdingSpeed = false },
                     onSeekTo = { target -> controller.state.value.session?.state?.browserSeekWindow()?.let { window ->
                         act { controller.seekTo(window.startMs + target) }
                     } }, onFeedback = { feedback = it; feedbackSequence++ }, onBrightnessCommitted = {},
@@ -216,6 +218,11 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                         PlayerGestureKind.VOLUME -> Modifier.align(Alignment.CenterEnd).padding(end = 28.dp)
                         else -> Modifier.align(Alignment.Center)
                     })
+                }
+                if (holdingSpeed && video.speed == 2.0 && state.controlsEnabled && !locked && !modal) {
+                    PlayerHoldSpeedIndicator(Modifier.align(Alignment.TopCenter)
+                        .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top))
+                        .padding(top = 16.dp))
                 }
                 if (state.phase == BrowserVideoPhase.RECONNECTING) BrowserVideoRecoveryBanner("Reconnecting player controls…", onExit)
             }

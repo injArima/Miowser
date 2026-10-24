@@ -1245,12 +1245,8 @@ private fun PlayerContent(
             )
         }
 
-        if (holdToSpeedActive && !controlsVisible) {
-            Text(
-                text = "2×",
-                color = Color.White,
-                style = MaterialTheme.typography.titleMedium.copy(
-                    shadow = Shadow(Color.Black, Offset.Zero, 8f)),
+        if (holdToSpeedActive) {
+            PlayerHoldSpeedIndicator(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top))
