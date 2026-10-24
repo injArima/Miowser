@@ -13,6 +13,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
     var intersection = null, resize = null, running = false, lastSent = -1000;
     var assistant = null;
     var controls = null, fullscreenSerial = 0;
+    var trackIds = new WeakMap(), nextTrackId = 0;
     var removed = new Set(), listeners = [];
     var MAX_VIDEOS = 8, UPDATE_MS = 500;
 
@@ -24,6 +25,26 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
     }
     function hello() { if (videos.size > 0) send({type: 'hello', documentId: documentId}); }
     function finite(value) { return Number.isFinite(value) ? value : null; }
+    function trackId(track) {
+        var id = trackIds.get(track);
+        if (!id) { id = ++nextTrackId; trackIds.set(track, id); }
+        return id;
+    }
+    function mediaTracks(video, audio) {
+        var result = [], tracks;
+        try {
+            tracks = audio ? video.audioTracks : video.textTracks;
+            if (!tracks) return result;
+            for (var i = 0; i < Math.min(tracks.length, 128) && result.length < (audio ? 8 : 16); i++) {
+                var track = tracks[i];
+                if (!audio && track.kind !== 'subtitles' && track.kind !== 'captions') continue;
+                result.push({id: trackId(track), label: String(track.label || '').slice(0, 80),
+                    language: String(track.language || '').slice(0, 16),
+                    selected: audio ? !!track.enabled : track.mode === 'showing'});
+            }
+        } catch (ignored) {}
+        return result;
+    }
     function ranges(value) {
         var result = [];
         try {
@@ -60,6 +81,12 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             seekable: ranges(video.seekable), buffered: ranges(video.buffered), readyState: video.readyState,
             sourceRevision: record.sourceRevision, interacted: record.interacted
         };
+        var owner = assistant ? assistant.owner() : null;
+        if (owner && owner.record === record) {
+            result.captions = mediaTracks(video, false);
+            result.audioTracks = mediaTracks(video, true);
+            result.scale = window.getComputedStyle(video).objectFit || 'contain';
+        }
         record.interacted = false;
         return result;
     }
@@ -117,11 +144,18 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             ratio: 1, interacted: false, cleanups: []};
         videos.set(id, record);
         ['loadedmetadata', 'durationchange', 'loadstart', 'emptied', 'resize', 'play', 'pause',
-            'playing', 'waiting', 'seeking', 'seeked', 'timeupdate', 'ratechange', 'ended', 'progress', 'error']
+            'playing', 'waiting', 'seeking', 'seeked', 'timeupdate', 'ratechange', 'volumechange', 'ended', 'progress', 'error']
             .forEach(function (type) {
                 video.addEventListener(type, schedule);
                 record.cleanups.push(function () { video.removeEventListener(type, schedule); });
             });
+        [video.textTracks, video.audioTracks].forEach(function (tracks) {
+            if (!tracks || !tracks.addEventListener) return;
+            ['addtrack', 'removetrack', 'change'].forEach(function (event) {
+                tracks.addEventListener(event, schedule);
+                record.cleanups.push(function () { tracks.removeEventListener(event, schedule); });
+            });
+        });
         function interaction() { record.interacted = true; record.lastInteraction = performance.now(); schedule(); }
         video.addEventListener('pointerdown', interaction, {passive: true});
         record.cleanups.push(function () { video.removeEventListener('pointerdown', interaction); });
@@ -163,8 +197,8 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             interacted: schedule,
             entering: function () { return ++fullscreenSerial; },
             fullscreen: function (record, attempt, active) {
-                packet(active ? 'fullscreenActive' : 'fullscreenEnded', {elementId: record.id, attempt: attempt});
                 if (!active && controls) controls.release();
+                packet(active ? 'fullscreenActive' : 'fullscreenEnded', {elementId: record.id, attempt: attempt});
             },
             failed: function () {
                 if (running && binding) send({type: 'fullscreenError', documentId: documentId,
@@ -174,6 +208,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         if (window.__miowserCreateVideoControls) controls = window.__miowserCreateVideoControls({
             owner: function () { return assistant ? assistant.owner() : null; },
             rich: function (id, attempt, attached) { return assistant && assistant.rich(id, attempt, attached); },
+            trackId: trackId,
             reply: function (type, command, ok) {
                 packet(type, {commandId: command.commandId, elementId: command.elementId,
                     attempt: command.attempt, ok: ok});
@@ -261,6 +296,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         try {
             var message = JSON.parse(event.data);
             if (message.type === 'reset' && message.documentId === documentId) {
+                if (controls) controls.release();
                 binding = null;
                 if (assistant) assistant.policy(null);
                 if (document.visibilityState !== 'hidden') hello();

@@ -24,11 +24,20 @@ class Events {
   }
   dispatch(type, event = {}) { [...(this.events.get(type) || [])].forEach(fn => fn(event)); }
 }
+function style() {
+  const values = {}, priorities = {};
+  return { setProperty(key, value, priority = '') { values[key] = String(value); priorities[key] = priority; this[key] = String(value); },
+    getPropertyValue(key) { return values[key] || ''; }, getPropertyPriority(key) { return priorities[key] || ''; },
+    removeProperty(key) { const old = values[key]; delete values[key]; delete priorities[key]; delete this[key]; return old; } };
+}
+function tracks(items) { return Object.assign(items, new Events(), {
+  addEventListener: Events.prototype.addEventListener, removeEventListener: Events.prototype.removeEventListener,
+  dispatch: Events.prototype.dispatch }); }
 class Element extends Events {
   constructor(tag) {
     super(); this.tagName = tag.toUpperCase(); this.children = []; this.attributes = {};
     this.isConnected = false; this.parentElement = null; this.hidden = false;
-    this.style = { setProperty(key, value) { this[key] = value; } };
+    this.style = style();
     this.animationCount = 0;
   }
   setAttribute(key, value) { this.attributes[key] = value; }
@@ -52,6 +61,7 @@ function video(source = 'blob:https://site.test/video') {
     currentTime: 12, duration: 45, paused: false, ended: false, muted: false,
     playbackRate: 1, readyState: 4, videoWidth: 1280, videoHeight: 720, controls: false,
     seeking: false,
+    style: style(), textTracks: tracks([]), audioTracks: tracks([]),
     play() { this.paused = false; this.dispatch('play'); return {then(resolve) {resolve();}}; },
     pause() { this.paused = true; this.dispatch('pause'); },
     seekable: { length: 1, start: () => 0, end: () => 45 },
@@ -85,7 +95,7 @@ function fixture(initial = [video()]) {
     matchMedia: () => ({ matches: false }),
     getComputedStyle: element => ({ display: 'block', visibility: 'visible', opacity: '1',
       overflowX: 'visible', overflowY: 'visible', paddingLeft: '0px', paddingRight: '0px',
-      paddingTop: '0px', paddingBottom: '0px', ...element.computed }) });
+      paddingTop: '0px', paddingBottom: '0px', objectFit: element.style?.getPropertyValue('object-fit') || 'contain', ...element.computed }) });
   const bridge = { postMessage: text => messages.push(JSON.parse(text)) };
   window.MiowserLiveVideo = bridge;
   class MutationObserver {
@@ -488,5 +498,115 @@ check('pagehide releases seek listeners and sends no late acknowledgement', () =
 check('replayed commands cannot reapply a previous pause', () => {
   const f = playingFixture(); const first = f.control('pause'); f.control('play');
   f.control('pause', undefined, {commandId: first}); assert.equal(f.initial[0].paused, false);
+});
+check('mute controls the current element without seeking, source replacement or pausing', () => {
+  const f = playingFixture(), v = f.initial[0], source = v.currentSrc;
+  assert.equal(ack(f, f.control('mute', 1)).ok, true); assert.equal(v.muted, true);
+  assert.equal(ack(f, f.control('mute', 0)).ok, true); assert.equal(v.muted, false);
+  assert.equal(ack(f, f.control('mute', 4)).ok, false);
+  assert.equal(v.currentTime, 12); assert.equal(v.currentSrc, source); assert.equal(v.paused, false);
+});
+check('scaling applies to the owning video and exit restores the exact inline style priority', () => {
+  const v = video(); v.style.setProperty('object-fit', 'scale-down', 'important');
+  const f = enabledFixture([v]); f.click();
+  assert.equal(ack(f, f.control('scale', 1)).ok, true); assert.equal(v.style.getPropertyValue('object-fit'), 'cover');
+  assert.equal(ack(f, f.control('scale', 2)).videos[0].scale, 'fill');
+  assert.equal(ack(f, f.control('scale', 0)).videos[0].scale, 'contain');
+  assert.equal(ack(f, f.control('scale', 99)).ok, false);
+  f.document.fullscreenElement = null; f.document.dispatch('fullscreenchange');
+  assert.equal(v.style.getPropertyValue('object-fit'), 'scale-down'); assert.equal(v.style.getPropertyPriority('object-fit'), 'important');
+});
+check('scaling with no previous inline property removes it on pagehide', () => {
+  const f = playingFixture(), v = f.initial[0]; f.control('scale', 1); f.window.dispatch('pagehide');
+  assert.equal(v.style.getPropertyValue('object-fit'), ''); assert.equal(v.style.getPropertyPriority('object-fit'), '');
+});
+function captionFixture() {
+  const v = video();
+  v.textTracks = tracks([{kind: 'subtitles', label: 'English', language: 'en', mode: 'showing'},
+    {kind: 'captions', label: 'French', language: 'fr', mode: 'disabled'},
+    {kind: 'metadata', label: 'provider metadata', mode: 'hidden'}]);
+  v.audioTracks = tracks([{label: 'Original', language: 'ja', enabled: true}, {label: 'Dub', language: 'en', enabled: false}]);
+  const f = enabledFixture([v]); f.click(); return f;
+}
+check('caption selection and Off leave provider metadata tracks alone', () => {
+  const f = captionFixture(), v = f.initial[0];
+  const meta = f.messages.filter(m => m.type === 'fullscreenActive').at(-1).videos[0];
+  assert.equal(meta.captions.length, 2);
+  assert.equal(ack(f, f.control('caption', meta.captions[1].id)).ok, true);
+  assert.equal(v.textTracks[0].mode, 'disabled'); assert.equal(v.textTracks[1].mode, 'showing');
+  assert.equal(v.textTracks[2].mode, 'hidden');
+  assert.equal(ack(f, f.control('caption', -1)).ok, true);
+  assert.equal(v.textTracks[1].mode, 'disabled'); assert.equal(v.textTracks[2].mode, 'hidden');
+});
+check('track identity survives reorder and stale selections fail safely', () => {
+  const f = captionFixture(), v = f.initial[0];
+  const id = f.messages.filter(m => m.type === 'fullscreenActive').at(-1).videos[0].captions[1].id;
+  v.textTracks.reverse(); assert.equal(ack(f, f.control('caption', id)).ok, true);
+  assert.equal(v.textTracks[1].mode, 'showing');
+  v.textTracks.splice(1, 1); assert.equal(ack(f, f.control('caption', id)).ok, false);
+  assert.equal(v.textTracks.find(t => t.kind === 'subtitles').mode, 'disabled');
+});
+check('audio selection only changes exposed tracks and rejects missing IDs', () => {
+  const f = captionFixture(), v = f.initial[0];
+  const meta = f.messages.filter(m => m.type === 'fullscreenActive').at(-1).videos[0];
+  assert.equal(ack(f, f.control('audio', meta.audioTracks[1].id)).ok, true);
+  assert.equal(v.audioTracks[1].enabled, true); assert.equal(v.audioTracks[0].enabled, false);
+  assert.equal(ack(f, f.control('audio', -1)).ok, false); assert.equal(v.audioTracks[1].enabled, true);
+  assert.equal(v.currentTime, 12); assert.equal(v.paused, false);
+});
+check('track capabilities are owner-only, bounded and keep packets under the bridge limit', () => {
+  const vs = Array.from({length: 8}, () => {
+    const v = video('https://cdn.test/' + 'x'.repeat(8000));
+    v.textTracks = tracks(Array.from({length: 150}, () => ({kind: 'subtitles', label: 'x'.repeat(1000), language: 'l'.repeat(50), mode: 'disabled'})));
+    v.audioTracks = tracks(Array.from({length: 150}, () => ({label: 'x'.repeat(1000), language: 'a'.repeat(50), enabled: false})));
+    return v;
+  });
+  const f = enabledFixture(vs); assert(f.state().videos.every(v => v.captions === undefined)); f.click();
+  const packet = f.messages.filter(m => m.type === 'fullscreenActive').at(-1), owned = packet.videos.find(v => v.elementId === packet.elementId);
+  assert.equal(owned.captions.length, 16); assert.equal(owned.audioTracks.length, 8);
+  assert.equal(owned.captions[0].label.length, 80); assert.equal(owned.captions[0].language.length, 16);
+  assert.equal(packet.videos.filter(v => v.captions !== undefined).length, 1); assert(JSON.stringify(packet).length <= 24576);
+});
+check('track events schedule bounded telemetry and listeners are removed on pagehide', () => {
+  const f = captionFixture(), v = f.initial[0]; f.flush(); const before = f.messages.length;
+  for (let n = 0; n < 50; n++) v.textTracks.dispatch('change');
+  f.flush(); assert.equal(f.messages.length - before, 1);
+  f.window.dispatch('pagehide');
+  assert.equal(v.textTracks.events.get('change').length, 0); assert.equal(v.audioTracks.events.get('addtrack').length, 0);
+});
+check('additional controls reject stale fullscreen attempts', () => {
+  const f = captionFixture(), v = f.initial[0];
+  ['mute', 'scale', 'caption', 'audio'].forEach(action => f.control(action, 1, {attempt: 999}));
+  assert.equal(v.muted, false); assert.equal(v.style.getPropertyValue('object-fit'), '');
+  assert.equal(v.textTracks[0].mode, 'showing'); assert.equal(v.audioTracks[0].enabled, true);
+});
+check('temporary speed restores the fresh DOM speed on release and only once', () => {
+  const f = playingFixture(), v = f.initial[0]; v.playbackRate = 1.25;
+  assert.equal(ack(f, f.control('holdRate')).ok, true); assert.equal(v.playbackRate, 2);
+  f.control('holdRate'); f.control('releaseRate'); assert.equal(v.playbackRate, 1.25);
+  v.playbackRate = 1.5; f.control('releaseRate'); assert.equal(v.playbackRate, 1.5);
+});
+check('fullscreen exit and page teardown restore held speed even after native ownership is gone', () => {
+  for (const exit of ['fullscreen', 'pagehide']) {
+    const f = playingFixture(), v = f.initial[0]; v.playbackRate = 0.75; f.control('holdRate');
+    if (exit === 'fullscreen') { f.document.fullscreenElement = null; f.document.dispatch('fullscreenchange'); }
+    else f.window.dispatch('pagehide');
+    assert.equal(v.playbackRate, 0.75);
+  }
+});
+check('temporary-speed cleanup respects explicit speed choices and provider source/rate changes', () => {
+  const f = playingFixture(), v = f.initial[0];
+  f.control('holdRate'); f.control('rate', 1.5); f.control('releaseRate'); assert.equal(v.playbackRate, 1.5);
+  f.control('holdRate'); v.playbackRate = 1.25; f.control('releaseRate'); assert.equal(v.playbackRate, 1.25);
+  f.control('holdRate'); v.currentSrc = 'blob:https://site.test/replacement'; f.control('releaseRate');
+  assert.equal(v.playbackRate, 2); // Do not write an old source's speed onto its replacement.
+});
+check('rich UI fallback and navigation invalidation release temporary speed', () => {
+  for (const exit of ['fallback', 'reset']) {
+    const f = playingFixture(), v = f.initial[0]; v.playbackRate = 1.5; f.control('holdRate');
+    if (exit === 'fallback') f.control('richUi', 0);
+    else f.window.MiowserLiveVideo.onmessage({data: JSON.stringify({type: 'reset', documentId: f.messages.find(m => m.type === 'hello').documentId})});
+    assert.equal(v.playbackRate, 1.5);
+  }
 });
 console.log(checks + ' live-video script checks passed; no device tests were run.');

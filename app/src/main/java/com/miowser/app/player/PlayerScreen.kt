@@ -254,9 +254,9 @@ private enum class PlayerScaleMode(val label: String, val resizeMode: Int) {
     FILL("Fill", AspectRatioFrameLayout.RESIZE_MODE_FILL)
 }
 
-private enum class PlayerGestureKind { SEEK_BACKWARD, SEEK_FORWARD, PLAY, PAUSE, BRIGHTNESS, VOLUME }
+internal enum class PlayerGestureKind { SEEK_BACKWARD, SEEK_FORWARD, PLAY, PAUSE, BRIGHTNESS, VOLUME }
 
-private data class PlayerGestureFeedback(
+internal data class PlayerGestureFeedback(
     val kind: PlayerGestureKind,
     val label: String,
     val progress: Float? = null,
@@ -1483,6 +1483,31 @@ private fun PlayerGestureLayer(
     onFeedback: (PlayerGestureFeedback) -> Unit,
     onBrightnessCommitted: (Float) -> Unit
 ) {
+    PlayerGestureSurface(controlsLocked, controlsVisible, isLandscape,
+        positionMs = { player.currentPosition }, durationMs = { player.knownDurationMs() },
+        onSingleTap, onTogglePlayPause, onStartHoldToSpeed, onStopHoldToSpeed,
+        onSeekTo, onFeedback, onBrightnessCommitted)
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun PlayerGestureSurface(
+    controlsLocked: Boolean,
+    controlsVisible: Boolean,
+    isLandscape: Boolean,
+    positionMs: () -> Long,
+    durationMs: () -> Long,
+    onSingleTap: () -> Unit,
+    onTogglePlayPause: () -> Boolean,
+    onStartHoldToSpeed: () -> Boolean,
+    onStopHoldToSpeed: () -> Unit,
+    onSeekTo: (Long) -> Unit,
+    onFeedback: (PlayerGestureFeedback) -> Unit,
+    onBrightnessCommitted: (Float) -> Unit,
+    canSeek: Boolean = true,
+    volumeEnabled: Boolean = true,
+    onVolumeInteraction: () -> Unit = {}
+) {
     val context = LocalContext.current
     val activity = context.findActivity()
     val density = LocalDensity.current
@@ -1490,7 +1515,10 @@ private fun PlayerGestureLayer(
     val protectedTopPx = WindowInsets.statusBarsIgnoringVisibility.getTop(density).toFloat()
     val navigationBottomPx = WindowInsets.navigationBarsIgnoringVisibility.getBottom(density).toFloat()
     val audioManager = remember(context) { context.getSystemService(AudioManager::class.java) }
-    val currentPlayer by rememberUpdatedState(player)
+    val currentPosition by rememberUpdatedState(positionMs)
+    val currentDuration by rememberUpdatedState(durationMs)
+    val currentCanSeek by rememberUpdatedState(canSeek)
+    val currentVolumeInteraction by rememberUpdatedState(onVolumeInteraction)
     val currentSingleTapHandler by rememberUpdatedState(onSingleTap)
     val currentToggleHandler by rememberUpdatedState(onTogglePlayPause)
     val currentStartHoldToSpeed by rememberUpdatedState(onStartHoldToSpeed)
@@ -1565,9 +1593,10 @@ private fun PlayerGestureLayer(
                                 PlayerDoubleTapAction.SEEK_BACKWARD,
                                 PlayerDoubleTapAction.SEEK_FORWARD -> {
                                     val backward = action == PlayerDoubleTapAction.SEEK_BACKWARD
-                                    val origin = currentPlayer.currentPosition.coerceAtLeast(0L)
+                                    if (!currentCanSeek) return@detectTapGestures
+                                    val origin = currentPosition().coerceAtLeast(0L)
                                     val delta = if (backward) -SEEK_INCREMENT_MS else SEEK_INCREMENT_MS
-                                    val duration = currentPlayer.knownDurationMs()
+                                    val duration = currentDuration()
                                     val target = (origin + delta).let { candidate ->
                                         if (duration > 0L) candidate.coerceIn(0L, duration)
                                         else candidate.coerceAtLeast(0L)
@@ -1628,7 +1657,7 @@ private fun PlayerGestureLayer(
                         mode = PlayerGestureMode.UNDECIDED
                         totalDrag = Offset.Zero
                         dragStartedAt = offset
-                        startPosition = currentPlayer.currentPosition.coerceAtLeast(0L)
+                        startPosition = currentPosition().coerceAtLeast(0L)
                         pendingSeek = null
                         changedBrightness = null
 
@@ -1665,7 +1694,7 @@ private fun PlayerGestureLayer(
                             )
                             val verticalMode = when (tapAction) {
                                 PlayerDoubleTapAction.SEEK_BACKWARD -> PlayerGestureMode.BRIGHTNESS
-                                PlayerDoubleTapAction.SEEK_FORWARD -> PlayerGestureMode.VOLUME
+                                PlayerDoubleTapAction.SEEK_FORWARD -> if (volumeEnabled) PlayerGestureMode.VOLUME else null
                                 else -> null
                             }
                             mode = classifyPlayerGesture(
@@ -1674,7 +1703,7 @@ private fun PlayerGestureLayer(
                                 startedAtX = dragStartedAt.x,
                                 width = size.width.toFloat(),
                                 edgeInset = gestureEdgeInsetPx,
-                                allowSeek = playerSeekGestureAllowed(
+                                allowSeek = currentCanSeek && playerSeekGestureAllowed(
                                     y = dragStartedAt.y,
                                     height = size.height.toFloat(),
                                     protectedTop = protectedTopPx,
@@ -1684,13 +1713,14 @@ private fun PlayerGestureLayer(
                                 ),
                                 verticalMode = verticalMode
                             )
+                            if (mode == PlayerGestureMode.VOLUME) currentVolumeInteraction()
                         }
                         if (mode == PlayerGestureMode.UNDECIDED) return@detectDragGestures
                         change.consume()
 
                         when (mode) {
                             PlayerGestureMode.SEEK -> {
-                                val duration = currentPlayer.knownDurationMs()
+                                val duration = currentDuration()
                                 val delta = ((totalDrag.x / size.width.coerceAtLeast(1)) *
                                     gestureSeekSpanMs(duration)).roundToLong()
                                 val target = (startPosition + delta).let { candidate ->
@@ -1761,7 +1791,7 @@ private fun PlayerGestureLayer(
 }
 
 @Composable
-private fun PlayerGestureFeedbackOverlay(
+internal fun PlayerGestureFeedbackOverlay(
     feedback: PlayerGestureFeedback,
     modifier: Modifier = Modifier
 ) {

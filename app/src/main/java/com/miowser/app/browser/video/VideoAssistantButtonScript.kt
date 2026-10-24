@@ -67,6 +67,10 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         function restoreControls() {
             if (!restore) return;
             restore.video.controls = restore.controls;
+            if (restore.video.style && restore.objectFit !== undefined) {
+                if (restore.objectFit) restore.video.style.setProperty('object-fit', restore.objectFit, restore.fitPriority);
+                else restore.video.style.removeProperty('object-fit');
+            }
             restore = null;
         }
         function failed() {
@@ -87,7 +91,9 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             record.interacted = true; record.lastInteraction = performance.now();
             api.interacted();
             pending = true;
-            restore = {video: video, record: record, attempt: api.entering(record), controls: video.controls};
+            restore = {video: video, record: record, attempt: api.entering(record), controls: video.controls,
+                objectFit: video.style ? video.style.getPropertyValue('object-fit') : undefined,
+                fitPriority: video.style ? video.style.getPropertyPriority('object-fit') : ''};
             // Keep browser controls until the native rich overlay confirms it is attached.
             video.controls = true;
             hide();

@@ -6,7 +6,9 @@ import kotlinx.coroutines.flow.asStateFlow
 
 internal enum class BrowserVideoAction(val wireName: String, val family: String) {
     PLAY("play", "transport"), PAUSE("pause", "transport"), SEEK("seek", "seek"),
-    SKIP("skip", "seek"), RATE("rate", "rate"), RICH_UI("richUi", "ui"), SNAPSHOT("snapshot", "snapshot")
+    SKIP("skip", "seek"), RATE("rate", "rate"), RICH_UI("richUi", "ui"), SNAPSHOT("snapshot", "snapshot"),
+    MUTE("mute", "mute"), SCALE("scale", "scale"), CAPTION("caption", "caption"), AUDIO("audio", "audio"),
+    HOLD_RATE("holdRate", "rate"), RELEASE_RATE("releaseRate", "rate")
 }
 
 internal data class BrowserVideoCommand(val owner: LiveVideoId, val attempt: Long,
@@ -35,9 +37,16 @@ internal data class BrowserVideoPlaybackState(
 internal interface BrowserPlaybackControls {
     val state: StateFlow<BrowserVideoPlaybackState>
     fun playPause()
+    fun pause()
     fun skip(deltaMs: Long)
     fun seekTo(positionMs: Long)
     fun setSpeed(speed: Double)
+    fun beginSpeedHold()
+    fun endSpeedHold()
+    fun setMuted(muted: Boolean)
+    fun setScale(scale: BrowserVideoScale)
+    fun selectCaption(id: Long?)
+    fun selectAudio(id: Long)
     fun setRichUi(attached: Boolean)
     fun clearMessage()
 }
@@ -72,6 +81,7 @@ internal class BrowserVideoController : BrowserPlaybackControls {
         desiredPlaying = target
         if (!send(if (target) BrowserVideoAction.PLAY else BrowserVideoAction.PAUSE)) desiredPlaying = null
     }
+    override fun pause() { desiredPlaying = false; send(BrowserVideoAction.PAUSE) }
     override fun skip(deltaMs: Long) {
         if (!mutable.value.canSeek) return
         val position = mutable.value.session?.state?.positionMs ?: return
@@ -90,6 +100,17 @@ internal class BrowserVideoController : BrowserPlaybackControls {
     }
     override fun setSpeed(speed: Double) {
         if (speed.isFinite() && speed in 0.25..3.0) send(BrowserVideoAction.RATE, speed)
+    }
+    override fun beginSpeedHold() { send(BrowserVideoAction.HOLD_RATE) }
+    override fun endSpeedHold() { send(BrowserVideoAction.RELEASE_RATE) }
+    override fun setMuted(muted: Boolean) { send(BrowserVideoAction.MUTE, if (muted) 1.0 else 0.0) }
+    override fun setScale(scale: BrowserVideoScale) { send(BrowserVideoAction.SCALE, scale.ordinal.toDouble()) }
+    override fun selectCaption(id: Long?) {
+        val tracks = mutable.value.session?.state?.captions ?: return
+        if (id == null || tracks.any { it.id == id }) send(BrowserVideoAction.CAPTION, id?.toDouble() ?: -1.0)
+    }
+    override fun selectAudio(id: Long) {
+        if (mutable.value.session?.state?.audioTracks?.any { it.id == id } == true) send(BrowserVideoAction.AUDIO, id.toDouble())
     }
     override fun setRichUi(attached: Boolean) {
         send(BrowserVideoAction.RICH_UI, if (attached) 1.0 else 0.0)
@@ -110,6 +131,9 @@ internal class BrowserVideoController : BrowserPlaybackControls {
             message = if (ok) null else when (action.family) {
                 "seek" -> "The website didn't confirm that seek. Try another position."
                 "rate" -> "The website couldn't apply that playback speed."
+                "caption" -> "The website couldn't select that subtitle track."
+                "audio" -> "The website couldn't select that audio track."
+                "scale" -> "The website couldn't change the video size."
                 else -> "The website couldn't complete that player action."
             })
     }

@@ -317,6 +317,14 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
             "data" -> LiveVideoSourceKind.DATA
             else -> LiveVideoSourceKind.UNKNOWN
         }
+        fun tracks(key: String, limit: Int): List<BrowserMediaTrack> {
+            val array = json.optJSONArray(key) ?: return emptyList()
+            return (0 until minOf(array.length(), limit)).mapNotNull { index ->
+                val track = array.optJSONObject(index) ?: return@mapNotNull null
+                val id = track.optLong("id", -1).takeIf { it in 1..9_007_199_254_740_991L } ?: return@mapNotNull null
+                BrowserMediaTrack(id, track.optString("label").take(80), track.optString("language").take(16), track.optBoolean("selected"))
+            }
+        }
         return LiveVideoState(json.getString("elementId"), source.takeUnless { sourceKind == LiveVideoSourceKind.DATA },
             sourceKind, ms("position"), if (json.isNull("duration")) null else ms("duration"),
             json.optBoolean("playing"), json.optBoolean("ended"), json.optBoolean("buffering"),
@@ -326,7 +334,9 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
                 bound("height").coerceAtLeast(0.0), bound("viewportWidth").coerceAtLeast(0.0),
                 bound("viewportHeight").coerceAtLeast(0.0)), ranges(json.optJSONArray("seekable")),
             ranges(json.optJSONArray("buffered")), json.optInt("readyState").coerceIn(0, 4),
-            json.optLong("sourceRevision").coerceAtLeast(0), json.optBoolean("interacted"))
+            json.optLong("sourceRevision").coerceAtLeast(0), json.optBoolean("interacted"),
+            tracks("captions", 16), tracks("audioTracks", 8),
+            BrowserVideoScale.entries.firstOrNull { it.css == json.optString("scale") } ?: BrowserVideoScale.FIT)
     }
 
     companion object {

@@ -5,7 +5,17 @@ internal const val BROWSER_VIDEO_CONTROL_SCRIPT = """
 (function () {
     'use strict';
     window.__miowserCreateVideoControls = function (api) {
-        var lastCommand = 0, seekCleanup = null, disposed = false;
+        var lastCommand = 0, seekCleanup = null, disposed = false, heldRate = null;
+        function releaseRate() {
+            var held = heldRate;
+            heldRate = null;
+            if (!held) return;
+            try {
+                // Do not undo a provider's subsequent rate/source change.
+                if (held.video.currentSrc === held.source && held.video.srcObject === held.object &&
+                    Math.abs(held.video.playbackRate - 2) < 0.01) held.video.playbackRate = held.rate;
+            } catch (ignored) {}
+        }
         function receive(command) {
             if (disposed || !Number.isSafeInteger(command.commandId) || command.commandId <= lastCommand) return;
             var owner = api.owner();
@@ -18,10 +28,14 @@ internal const val BROWSER_VIDEO_CONTROL_SCRIPT = """
                 api.reply('controlAck', command, ok);
             }
             var value = command.value;
-            if (['play', 'pause', 'seek', 'skip', 'rate', 'richUi', 'snapshot'].indexOf(command.action) < 0) return;
+            if (['play', 'pause', 'seek', 'skip', 'rate', 'richUi', 'snapshot', 'mute', 'scale', 'caption', 'audio', 'holdRate', 'releaseRate'].indexOf(command.action) < 0) return;
             lastCommand = command.commandId;
             try {
                 switch (command.action) {
+                    case 'holdRate':
+                        if (!heldRate) heldRate = {video: video, rate: video.playbackRate, source: video.currentSrc, object: video.srcObject};
+                        video.playbackRate = 2; ack(Math.abs(video.playbackRate - 2) < 0.01); break;
+                    case 'releaseRate': releaseRate(); ack(true); break;
                     case 'play': {
                         var result = video.play();
                         api.reply('controlStarted', command, true);
@@ -30,12 +44,44 @@ internal const val BROWSER_VIDEO_CONTROL_SCRIPT = """
                         break;
                     }
                     case 'pause': video.pause(); ack(video.paused); break;
+                    case 'mute':
+                        if (value !== 0 && value !== 1) { ack(false); return; }
+                        video.muted = value === 1; ack(video.muted === (value === 1)); break;
+                    case 'scale': {
+                        if (!Number.isInteger(value) || value < 0 || value > 2) { ack(false); return; }
+                        var fit = ['contain', 'cover', 'fill'][value];
+                        video.style.setProperty('object-fit', fit, 'important');
+                        ack(window.getComputedStyle(video).objectFit === fit); break;
+                    }
+                    case 'caption': case 'audio': {
+                        if (!Number.isSafeInteger(value)) { ack(false); return; }
+                        var audio = command.action === 'audio', tracks = audio ? video.audioTracks : video.textTracks;
+                        if (!tracks) { ack(false); return; }
+                        var target = null;
+                        for (var t = 0; t < Math.min(tracks.length, 128); t++) {
+                            var candidate = tracks[t];
+                            if (!audio && candidate.kind !== 'captions' && candidate.kind !== 'subtitles') continue;
+                            if (api.trackId(candidate) === value) target = candidate;
+                        }
+                        if (!target && !(value === -1 && !audio)) { ack(false); return; }
+                        if (target) { if (audio) target.enabled = true; else target.mode = 'showing'; }
+                        for (var j = 0; j < Math.min(tracks.length, 128); j++) {
+                            var other = tracks[j];
+                            if (other === target) continue;
+                            if (audio) other.enabled = false;
+                            else if (other.kind === 'captions' || other.kind === 'subtitles') other.mode = 'disabled';
+                        }
+                        ack(!target || (audio ? target.enabled : target.mode === 'showing')); break;
+                    }
                     case 'rate':
                         if (!Number.isFinite(value) || value < 0.25 || value > 3) { ack(false); return; }
+                        heldRate = null; // An explicit speed selection supersedes a temporary hold.
                         video.playbackRate = value;
                         ack(Math.abs(video.playbackRate - value) < 0.01);
                         break;
-                    case 'richUi': ack(api.rich(command.elementId, command.attempt, value === 1)); break;
+                    case 'richUi':
+                        if (value !== 1) releaseRate();
+                        ack(api.rich(command.elementId, command.attempt, value === 1)); break;
                     case 'snapshot': ack(true); break;
                     case 'seek': case 'skip': {
                         if (!Number.isFinite(value) || (command.action === 'skip' && Math.abs(value) > 60)) { ack(false); return; }
@@ -81,8 +127,9 @@ internal const val BROWSER_VIDEO_CONTROL_SCRIPT = """
                 ack(false);
             }
         }
-        return {receive: receive, release: function () { if (seekCleanup) seekCleanup(); }, destroy: function () {
+        return {receive: receive, release: function () { releaseRate(); if (seekCleanup) seekCleanup(); }, destroy: function () {
             disposed = true;
+            releaseRate();
             if (seekCleanup) seekCleanup();
             seekCleanup = null;
         }};

@@ -38,6 +38,8 @@ import com.miowser.app.ui.theme.AppThemePreference
  * (see project memory: retro flagged screen-by-screen inset handling as a real bug source).
  */
 class MainActivity : ComponentActivity() {
+    internal var browserVideoPipOwner by mutableStateOf<com.miowser.app.browser.video.BrowserVideoPipOwner?>(null)
+        private set
     private var shortcutSequence = 0L
     private var shortcutRequest by mutableStateOf<LauncherShortcutRequest?>(null)
     internal var playerInPictureInPicture by mutableStateOf(false)
@@ -83,6 +85,23 @@ class MainActivity : ComponentActivity() {
             return enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(ratio).build())
         }
         return false
+    }
+
+    internal fun enterBrowserVideoPictureInPicture(owner: com.miowser.app.browser.video.BrowserVideoPipOwner,
+        width: Int, height: Int): Boolean {
+        browserVideoPipOwner = owner // Set before Android's onPause callback during entry.
+        val entered = runCatching { enterPlayerPictureInPicture(width, height) }.getOrDefault(false)
+        if (!entered) browserVideoPipOwner = null
+        return entered
+    }
+
+    internal fun releaseBrowserVideoPictureInPicture(owner: com.miowser.app.browser.video.BrowserVideoPipOwner) {
+        if (browserVideoPipOwner == owner) browserVideoPipOwner = null
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!isInPictureInPictureMode) browserVideoPipOwner = null
     }
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean,

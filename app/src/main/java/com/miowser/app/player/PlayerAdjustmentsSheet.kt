@@ -16,7 +16,10 @@ import kotlin.math.roundToInt
 
 /** Visible, labelled alternatives to the brightness/volume gestures. */
 @Composable
-internal fun PlayerAdjustmentsSheet(activity: Activity?, onDismiss: () -> Unit) {
+internal fun PlayerAdjustmentsSheet(activity: Activity?, onDismiss: () -> Unit,
+    onBrightnessCommitted: ((Float) -> Unit)? = null,
+    volumeEnabled: Boolean = true,
+    onVolumeInteraction: () -> Unit = {}) {
     val context = LocalContext.current
     val audio = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val maxVolume = remember { audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1) }
@@ -32,11 +35,17 @@ internal fun PlayerAdjustmentsSheet(activity: Activity?, onDismiss: () -> Unit) 
                 onValueChange = { value ->
                     brightness = value
                     activity?.window?.let { it.attributes = it.attributes.apply { screenBrightness = value } }
-                }, onValueChangeFinished = { PlayerDisplayPreferenceStore.saveBrightness(context, brightness) })
+                }, onValueChangeFinished = {
+                    if (onBrightnessCommitted != null) onBrightnessCommitted(brightness)
+                    else PlayerDisplayPreferenceStore.saveBrightness(context, brightness)
+                })
             Text("Volume ${(volume * 100 / maxVolume).roundToInt()}%")
-            Slider(value = volume, valueRange = 0f..maxVolume.toFloat(),
+            Slider(value = volume, valueRange = 0f..maxVolume.toFloat(), enabled = volumeEnabled,
                 modifier = Modifier.semantics { contentDescription = "Media volume" },
-                onValueChange = { value -> volume = value; audio.setStreamVolume(AudioManager.STREAM_MUSIC, value.roundToInt(), 0) })
+                onValueChange = { value ->
+                    volume = value; onVolumeInteraction()
+                    audio.setStreamVolume(AudioManager.STREAM_MUSIC, value.roundToInt(), 0)
+                })
         }
     }
 }

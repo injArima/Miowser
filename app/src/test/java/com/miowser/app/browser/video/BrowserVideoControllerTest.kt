@@ -12,7 +12,8 @@ class BrowserVideoControllerTest {
 
     @Test fun noCommandsWithoutAFullscreenOwner() {
         val c = controller(null)
-        c.playPause(); c.skip(10_000); c.seekTo(5000); c.setSpeed(1.5); c.setRichUi(true)
+        c.playPause(); c.pause(); c.skip(10_000); c.seekTo(5000); c.setSpeed(1.5); c.setRichUi(true)
+        c.setMuted(true); c.setScale(BrowserVideoScale.ZOOM); c.selectCaption(null); c.selectAudio(1)
         assertTrue(sent.isEmpty())
     }
     @Test fun rapidTransportTapsToggleExplicitIntentInsteadOfReusingAStaleClock() {
@@ -95,6 +96,70 @@ class BrowserVideoControllerTest {
         val c = controller()
         c.connect { false }; c.seekTo(25_000)
         assertNull(c.state.value.pendingSeekMs); assertNotNull(c.state.value.message)
+    }
+
+    @Test fun trackCommandsOnlyAcceptIdsExposedByTheCurrentOwner() {
+        val sample = session().let { it.copy(state = it.state.copy(
+            captions = listOf(BrowserMediaTrack(17, "English", "en", false)),
+            audioTracks = listOf(BrowserMediaTrack(25, "Original", "ja", true)))) }
+        val c = controller(sample)
+        c.selectCaption(999); c.selectAudio(999)
+        assertTrue(sent.isEmpty())
+        c.selectCaption(17); c.selectCaption(null); c.selectAudio(25)
+        assertEquals(listOf(17.0, -1.0, 25.0), sent.map { it.value })
+        assertTrue(sent.all { it.owner == sample.id && it.attempt == 3L })
+    }
+
+    @Test fun muteAndScaleCommandsDoNotChangeTheSampledSourceClockOrPlayState() {
+        val c = controller(); val original = c.state.value.session
+        c.setMuted(true); c.setMuted(false); c.setScale(BrowserVideoScale.ZOOM); c.setScale(BrowserVideoScale.FILL)
+        assertEquals(listOf(1.0, 0.0, 1.0, 2.0), sent.map { it.value })
+        assertEquals(original, c.state.value.session)
+        assertEquals(4, sent.size)
+    }
+
+    @Test fun explicitPauseNeverTogglesToPlayDuringPipDismissal() {
+        val c = controller()
+        c.pause(); c.pause()
+        assertEquals(listOf(BrowserVideoAction.PAUSE, BrowserVideoAction.PAUSE), sent.map { it.action })
+    }
+
+    @Test fun speedHoldRestoresPriorSpeedOnceOnReleaseOrCancellation() {
+        val c = controller(session().let { it.copy(state = it.state.copy(speed = 1.5)) })
+        val hold = BrowserVideoSpeedHold()
+        assertTrue(hold.start(c)); assertFalse(hold.start(c))
+        hold.stop(c); hold.stop(c)
+        assertEquals(listOf(BrowserVideoAction.HOLD_RATE, BrowserVideoAction.RELEASE_RATE), sent.map { it.action })
+    }
+
+    @Test fun speedHoldNeverRestoresOntoAnotherAttemptOrVideo() {
+        val c = controller(); val hold = BrowserVideoSpeedHold()
+        hold.start(c); c.attach(session(), 4); hold.stop(c)
+        assertEquals(listOf(BrowserVideoAction.HOLD_RATE), sent.map { it.action })
+        hold.start(c); c.attach(session().copy(id = session().id.copy(elementId = "other")), 4); hold.stop(c)
+        assertEquals(listOf(BrowserVideoAction.HOLD_RATE, BrowserVideoAction.HOLD_RATE), sent.map { it.action })
+    }
+
+    @Test fun speedHoldDoesNotStartWhilePausedAndLateReleaseAfterExitIsHarmless() {
+        val c = controller(session().let { it.copy(state = it.state.copy(playing = false)) })
+        val hold = BrowserVideoSpeedHold()
+        assertFalse(hold.start(c)); assertTrue(sent.isEmpty())
+        c.sample(session()); assertTrue(hold.start(c)); c.detach(); hold.stop(c)
+        assertEquals(listOf(BrowserVideoAction.HOLD_RATE), sent.map { it.action })
+    }
+
+    @Test fun pipRendererRequiresMatchingTabAcceptedFullscreenNavigationElementAndAttempt() {
+        val state = controller().state.value
+        val owner = BrowserVideoPipOwner(state.session!!.id, state.attempt)
+        assertTrue(keepBrowserRendererForPip(owner, 1, 1, state))
+        assertFalse(keepBrowserRendererForPip(null, 1, 1, state))
+        assertFalse(keepBrowserRendererForPip(owner, null, 1, state))
+        assertFalse(keepBrowserRendererForPip(owner, 2, 1, state))
+        assertFalse(keepBrowserRendererForPip(owner, 1, 2, state))
+        assertFalse(keepBrowserRendererForPip(owner, 1, 1, state.copy(attempt = 99)))
+        assertFalse(keepBrowserRendererForPip(owner, 1, 1, state.copy(session = state.session.copy(id = owner.id.copy(navigation = 99)))))
+        assertFalse(keepBrowserRendererForPip(owner, 1, 1, state.copy(session = state.session.copy(id = owner.id.copy(elementId = "other")))))
+        assertFalse(keepBrowserRendererForPip(owner, 1, 1, BrowserVideoPlaybackState()))
     }
 
     private fun session(): LiveVideoSession = LiveVideoSession(LiveVideoId(1, 1, 2, "document", "video"),

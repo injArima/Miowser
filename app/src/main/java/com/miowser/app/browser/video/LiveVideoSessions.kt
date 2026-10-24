@@ -26,6 +26,12 @@ data class VideoFrameBounds(
 enum class LiveVideoSourceKind { NETWORK, BLOB, MEDIA_STREAM, DATA, UNKNOWN }
 enum class LiveVideoSeekEvidence { SEEKABLE_RANGES, FINITE_DURATION_ONLY, UNKNOWN }
 
+data class BrowserMediaTrack(val id: Long, val label: String, val language: String, val selected: Boolean)
+
+enum class BrowserVideoScale(val label: String, val css: String) {
+    FIT("Fit", "contain"), ZOOM("Zoom", "cover"), FILL("Fill", "fill")
+}
+
 data class LiveVideoState(
     val elementId: String,
     val source: String?,
@@ -46,7 +52,10 @@ data class LiveVideoState(
     val buffered: List<VideoTimeRange>,
     val readyState: Int,
     val sourceRevision: Long,
-    val interacted: Boolean
+    val interacted: Boolean,
+    val captions: List<BrowserMediaTrack> = emptyList(),
+    val audioTracks: List<BrowserMediaTrack> = emptyList(),
+    val scale: BrowserVideoScale = BrowserVideoScale.FIT
 ) {
     val seekEvidence: LiveVideoSeekEvidence get() = when {
         seekable.isNotEmpty() -> LiveVideoSeekEvidence.SEEKABLE_RANGES

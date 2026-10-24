@@ -107,6 +107,7 @@ import com.miowser.app.adblock.SiteProtection
 import com.miowser.app.bookmarks.BookmarkList
 import com.miowser.app.browser.video.VideoAssistantButtonPolicy
 import com.miowser.app.browser.video.BrowserVideoPlayerOverlay
+import com.miowser.app.browser.video.keepBrowserRendererForPip
 import com.miowser.app.downloader.Download
 import com.miowser.app.downloader.DownloadConflictReason
 import com.miowser.app.downloader.DownloadedFileOpener
@@ -299,6 +300,10 @@ fun BrowserScreen(
     fun exitWebFullscreen() {
         val current = fullscreenVideo ?: return
         fullscreenVideo = null
+        (context.findBrowserActivity() as? com.miowser.app.MainActivity)?.let { activity ->
+            activity.browserVideoPipOwner?.takeIf { it.id.tabId == current.tabId }
+                ?.let(activity::releaseBrowserVideoPictureInPicture)
+        }
         tabController.tabs.firstOrNull { it.id == current.tabId }?.finishBrowserVideoFullscreen()
         (current.view.parent as? ViewGroup)?.removeView(current.view)
         current.callback.onCustomViewHidden()
@@ -3175,14 +3180,31 @@ fun BrowserScreen(
                 Lifecycle.Event.ON_PAUSE -> {
                     videoButtonForeground = false
                     if (!showingHub) tabs.firstOrNull { it.id == activeTabId }?.markActive()
-                    tabs.forEach { it.liveWebView?.onPause() }
+                    val pipOwner = (context.findBrowserActivity() as? com.miowser.app.MainActivity)?.browserVideoPipOwner
+                    tabs.forEach { tab ->
+                        if (keepBrowserRendererForPip(pipOwner, fullscreenVideo?.tabId, tab.id, tab.browserVideoPlayer.state.value)) {
+                            tab.liveWebView?.onResume()
+                        } else tab.liveWebView?.onPause()
+                    }
                     // Final checkpoint in addition to the foreground session-change observer.
                     if (recordsReady) TabSessionStore.save(context, tabs, activeTabId)
                     DownloadQueue.persist(context)
                 }
-                Lifecycle.Event.ON_STOP -> pendingClosedTab?.let { pending ->
-                    finalizeClosedTab(pending)
-                    snackbarJob?.cancel()
+                Lifecycle.Event.ON_STOP -> {
+                    val host = context.findBrowserActivity() as? com.miowser.app.MainActivity
+                    host?.browserVideoPipOwner?.let { owner ->
+                        tabs.firstOrNull { it.id == owner.id.tabId }?.let { tab ->
+                            if (owner.matches(tab.browserVideoPlayer.state.value)) {
+                                tab.browserVideoPlayer.pause()
+                                tab.liveWebView?.onPause()
+                            }
+                        }
+                        host.releaseBrowserVideoPictureInPicture(owner)
+                    }
+                    pendingClosedTab?.let { pending ->
+                        finalizeClosedTab(pending)
+                        snackbarJob?.cancel()
+                    }
                 }
                 else -> Unit
             }
