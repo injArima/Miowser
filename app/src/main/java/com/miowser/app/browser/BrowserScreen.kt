@@ -305,8 +305,8 @@ fun BrowserScreen(
                 ?.let(activity::releaseBrowserVideoPictureInPicture)
         }
         tabController.tabs.firstOrNull { it.id == current.tabId }?.finishBrowserVideoFullscreen()
-        (current.view.parent as? ViewGroup)?.removeView(current.view)
-        current.callback.onCustomViewHidden()
+        runCatching { (current.view.parent as? ViewGroup)?.removeView(current.view) }
+        runCatching { current.callback.onCustomViewHidden() }
     }
     // A page-triggered new tab awaiting the user's confirmation (see handleNewWindowRequested) —
     // null the overwhelming majority of the time, since most of Settings.newTabConfirmation's
@@ -456,7 +456,7 @@ fun BrowserScreen(
             fullscreenVideo = WebFullscreenVideo(ownerId, view, callback)
             tabController.tabs.firstOrNull { it.id == ownerId }?.startBrowserVideoFullscreen()
         } else {
-            callback.onCustomViewHidden()
+            runCatching { callback.onCustomViewHidden() }
         }
     }
 
@@ -3176,13 +3176,16 @@ fun BrowserScreen(
                     if (!showingHub && activeScreen == null && playbackRequest == null) {
                         tabs.firstOrNull { it.id == activeTabId }?.liveWebView?.onResume()
                     }
+                    tabs.forEach { it.resumeBrowserVideoHost() }
                 }
                 Lifecycle.Event.ON_PAUSE -> {
                     videoButtonForeground = false
                     if (!showingHub) tabs.firstOrNull { it.id == activeTabId }?.markActive()
                     val pipOwner = (context.findBrowserActivity() as? com.miowser.app.MainActivity)?.browserVideoPipOwner
                     tabs.forEach { tab ->
-                        if (keepBrowserRendererForPip(pipOwner, fullscreenVideo?.tabId, tab.id, tab.browserVideoPlayer.state.value)) {
+                        val keepForPip = keepBrowserRendererForPip(pipOwner, fullscreenVideo?.tabId, tab.id, tab.browserVideoPlayer.state.value)
+                        tab.pauseBrowserVideoHost(keepForPip)
+                        if (keepForPip) {
                             tab.liveWebView?.onResume()
                         } else tab.liveWebView?.onPause()
                     }

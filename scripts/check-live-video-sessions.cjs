@@ -77,6 +77,7 @@ function fixture(initial = [video()]) {
   let time = 1000, next = 1;
   const document = Object.assign(new Events(), { visibilityState: 'visible', documentElement: root,
     fullscreenEnabled: true, fullscreenElement: null,
+    exitFullscreen() { this.fullscreenElement = null; this.dispatch('fullscreenchange'); return {catch() {}}; },
     querySelectorAll: () => initial.filter(v => v.isConnected),
     createElement: tag => { const e = new Element(tag); elements.push(e); return e; },
     createElementNS: (_, tag) => { const e = new Element(tag); elements.push(e); return e; } });
@@ -146,14 +147,21 @@ function fixture(initial = [video()]) {
   function control(action, value, credentials = {}) {
     const hello = messages.find(m => m.type === 'hello');
     const active = messages.filter(m => m.type === 'fullscreenActive').at(-1);
+    const latest = [...messages].reverse().find(m => m.videos?.some(v => v.elementId === active?.elementId));
+    const revision = latest?.videos.find(v => v.elementId === active?.elementId)?.sourceRevision;
     const id = ++commandId;
     bridge.onmessage({data: JSON.stringify({type: 'control', documentId: hello.documentId,
       navigation: 3, token: 'frame-token', elementId: active?.elementId, attempt: active?.attempt,
-      commandId: id, action, value, ...credentials})});
+      commandId: id, sourceRevision: revision, action, value, ...credentials})});
     return id;
   }
+  function lifecycle(type, extra = {}, credentials = {}) {
+    const hello = messages.find(m => m.type === 'hello'), active = messages.filter(m => m.type === 'fullscreenActive').at(-1);
+    bridge.onmessage({data: JSON.stringify({type, documentId: hello.documentId, navigation: 3, token: 'frame-token',
+      elementId: active?.elementId, attempt: active?.attempt, recoveryId: 0, ...extra, ...credentials})});
+  }
   return { initial, window, document, messages, timers, intervals, children, intersections,
-    run, bind, flush, mutate, state, button, policy, click, render, elements, animationFrames, control, time: () => time };
+    run, bind, flush, mutate, state, button, policy, click, render, elements, animationFrames, control, lifecycle, time: () => time };
 }
 let checks = 0;
 function check(name, test) { test(); checks++; console.log('PASS ' + name); }
@@ -608,5 +616,128 @@ check('rich UI fallback and navigation invalidation release temporary speed', ()
     else f.window.MiowserLiveVideo.onmessage({data: JSON.stringify({type: 'reset', documentId: f.messages.find(m => m.type === 'hello').documentId})});
     assert.equal(v.playbackRate, 1.5);
   }
+});
+check('background and resume reconcile the same video without replaying or seeking it', () => {
+  const f = playingFixture(), v = f.initial[0], source = v.currentSrc;
+  f.control('richUi', 1); v.playbackRate = 1.25; f.control('holdRate');
+  f.lifecycle('suspendFullscreen', {pip: false});
+  assert.equal(v.playbackRate, 1.25); assert.equal(v.controls, true); assert.equal(v.paused, false);
+  v.currentTime = 29;
+  f.lifecycle('resumeFullscreen', {recoveryId: 71});
+  const response = f.messages.filter(m => m.type === 'fullscreenResumed').at(-1);
+  assert.equal(response.ok, true); assert.equal(response.recoveryId, 71); assert.equal(response.videos[0].position, 29);
+  assert.equal(v.controls, false); assert.equal(v.currentSrc, source); assert.equal(v.playbackRate, 1.25);
+});
+check('explicit PiP suspension hides browser controls without changing pause intent', () => {
+  const f = playingFixture(), v = f.initial[0]; f.control('richUi', 1);
+  f.lifecycle('suspendFullscreen', {pip: true}); assert.equal(v.controls, false); assert.equal(v.paused, false);
+  f.document.visibilityState = 'hidden'; v.currentTime = 38; f.flush();
+  f.document.visibilityState = 'visible'; f.lifecycle('resumeFullscreen', {recoveryId: 72});
+  assert.equal(f.messages.filter(m => m.type === 'fullscreenResumed').at(-1).ok, true);
+  assert.equal(v.currentTime, 38); assert.equal(v.paused, false);
+});
+check('resume preserves a manually paused website video', () => {
+  const f = playingFixture(), v = f.initial[0]; f.control('pause'); f.lifecycle('suspendFullscreen');
+  f.lifecycle('resumeFullscreen', {recoveryId: 73}); assert.equal(v.paused, true); assert.equal(v.currentTime, 12);
+});
+check('lifecycle messages reject wrong frames, navigation, elements and entry attempts', () => {
+  const f = playingFixture(), v = f.initial[0]; f.control('richUi', 1);
+  for (const identity of [{token: 'foreign'}, {documentId: 'foreign'}, {navigation: 99}, {elementId: 'foreign'}, {attempt: 99}]) {
+    f.lifecycle('releaseFullscreen', {}, identity); f.lifecycle('fallbackFullscreen', {}, identity);
+    f.lifecycle('resumeFullscreen', {recoveryId: 1}, identity);
+  }
+  assert.equal(f.document.fullscreenElement, v); assert.equal(v.controls, false);
+  assert(f.messages.filter(m => m.type === 'fullscreenResumed').every(m => m.ok === false));
+});
+check('resume failure never switches to a different playing element', () => {
+  const first = video(), second = video(); const f = enabledFixture([first, second]); f.click();
+  const selected = f.document.fullscreenElement, other = selected === first ? second : first;
+  f.document.fullscreenElement = other; f.document.dispatch('fullscreenchange');
+  f.lifecycle('resumeFullscreen', {recoveryId: 74});
+  assert.equal(f.messages.filter(m => m.type === 'fullscreenResumed').at(-1).ok, false);
+  assert.equal(other.currentTime, 12); assert.equal(other.controls, false);
+});
+check('native release restores the website styles and hold speed and exits only once', () => {
+  const f = playingFixture(), v = f.initial[0]; let exits = 0;
+  f.document.exitFullscreen = function () { exits++; this.fullscreenElement = null; this.dispatch('fullscreenchange'); return {catch() {}}; };
+  v.playbackRate = 0.75; f.control('richUi', 1); f.control('holdRate'); f.control('scale', 1);
+  f.lifecycle('releaseFullscreen'); f.lifecycle('releaseFullscreen');
+  assert.equal(exits, 1); assert.equal(v.controls, false); assert.equal(v.style.getPropertyValue('object-fit'), '');
+  assert.equal(v.playbackRate, 0.75); assert.equal(v.currentTime, 12); assert.equal(v.paused, false);
+});
+check('failed DOM exit exposes browser controls and does not interrupt playback', () => {
+  const f = playingFixture(), v = f.initial[0];
+  f.document.exitFullscreen = () => ({catch(reject) { reject(); }});
+  f.control('richUi', 1); f.lifecycle('releaseFullscreen');
+  assert.equal(v.controls, true); assert.equal(v.paused, false); assert.equal(v.currentTime, 12);
+});
+check('native fallback and channel reset make website controls available', () => {
+  const f = playingFixture(), v = f.initial[0]; f.control('richUi', 1); f.lifecycle('fallbackFullscreen');
+  assert.equal(v.controls, true); assert.equal(f.document.fullscreenElement, v);
+  f.control('richUi', 1);
+  f.window.MiowserLiveVideo.onmessage({data: JSON.stringify({type: 'reset', documentId: f.messages.find(m => m.type === 'hello').documentId})});
+  assert.equal(v.controls, true); assert.equal(v.paused, false);
+});
+check('a hanging fullscreen request times out and can be tried again', () => {
+  const f = enabledFixture(), v = f.initial[0]; v.requestFullscreen = () => ({catch() {}});
+  f.click(); assert.equal(v.controls, true); f.flush();
+  assert.equal(v.controls, false); assert.equal(f.messages.filter(m => m.type === 'fullscreenError').length, 1);
+  assert.equal(f.button().hidden, false);
+  v.requestFullscreen = () => { f.document.fullscreenElement = v; f.document.dispatch('fullscreenchange'); return {catch() {}}; };
+  f.click(); assert.equal(f.messages.filter(m => m.type === 'fullscreenActive').length, 1);
+});
+check('late rejection from an expired entry cannot tear down a newer fullscreen entry', () => {
+  const f = enabledFixture(), v = f.initial[0]; let lateReject;
+  v.requestFullscreen = () => ({catch(reject) { lateReject = reject; }});
+  f.click(); f.flush();
+  v.requestFullscreen = () => { f.document.fullscreenElement = v; f.document.dispatch('fullscreenchange'); return {catch() {}}; };
+  f.click(); f.control('richUi', 1); lateReject();
+  assert.equal(v.controls, false); assert.equal(f.document.fullscreenElement, v);
+  assert.equal(f.messages.filter(m => m.type === 'fullscreenError').length, 1);
+});
+check('an earlier entry release cannot exit the newer entry of the same video', () => {
+  const f = playingFixture(), v = f.initial[0];
+  const old = f.messages.find(m => m.type === 'fullscreenActive'); f.lifecycle('releaseFullscreen');
+  f.render(); f.click(); f.control('richUi', 1);
+  f.lifecycle('releaseFullscreen', {}, {attempt: old.attempt});
+  assert.equal(f.document.fullscreenElement, v); assert.equal(v.controls, false);
+});
+check('commands for an older media source cannot seek or pause its replacement', () => {
+  const f = playingFixture(), v = f.initial[0];
+  v.currentSrc = 'https://cdn.test/new.mp4'; v.currentTime = 3;
+  const stale = f.control('seek', 25); assert.equal(ack(f, stale).ok, false); assert.equal(v.currentTime, 3);
+  const fresh = f.control('seek', 6); assert.equal(ack(f, fresh).ok, true); assert.equal(v.currentTime, 6);
+  assert.equal(ack(f, f.control('pause', undefined, {sourceRevision: 1})).ok, false); assert.equal(v.paused, false);
+});
+check('source replacement cancels pending seek listeners before their late completion', () => {
+  const f = playingFixture(), v = f.initial[0]; v.seeking = true; const seek = f.control('seek', 25);
+  v.currentSrc = 'blob:https://site.test/new'; v.currentTime = 2; v.dispatch('loadstart'); f.flush();
+  assert.equal(ack(f, seek).ok, false); const count = f.messages.filter(m => m.type === 'controlAck' && m.commandId === seek).length;
+  v.seeking = false; v.dispatch('seeked'); f.flush();
+  assert.equal(f.messages.filter(m => m.type === 'controlAck' && m.commandId === seek).length, count); assert.equal(v.currentTime, 2);
+});
+check('late lifecycle requests cannot undo a newer suspension or resume', () => {
+  const f = playingFixture(), v = f.initial[0]; f.control('richUi', 1);
+  f.lifecycle('suspendFullscreen', {recoveryId: 9, pip: false}); assert.equal(v.controls, true);
+  f.lifecycle('resumeFullscreen', {recoveryId: 8}); assert.equal(v.controls, true);
+  assert.equal(f.messages.filter(m => m.type === 'fullscreenResumed').length, 0);
+  f.lifecycle('resumeFullscreen', {recoveryId: 10}); assert.equal(v.controls, false);
+  f.lifecycle('fallbackFullscreen', {recoveryId: 9}); assert.equal(v.controls, false);
+  f.lifecycle('releaseFullscreen', {recoveryId: 8}); assert.equal(f.document.fullscreenElement, v);
+});
+check('an invalid lifecycle request cannot advance the current entry generation', () => {
+  const f = playingFixture(), v = f.initial[0]; f.control('richUi', 1);
+  f.lifecycle('suspendFullscreen', {recoveryId: 999}, {attempt: 99});
+  f.lifecycle('suspendFullscreen', {recoveryId: 1}); assert.equal(v.controls, true);
+  f.lifecycle('resumeFullscreen', {recoveryId: -1}); assert.equal(v.controls, true);
+  f.lifecycle('resumeFullscreen', {recoveryId: 2}); assert.equal(v.controls, false);
+});
+check('explicit PiP dismissal pauses the same owned video even if its source just changed', () => {
+  const f = playingFixture(), v = f.initial[0]; f.lifecycle('suspendFullscreen', {pip: true});
+  v.currentSrc = 'blob:https://site.test/next'; v.currentTime = 3;
+  assert.equal(ack(f, f.control('pause', undefined, {sourceRevision: -1})).ok, true);
+  assert.equal(v.paused, true); assert.equal(v.currentTime, 3);
+  f.control('play');
+  f.control('pause', undefined, {sourceRevision: -1, attempt: 99}); assert.equal(v.paused, false);
 });
 console.log(checks + ' live-video script checks passed; no device tests were run.');

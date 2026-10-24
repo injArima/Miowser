@@ -48,6 +48,7 @@ import com.miowser.app.grabber.MediaProbe
 import com.miowser.app.grabber.installVideoSnifferScript
 import com.miowser.app.browser.video.LiveVideoSession
 import com.miowser.app.browser.video.LiveVideoTracker
+import com.miowser.app.browser.video.FullscreenCallbackLease
 import com.miowser.app.browser.video.VideoAssistantButtonPolicy
 import com.miowser.app.browser.video.BrowserVideoController
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -221,6 +222,8 @@ class Tab(
     internal val browserVideoPlayer = BrowserVideoController()
     internal fun startBrowserVideoFullscreen() { liveVideoTracker?.onNativeFullscreenShown() }
     internal fun finishBrowserVideoFullscreen() { liveVideoTracker?.onNativeFullscreenHidden() }
+    internal fun pauseBrowserVideoHost(pip: Boolean) { liveVideoTracker?.onHostPaused(pip) }
+    internal fun resumeBrowserVideoHost() { liveVideoTracker?.onHostResumed() }
     private var videoButtonPolicy = VideoAssistantButtonPolicy()
     internal fun updateVideoAssistantButton(policy: VideoAssistantButtonPolicy) {
         if (videoButtonPolicy == policy) return
@@ -1040,13 +1043,18 @@ class Tab(
                 permissionRequests.clear()
             }
             webChromeClient = object : WebChromeClient() {
+                private var fullscreenLease: FullscreenCallbackLease? = null
                 override fun onShowCustomView(customView: View, callback: CustomViewCallback) {
-                    if (!alive.get()) { callback.onCustomViewHidden(); return }
-                    onFullscreenVideoRequested(this@Tab.id, customView, callback)
+                    if (!alive.get() || fullscreenLease?.closed == false) {
+                        runCatching { callback.onCustomViewHidden() }; return
+                    }
+                    val lease = FullscreenCallbackLease { callback.onCustomViewHidden() }
+                    fullscreenLease = lease
+                    onFullscreenVideoRequested(this@Tab.id, customView, CustomViewCallback { lease.close() })
                 }
 
                 override fun onHideCustomView() {
-                    if (!alive.get()) return
+                    if (!alive.get() || fullscreenLease?.closed != false) return
                     liveVideoTracker?.onNativeFullscreenHidden()
                     onFullscreenVideoHidden(this@Tab.id)
                 }

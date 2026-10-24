@@ -7,7 +7,7 @@ internal class BrowserVideoSpeedHold {
     fun start(controller: BrowserPlaybackControls): Boolean {
         val state = controller.state.value
         val session = state.session ?: return false
-        if (!session.state.playing || owner != null) return false
+        if (!state.controlsEnabled || !session.state.playing || owner != null) return false
         owner = BrowserVideoPipOwner(session.id, state.attempt)
         controller.beginSpeedHold()
         return true

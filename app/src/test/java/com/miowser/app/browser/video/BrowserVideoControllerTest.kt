@@ -162,6 +162,52 @@ class BrowserVideoControllerTest {
         assertFalse(keepBrowserRendererForPip(owner, 1, 1, BrowserVideoPlaybackState()))
     }
 
+    @Test fun suspendedControlsDoNotSendMediaActionsOrLeaveAPendingSeek() {
+        val c = controller(); c.seekTo(25_000); sent.clear(); c.suspend()
+        assertEquals(BrowserVideoPhase.SUSPENDED, c.state.value.phase)
+        assertFalse(c.state.value.canSeek); assertNull(c.state.value.pendingSeekMs)
+        c.playPause(); c.seekTo(35_000); c.skip(10_000); c.setSpeed(1.5); c.setMuted(true)
+        assertTrue(sent.isEmpty()); assertNull(c.state.value.pendingSeekMs)
+        assertFalse(BrowserVideoSpeedHold().start(c))
+    }
+
+    @Test fun freshSamplesDoNotUnlockControlsBeforeResumeHasBeenConfirmed() {
+        val c = controller(); c.suspend(); c.reconnecting()
+        val paused = session().let { it.copy(state = it.state.copy(positionMs = 28_000, playing = false)) }
+        c.attach(paused, 3)
+        assertEquals(BrowserVideoPhase.RECONNECTING, c.state.value.phase)
+        assertFalse(c.state.value.controlsEnabled)
+        c.recovered(); assertTrue(c.state.value.controlsEnabled)
+        assertEquals(28_000L, c.state.value.session!!.state.positionMs); assertFalse(c.state.value.session!!.state.playing)
+        assertTrue(sent.isEmpty()) // Reconciliation does not start playback or seek.
+    }
+
+    @Test fun sourceReplacementClearsOldSeekAndTransportIntentWhileKeepingTheSameFullscreenEntry() {
+        val c = controller(); c.seekTo(25_000); c.playPause(); sent.clear()
+        val next = session().let { it.copy(state = it.state.copy(sourceRevision = 2, positionMs = 0)) }
+        c.sample(next)
+        assertNull(c.state.value.pendingSeekMs); assertEquals(3L, c.state.value.attempt)
+        c.playPause()
+        assertEquals(BrowserVideoAction.PAUSE, sent.single().action)
+        assertEquals(2L, sent.single().sourceRevision)
+    }
+
+    @Test fun recoveryFailureDetachesControlsAndLateRepliesCannotReviveThem() {
+        val c = controller(); c.suspend(); c.reconnecting(); c.detach("Return to website")
+        c.recovered(); c.sample(session()); c.completed(BrowserVideoAction.PLAY, true)
+        assertEquals(BrowserVideoPhase.UNAVAILABLE, c.state.value.phase)
+        assertEquals("Return to website", c.state.value.message); assertNull(c.state.value.session)
+        c.playPause(); c.seekTo(30_000); assertTrue(sent.isEmpty())
+        c.detach(); assertEquals(BrowserVideoPhase.IDLE, c.state.value.phase)
+    }
+
+    @Test fun explicitPipDismissalPauseAndUiCleanupStillWorkWhileSuspended() {
+        val c = controller(); c.suspend(); c.pause(); c.endSpeedHold(); c.setRichUi(false)
+        assertEquals(listOf(BrowserVideoAction.PAUSE, BrowserVideoAction.RELEASE_RATE, BrowserVideoAction.RICH_UI), sent.map { it.action })
+        assertEquals(-1L, sent.first().sourceRevision)
+        assertEquals(BrowserVideoPhase.SUSPENDED, c.state.value.phase)
+    }
+
     private fun session(): LiveVideoSession = LiveVideoSession(LiveVideoId(1, 1, 2, "document", "video"),
         "https://test", false, LiveVideoState("video", "blob:https://test/video", LiveVideoSourceKind.BLOB,
             12_000, 45_000, true, false, false, false, 1.0, 1280, 720, true, 1.0,

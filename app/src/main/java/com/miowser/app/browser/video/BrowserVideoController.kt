@@ -12,7 +12,9 @@ internal enum class BrowserVideoAction(val wireName: String, val family: String)
 }
 
 internal data class BrowserVideoCommand(val owner: LiveVideoId, val attempt: Long,
-    val action: BrowserVideoAction, val value: Double? = null)
+    val action: BrowserVideoAction, val value: Double? = null, val sourceRevision: Long = 0)
+
+internal enum class BrowserVideoPhase { IDLE, ACTIVE, SUSPENDED, RECONNECTING, UNAVAILABLE }
 
 internal data class BrowserSeekWindow(val startMs: Long, val endMs: Long) {
     val durationMs: Long get() = (endMs - startMs).coerceAtLeast(0)
@@ -28,9 +30,11 @@ internal data class BrowserVideoPlaybackState(
     val session: LiveVideoSession? = null,
     val attempt: Long = 0,
     val pendingSeekMs: Long? = null,
-    val message: String? = null
+    val message: String? = null,
+    val phase: BrowserVideoPhase = BrowserVideoPhase.IDLE
 ) {
-    val canSeek: Boolean get() = session?.state?.browserSeekWindow()?.durationMs?.let { it > 0 } == true
+    val controlsEnabled: Boolean get() = session != null && phase == BrowserVideoPhase.ACTIVE
+    val canSeek: Boolean get() = controlsEnabled && session?.state?.browserSeekWindow()?.durationMs?.let { it > 0 } == true
 }
 
 /** UI-facing contract for this add-on; the existing Media3 player keeps its own backend. */
@@ -64,18 +68,34 @@ internal class BrowserVideoController : BrowserPlaybackControls {
             sample(session)
         } else {
             desiredPlaying = null
-            mutable.value = BrowserVideoPlaybackState(session, attempt)
+            mutable.value = BrowserVideoPlaybackState(session, attempt, phase = BrowserVideoPhase.ACTIVE)
         }
     }
     fun sample(session: LiveVideoSession) {
         if (mutable.value.session?.id != session.id) return
-        if (desiredPlaying == session.state.playing) desiredPlaying = null
-        mutable.value = mutable.value.copy(session = session)
+        val changed = mutable.value.session?.state?.sourceRevision != session.state.sourceRevision
+        if (changed || desiredPlaying == session.state.playing) desiredPlaying = null
+        mutable.value = mutable.value.copy(session = session,
+            pendingSeekMs = if (changed) null else mutable.value.pendingSeekMs,
+            message = if (changed) null else mutable.value.message)
     }
-    fun detach() { desiredPlaying = null; mutable.value = BrowserVideoPlaybackState() }
+    fun detach(reason: String? = null) {
+        desiredPlaying = null
+        mutable.value = BrowserVideoPlaybackState(message = reason,
+            phase = if (reason == null) BrowserVideoPhase.IDLE else BrowserVideoPhase.UNAVAILABLE)
+    }
+    fun suspend() { transition(BrowserVideoPhase.SUSPENDED) }
+    fun reconnecting() { transition(BrowserVideoPhase.RECONNECTING) }
+    fun recovered() { transition(BrowserVideoPhase.ACTIVE) }
+    private fun transition(phase: BrowserVideoPhase) {
+        if (mutable.value.session == null) return
+        desiredPlaying = null
+        mutable.value = mutable.value.copy(phase = phase, pendingSeekMs = null, message = null)
+    }
     fun disconnect() { detach(); sender = null }
 
     override fun playPause() {
+        if (!mutable.value.controlsEnabled) return
         val sample = mutable.value.session?.state ?: return
         val target = !(desiredPlaying ?: sample.playing)
         desiredPlaying = target
@@ -92,6 +112,7 @@ internal class BrowserVideoController : BrowserPlaybackControls {
         send(BrowserVideoAction.SKIP, delta / 1000.0)
     }
     override fun seekTo(positionMs: Long) {
+        if (!mutable.value.controlsEnabled) return
         val sample = mutable.value.session?.state ?: return
         val window = sample.browserSeekWindow() ?: return
         val target = sample.seekTarget(positionMs) ?: positionMs.coerceIn(window.startMs, window.endMs)
@@ -141,7 +162,11 @@ internal class BrowserVideoController : BrowserPlaybackControls {
     private fun send(action: BrowserVideoAction, value: Double? = null): Boolean {
         val current = mutable.value
         val owner = current.session?.id ?: return false
-        val sent = sender?.invoke(BrowserVideoCommand(owner, current.attempt, action, value)) == true
+        if (!current.controlsEnabled && action !in setOf(BrowserVideoAction.RICH_UI,
+                BrowserVideoAction.RELEASE_RATE, BrowserVideoAction.PAUSE)) return false
+        val sent = sender?.invoke(BrowserVideoCommand(owner, current.attempt, action, value,
+            // Dismissing PiP pauses the current owned element, including a just-changed source.
+            if (action == BrowserVideoAction.PAUSE && !current.controlsEnabled) -1 else current.session.state.sourceRevision)) == true
         if (!sent) completed(action, false)
         return sent
     }

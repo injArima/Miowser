@@ -133,7 +133,9 @@ internal class LiveVideoSessionRegistry(private val tabId: Long) {
         sessions.keys.removeAll { it.frameId == id }
     }
 
-    fun prune(nowMs: Long) { sessions.values.removeAll { nowMs - it.updatedAtMs > LEASE_MS } }
+    fun prune(nowMs: Long, protectedOwner: LiveVideoId? = null) {
+        sessions.values.removeAll { it.id != protectedOwner && nowMs - it.updatedAtMs > LEASE_MS }
+    }
     fun snapshot(): List<LiveVideoSession> = sessions.values.toList()
 
     fun active(): LiveVideoSession? = sessions.values.asSequence()

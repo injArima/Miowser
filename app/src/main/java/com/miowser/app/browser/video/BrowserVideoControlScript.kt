@@ -21,6 +21,7 @@ internal const val BROWSER_VIDEO_CONTROL_SCRIPT = """
             var owner = api.owner();
             if (!owner || owner.record.id !== command.elementId || owner.attempt !== command.attempt ||
                 !owner.record.video.isConnected || document.fullscreenElement !== owner.record.video) return;
+            api.refreshSource(owner.record);
             var video = owner.record.video, finished = false;
             function ack(ok) {
                 if (finished || disposed) return;
@@ -30,6 +31,10 @@ internal const val BROWSER_VIDEO_CONTROL_SCRIPT = """
             var value = command.value;
             if (['play', 'pause', 'seek', 'skip', 'rate', 'richUi', 'snapshot', 'mute', 'scale', 'caption', 'audio', 'holdRate', 'releaseRate'].indexOf(command.action) < 0) return;
             lastCommand = command.commandId;
+            // Metadata can change between the last sample and this command arriving.
+            if (['richUi', 'snapshot', 'releaseRate'].indexOf(command.action) < 0 &&
+                !(command.action === 'pause' && command.sourceRevision === -1) &&
+                command.sourceRevision !== owner.record.sourceRevision) { ack(false); return; }
             try {
                 switch (command.action) {
                     case 'holdRate':

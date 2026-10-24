@@ -7,7 +7,11 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
     window.__miowserCreateVideoButton = function (api) {
         var policy = {enabled: false}, host = null, button = null, icon = null, insetProbe = null;
         var selected = null, frame = null, animation = null, disposed = false, pending = false;
-        var restore = null;
+        var restore = null, entryTimeout = null;
+        function cancelEntryTimeout() {
+            if (entryTimeout !== null) clearTimeout(entryTimeout);
+            entryTimeout = null;
+        }
 
         function setStyles(element, styles) {
             Object.keys(styles).forEach(function (key) { element.style.setProperty(key, styles[key]); });
@@ -66,6 +70,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         }
         function restoreControls() {
             if (!restore) return;
+            cancelEntryTimeout();
             restore.video.controls = restore.controls;
             if (restore.video.style && restore.objectFit !== undefined) {
                 if (restore.objectFit) restore.video.style.setProperty('object-fit', restore.objectFit, restore.fitPriority);
@@ -73,7 +78,8 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             }
             restore = null;
         }
-        function failed() {
+        function failed(entry) {
+            if (disposed || restore !== entry) return;
             pending = false;
             restoreControls();
             api.failed();
@@ -94,14 +100,18 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             restore = {video: video, record: record, attempt: api.entering(record), controls: video.controls,
                 objectFit: video.style ? video.style.getPropertyValue('object-fit') : undefined,
                 fitPriority: video.style ? video.style.getPropertyPriority('object-fit') : ''};
+            var entry = restore;
+            entryTimeout = setTimeout(function () {
+                if (restore === entry && document.fullscreenElement !== entry.video) failed(entry);
+            }, 8000);
             // Keep browser controls until the native rich overlay confirms it is attached.
             video.controls = true;
             hide();
             try {
                 // Must stay in this synchronous trusted click, before any promise/bridge roundtrip.
                 var result = video.requestFullscreen();
-                if (result && typeof result.catch === 'function') result.catch(failed);
-            } catch (ignored) { failed(); }
+                if (result && typeof result.catch === 'function') result.catch(function () { failed(entry); });
+            } catch (ignored) { failed(entry); }
         }
         function makeButton() {
             if (host) return;
@@ -191,6 +201,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         }
         function fullscreenChanged() {
             if (restore && document.fullscreenElement === restore.video) {
+                cancelEntryTimeout();
                 api.fullscreen(restore.record, restore.attempt, true);
             } else if (restore) {
                 api.fullscreen(restore.record, restore.attempt, false);
@@ -217,8 +228,24 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 restore.video.controls = !attached;
                 return true;
             },
+            fallback: function () {
+                if (restore && document.fullscreenElement === restore.video) restore.video.controls = true;
+            },
+            release: function (elementId, attempt) {
+                if (!restore || restore.record.id !== elementId || restore.attempt !== attempt) return;
+                var video = restore.video;
+                pending = false; restoreControls();
+                if (document.fullscreenElement === video && typeof document.exitFullscreen === 'function') {
+                    try {
+                        var result = document.exitFullscreen();
+                        if (result && result.catch) result.catch(function () { video.controls = true; });
+                    } catch (ignored) { video.controls = true; }
+                } else if (document.fullscreenElement === video) video.controls = true;
+                schedule();
+            },
             destroy: function () {
                 disposed = true;
+                cancelEntryTimeout();
                 if (frame !== null) window.cancelAnimationFrame(frame);
                 frame = null;
                 hide(); restoreControls();

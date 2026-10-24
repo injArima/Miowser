@@ -12,7 +12,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
     var binding = null, timer = null, heartbeat = null, observer = null;
     var intersection = null, resize = null, running = false, lastSent = -1000;
     var assistant = null;
-    var controls = null, fullscreenSerial = 0;
+    var controls = null, fullscreenSerial = 0, lifecycleSerial = -1;
     var trackIds = new WeakMap(), nextTrackId = 0;
     var removed = new Set(), listeners = [];
     var MAX_VIDEOS = 8, UPDATE_MS = 500;
@@ -54,15 +54,22 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         } catch (ignored) {}
         return result;
     }
-    function snapshot(record) {
-        var video = record.video, rect = video.getBoundingClientRect();
+    function refreshSource(record) {
+        var video = record.video;
         var source = video.currentSrc || video.src || '';
         var object = video.srcObject || null;
         if (source !== record.source || object !== record.object) {
             record.sourceRevision++;
             record.source = source;
             record.object = object;
+            var owned = assistant ? assistant.owner() : null;
+            if (controls && owned && owned.record === record) controls.release();
         }
+    }
+    function snapshot(record) {
+        var video = record.video, rect = video.getBoundingClientRect();
+        refreshSource(record);
+        var source = record.source, object = record.object;
         var kind = object ? 'stream' : source.indexOf('blob:') === 0 ? 'blob' :
             source.indexOf('data:') === 0 ? 'data' : /^https?:/i.test(source) ? 'network' : 'unknown';
         var visible = video.isConnected && document.visibilityState !== 'hidden' &&
@@ -209,6 +216,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             owner: function () { return assistant ? assistant.owner() : null; },
             rich: function (id, attempt, attached) { return assistant && assistant.rich(id, attempt, attached); },
             trackId: trackId,
+            refreshSource: refreshSource,
             reply: function (type, command, ok) {
                 packet(type, {commandId: command.commandId, elementId: command.elementId,
                     attempt: command.attempt, ok: ok});
@@ -297,6 +305,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             var message = JSON.parse(event.data);
             if (message.type === 'reset' && message.documentId === documentId) {
                 if (controls) controls.release();
+                if (assistant) assistant.fallback();
                 binding = null;
                 if (assistant) assistant.policy(null);
                 if (document.visibilityState !== 'hidden') hello();
@@ -310,6 +319,27 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             if (message.type === 'control' && binding && message.documentId === documentId &&
                 message.navigation === binding.navigation && message.token === binding.token) {
                 if (controls) controls.receive(message);
+                return;
+            }
+            if (['releaseFullscreen', 'suspendFullscreen', 'resumeFullscreen', 'fallbackFullscreen'].indexOf(message.type) >= 0 &&
+                binding && message.documentId === documentId && message.navigation === binding.navigation && message.token === binding.token) {
+                var owner = assistant ? assistant.owner() : null;
+                var matches = owner && owner.record.id === message.elementId && owner.attempt === message.attempt;
+                if (!Number.isSafeInteger(message.recoveryId) || message.recoveryId < 0) return;
+                if (matches) {
+                    if (message.recoveryId < lifecycleSerial) return;
+                    lifecycleSerial = message.recoveryId;
+                }
+                if (message.type === 'resumeFullscreen') {
+                    if (matches && controls) controls.release();
+                    var resumed = matches && owner.video.isConnected && assistant.rich(message.elementId, message.attempt, true);
+                    packet('fullscreenResumed', {elementId: message.elementId, attempt: message.attempt,
+                        recoveryId: message.recoveryId, ok: !!resumed});
+                } else if (matches) {
+                    if (controls) controls.release();
+                    if (message.type === 'releaseFullscreen') assistant.release(message.elementId, message.attempt);
+                    else assistant.rich(message.elementId, message.attempt, message.type === 'suspendFullscreen' && message.pip === true);
+                }
                 return;
             }
             if (message.type !== 'bind' || message.documentId !== documentId ||

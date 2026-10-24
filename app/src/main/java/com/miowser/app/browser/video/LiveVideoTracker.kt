@@ -16,7 +16,7 @@ import org.json.JSONObject
 import java.util.IdentityHashMap
 import java.util.UUID
 
-/** Telemetry and button presentation; native code never starts or changes video playback here. */
+/** Frame-bound telemetry, commands and recovery for the optional browser-backed player. */
 internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     private val mutableSessions: MutableStateFlow<List<LiveVideoSession>>,
     initialButtonPolicy: VideoAssistantButtonPolicy = VideoAssistantButtonPolicy(),
@@ -41,7 +41,10 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     private data class Owner(val id: LiveVideoId, val attempt: Long)
     private data class Pending(val id: Long, val command: BrowserVideoCommand, val timeout: Runnable)
     private var owner: Owner? = null
+    private var fallbackOwner: Owner? = null // Release-only identity; cannot receive player commands.
     private var nativeFullscreen = false
+    private val recovery = BrowserVideoRecovery()
+    private var recoveryTimeout: Runnable? = null
     private var nextCommand = 0L
     private val pending = mutableMapOf<String, Pending>()
     val supported = WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) &&
@@ -54,7 +57,8 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
             val now = SystemClock.elapsedRealtime()
             // Frames without videos expire too, so unrelated/removed frames cannot fill the table.
             val expired = channels.filterValues {
-                now - (it.lastUpdate.takeIf { time -> time >= 0 } ?: it.connectedAt) > LiveVideoSessionRegistry.LEASE_MS
+                it.frameId != protectedOwner()?.frameId &&
+                    now - (it.lastUpdate.takeIf { time -> time >= 0 } ?: it.connectedAt) > LiveVideoSessionRegistry.LEASE_MS
             }
             expired.forEach { (proxy, channel) ->
                 channels.remove(proxy)
@@ -62,7 +66,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
                 runCatching { proxy.postMessage(JSONObject().put("type", "reset")
                     .put("documentId", channel.document).toString()) }
             }
-            registry.prune(now)
+            registry.prune(now, protectedOwner())
             publish()
         }
     }
@@ -90,7 +94,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
 
     fun onNavigationStarted() {
         accepting = false
-        onNativeFullscreenHidden()
+        onNativeFullscreenHidden("The page changed. Return to the website to open its current video.")
         channels.forEach { (proxy, channel) ->
             runCatching { proxy.postMessage(JSONObject().put("type", "reset")
                 .put("documentId", channel.document).toString()) }
@@ -110,7 +114,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     }
 
     fun activeVideo(): LiveVideoSession? {
-        registry.prune(SystemClock.elapsedRealtime())
+        registry.prune(SystemClock.elapsedRealtime(), protectedOwner())
         return registry.active()
     }
 
@@ -138,7 +142,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
                     acknowledge(proxy, channel)
                     publish()
                 }
-                "state", "retire", "fullscreenError", "fullscreenActive", "fullscreenEnded", "controlStarted", "controlAck" -> {
+                "state", "retire", "fullscreenError", "fullscreenActive", "fullscreenEnded", "fullscreenResumed", "controlStarted", "controlAck" -> {
                     val channel = channels[proxy] ?: return
                     if (channel.document != document || channel.navigation != registry.navigation ||
                         json.optLong("navigation", -1) != channel.navigation ||
@@ -152,7 +156,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
                         return
                     }
                     if (json.optString("type") == "retire") {
-                        if (owner?.id?.frameId == channel.frameId) clearOwner()
+                        if (owner?.id?.frameId == channel.frameId) clearOwner("The video page is no longer available. Return to the website.")
                         channels.remove(proxy)
                         registry.closeFrame(channel.frameId)
                         publish()
@@ -162,6 +166,10 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
                     val type = json.optString("type")
                     val attempt = json.optLong("attempt", -1)
                     val element = json.optString("elementId")
+                    if (type == "fullscreenResumed" && (recoveryTimeout == null ||
+                            owner?.let { !recovery.accepts(BrowserVideoPipOwner(it.id, it.attempt), json.optLong("recoveryId", -1)) } != false ||
+                            owner?.id?.frameId != channel.frameId || owner?.id?.elementId != element ||
+                            owner?.attempt != attempt)) return
                     val command = if (type == "controlAck" || type == "controlStarted") {
                         val current = pending.values.firstOrNull { it.id == json.optLong("commandId", -1) } ?: return
                         if (!nativeFullscreen || current.command.attempt != attempt || current.command.owner.frameId != channel.frameId ||
@@ -185,8 +193,15 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
                             }
                         }
                         if (type == "fullscreenEnded" && owner?.id?.frameId == channel.frameId &&
-                            owner?.id?.elementId == element && owner?.attempt == attempt) clearOwner()
+                            owner?.id?.elementId == element && owner?.attempt == attempt) {
+                            clearOwner(if (nativeFullscreen) "The website ended fullscreen. Return to the page." else null)
+                        }
                         publish()
+                        if (type == "fullscreenResumed") {
+                            cancelRecovery()
+                            if (json.optBoolean("ok") && playback.state.value.session?.id == owner?.id) playback.recovered()
+                            else clearOwner("The website ended this video session. Return to the website to reopen it.")
+                        }
                         if (type == "controlStarted" && command != null) playback.started(command.command.action)
                         if (type == "controlAck" && command != null) {
                             finish(command, json.optBoolean("ok"))
@@ -221,7 +236,10 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
         val current = owner
         if (nativeFullscreen && current != null) {
             val session = mutableSessions.value.firstOrNull { it.id == current.id }
-            if (session != null) playback.attach(session, current.attempt) else clearOwner()
+            if (session != null) {
+                if (playback.state.value.session?.state?.sourceRevision?.let { it != session.state.sourceRevision } == true) cancelPending()
+                playback.attach(session, current.attempt)
+            } else clearOwner("The video connection was lost. Return to the website to reopen it.")
         }
         if (!pruneScheduled && channels.isNotEmpty() && !retired) {
             pruneScheduled = true
@@ -240,13 +258,76 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     }
 
     fun onNativeFullscreenShown() { nativeFullscreen = true; publish() }
-    fun onNativeFullscreenHidden() { nativeFullscreen = false; clearOwner() }
+    fun onNativeFullscreenHidden(reason: String? = null) {
+        // Send the exact owner's release before detaching; never exit a later/unrelated element.
+        ownerMessage("releaseFullscreen")
+        nativeFullscreen = false
+        val wasOwned = owner != null
+        clearOwner(if (wasOwned) reason else null)
+    }
 
-    private fun clearOwner() {
-        owner = null
+    fun onHostPaused(pip: Boolean) {
+        cancelRecovery()
+        recovery.pause()
+        ownerMessage("suspendFullscreen", pip = pip)
+        cancelPending()
+        playback.suspend()
+    }
+
+    fun onHostResumed() {
+        if (!recovery.paused) return
+        cancelRecovery()
+        val expected = owner?.takeIf { nativeFullscreen }?.let { BrowserVideoPipOwner(it.id, it.attempt) }
+        val ticket = recovery.resume(expected) ?: return
+        playback.reconnecting()
+        val timeout = Runnable {
+            if (expected == null || !recovery.accepts(expected, ticket)) return@Runnable
+            recoveryTimeout = null
+            clearOwner("Player controls couldn't reconnect. Use the website controls or return to the page.")
+        }
+        recoveryTimeout = timeout
+        main.postDelayed(timeout, 4_000)
+        if (!ownerMessage("resumeFullscreen")) {
+            clearOwner("The video connection is unavailable. Return to the website.")
+        }
+    }
+
+    private fun protectedOwner(): LiveVideoId? = owner?.id?.takeIf {
+        nativeFullscreen && (recovery.paused || recoveryTimeout != null)
+    }
+
+    private fun ownerMessage(type: String, pip: Boolean = false): Boolean {
+        val current = owner ?: fallbackOwner?.takeIf { type == "releaseFullscreen" } ?: return false
+        val entry = channels.entries.firstOrNull { it.value.frameId == current.id.frameId &&
+            it.value.navigation == current.id.navigation && it.value.document == current.id.documentId } ?: return false
+        return runCatching {
+            entry.key.postMessage(JSONObject().put("type", type).put("documentId", entry.value.document)
+                .put("navigation", entry.value.navigation).put("token", entry.value.token)
+                .put("elementId", current.id.elementId).put("attempt", current.attempt)
+                .put("recoveryId", recovery.requestId).put("pip", pip).toString())
+            true
+        }.getOrDefault(false)
+    }
+
+    private fun cancelRecovery() {
+        recoveryTimeout?.let(main::removeCallbacks)
+        recoveryTimeout = null
+        recovery.cancel()
+    }
+
+    private fun cancelPending() {
         pending.values.forEach { main.removeCallbacks(it.timeout) }
         pending.clear()
-        playback.detach()
+    }
+
+    private fun clearOwner(reason: String? = null) {
+        if (reason != null) ownerMessage("fallbackFullscreen")
+        if (reason != null && owner != null) fallbackOwner = owner
+        else if (reason == null) fallbackOwner = null
+        owner = null
+        cancelRecovery()
+        cancelPending()
+        playback.detach(reason)
     }
 
     private fun sendControl(command: BrowserVideoCommand): Boolean {
@@ -266,7 +347,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
             true
         }.getOrElse {
             pending.remove(command.action.family)
-            if (command.action == BrowserVideoAction.RICH_UI && command.value == 1.0) clearOwner()
+            if (command.action == BrowserVideoAction.RICH_UI && command.value == 1.0) clearOwner("Player controls are unavailable. Use the website controls or return to the page.")
             false
         }
     }
@@ -274,7 +355,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     private fun controlJson(command: BrowserVideoCommand, channel: Channel, id: Long): JSONObject =
         JSONObject().put("type", "control").put("documentId", channel.document).put("navigation", channel.navigation)
             .put("token", channel.token).put("elementId", command.owner.elementId).put("attempt", command.attempt)
-            .put("commandId", id).put("action", command.action.wireName).also { json ->
+            .put("commandId", id).put("sourceRevision", command.sourceRevision).put("action", command.action.wireName).also { json ->
                 command.value?.let { json.put("value", it) }
             }
 
@@ -287,7 +368,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
             channels.entries.firstOrNull { it.value.frameId == item.command.owner.frameId }?.let { entry ->
                 runCatching { entry.key.postMessage(controlJson(item.command.copy(value = 0.0), entry.value, ++nextCommand).toString()) }
             }
-            clearOwner()
+            clearOwner("Player controls are unavailable. Use the website controls or return to the page.")
         } else playback.completed(item.command.action, ok)
     }
 

@@ -4,6 +4,31 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LiveVideoSessionsTest {
+    @Test fun aLongBackgroundOrPipSessionProtectsOnlyItsExactOwnerFromLeaseExpiry() {
+        val store = LiveVideoSessionRegistry(7)
+        val frame = store.openFrame("doc", "https://test", true)!!
+        val otherFrame = store.openFrame("other", "https://other.test", false)!!
+        store.update(0, frame, 0, listOf(video(), video().copy(elementId = "sibling")), emptyList(), 1)
+        store.update(0, otherFrame, 0, listOf(video()), emptyList(), 1)
+        val owner = store.snapshot().first().id
+        store.prune(600_000, owner)
+        assertEquals(listOf(owner), store.snapshot().map { it.id })
+        store.prune(600_001)
+        assertTrue(store.snapshot().isEmpty())
+    }
+
+    @Test fun protectionDoesNotResurrectRemovedElementsOrSurviveDocumentNavigation() {
+        val store = LiveVideoSessionRegistry(7)
+        val frame = store.openFrame("doc", "https://test", true)!!
+        store.update(0, frame, 0, listOf(video()), emptyList(), 1)
+        val owner = store.snapshot().single().id
+        store.update(0, frame, 1, emptyList(), listOf(owner.elementId), 2)
+        store.prune(600_000, owner); assertTrue(store.snapshot().isEmpty())
+        store.update(0, frame, 2, listOf(video()), emptyList(), 3)
+        store.reset(); store.prune(600_001, owner)
+        assertTrue(store.snapshot().isEmpty())
+    }
+
     @Test fun identicalSourcesInTwoFramesRemainDistinct() {
         val store = LiveVideoSessionRegistry(7)
         val first = store.openFrame("same-document", "https://one.test", false)!!

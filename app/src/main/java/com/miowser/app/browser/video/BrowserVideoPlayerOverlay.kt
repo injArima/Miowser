@@ -85,6 +85,14 @@ import kotlinx.coroutines.delay
 @Composable
 internal fun BrowserVideoPlayerOverlay(controller: BrowserPlaybackControls, title: String, onExit: () -> Unit) {
     val state by controller.state.collectAsState()
+    if (state.phase == BrowserVideoPhase.UNAVAILABLE) {
+        MiowserPlayerTheme(darkTheme = true) {
+            val host = LocalContext.current.videoActivity() as? MainActivity
+            if (host?.playerInPictureInPicture != true) BrowserVideoRecoveryBanner(
+                state.message ?: "The video connection is unavailable.", onExit)
+        }
+        return
+    }
     val session = state.session ?: return
     key(session.id, state.attempt) {
         MiowserPlayerTheme(darkTheme = true) {
@@ -130,7 +138,12 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
             if (originalBrightness != null) activity.window.attributes = activity.window.attributes.apply { screenBrightness = originalBrightness }
         }
     }
-    BackHandler(enabled = locked && !inPip) { locked = false; visible = true }
+    BackHandler(enabled = locked && !inPip && state.controlsEnabled) { locked = false; visible = true }
+    LaunchedEffect(state.phase, video.sourceRevision) {
+        menu = null; adjustments = false; scrub = null; feedback = null
+        speedHold.stop(controller); holdingSpeed = false
+        if (!state.controlsEnabled) locked = false
+    }
     LaunchedEffect(feedbackSequence) { if (feedback != null) { delay(1_000); feedback = null } }
     LaunchedEffect(inPip) {
         if (inPip) { menu = null; adjustments = false; feedback = null; speedHold.stop(controller); holdingSpeed = false }
@@ -146,7 +159,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
 
     Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
         // Gesture surface and controls remain siblings: sheets/buttons own their input.
-        if (!inPip) PlayerGestureSurface(locked, visible, landscape,
+        if (!inPip && state.controlsEnabled) PlayerGestureSurface(locked, visible, landscape,
             positionMs = { controller.state.value.let { s ->
                 val v = s.session?.state
                 ((s.pendingSeekMs ?: v?.positionMs ?: 0L) - (v?.browserSeekWindow()?.startMs ?: 0L)).coerceAtLeast(0)
@@ -162,10 +175,10 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
             } }, onFeedback = { feedback = it; feedbackSequence++ }, onBrightnessCommitted = {},
             canSeek = state.canSeek, volumeEnabled = audio?.isVolumeFixed != true,
             onVolumeInteraction = { if (controller.state.value.session?.state?.muted == true) controller.setMuted(false) })
-        if (locked && !inPip) RoundPlayerButton(Icons.Rounded.LockOpen, "Unlock controls", { locked = false; visible = true },
+        if (locked && !inPip && state.controlsEnabled) RoundPlayerButton(Icons.Rounded.LockOpen, "Unlock controls", { locked = false; visible = true },
             modifier = Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top)))
-        CompositionLocalProvider(LocalPlayerControlsActive provides (visible && !locked && !inPip)) {
-        AnimatedVisibility(visible = visible && !locked && !inPip, enter = fadeIn(motion.spec(MotionTokens.controlsEnter)),
+        CompositionLocalProvider(LocalPlayerControlsActive provides (visible && !locked && !inPip && state.controlsEnabled)) {
+        AnimatedVisibility(visible = visible && !locked && !inPip && state.controlsEnabled, enter = fadeIn(motion.spec(MotionTokens.controlsEnter)),
             exit = fadeOut(motion.spec(MotionTokens.controlsExit))) {
             Box(Modifier.fillMaxSize()) {
                 Row(Modifier.align(Alignment.TopCenter).fillMaxWidth()
@@ -286,9 +299,22 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
         if (holdingSpeed && !inPip && !locked) Text("2× playback", color = Color.White,
             modifier = Modifier.align(Alignment.TopCenter).padding(top = 72.dp).background(Color.Black.copy(alpha = 0.65f)).padding(8.dp))
     }
-    if (adjustments && !inPip && !locked) PlayerAdjustmentsSheet(activity, { adjustments = false },
+    if (state.phase == BrowserVideoPhase.RECONNECTING && !inPip) BrowserVideoRecoveryBanner("Reconnecting player controls…", onExit)
+    if (adjustments && !inPip && !locked && state.controlsEnabled) PlayerAdjustmentsSheet(activity, { adjustments = false },
         onBrightnessCommitted = {}, volumeEnabled = audio?.isVolumeFixed != true,
         onVolumeInteraction = { if (controller.state.value.session?.state?.muted == true) controller.setMuted(false) })
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun BrowserVideoRecoveryBanner(message: String, onExit: () -> Unit) {
+    Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing)
+        .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top))
+        .background(Color.Black.copy(alpha = 0.85f)).padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Text(message, color = Color.White, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+        RoundPlayerButton(Icons.AutoMirrored.Rounded.ArrowBack, "Return to website", onExit)
+    }
 }
 
 private fun BrowserMediaTrack.displayLabel(kind: String, index: Int): String =
