@@ -46,6 +46,11 @@ import com.miowser.app.grabber.DetectedMedia
 import com.miowser.app.grabber.GrabberBridge
 import com.miowser.app.grabber.MediaProbe
 import com.miowser.app.grabber.installVideoSnifferScript
+import com.miowser.app.browser.video.LiveVideoSession
+import com.miowser.app.browser.video.LiveVideoTracker
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import com.miowser.app.grabber.MediaType
 import com.miowser.app.grabber.MediaUrlClassifier
 import com.miowser.app.grabber.StaticMediaDiscovery
@@ -210,6 +215,11 @@ class Tab(
     val detectedMedia = mutableStateListOf<DetectedMedia>()
     private val detectionIndexes = mutableMapOf<String, Int>()
     private var grabberBridge: GrabberBridge? = null
+    private var liveVideoTracker: LiveVideoTracker? = null
+    /** Separate live playback state; never use the grabber's highest discovered resolution here. */
+    private val liveVideoState = MutableStateFlow<List<LiveVideoSession>>(emptyList())
+    val liveVideoSessions: StateFlow<List<LiveVideoSession>> = liveVideoState.asStateFlow()
+    fun activeLiveVideo(): LiveVideoSession? = liveVideoTracker?.activeVideo()
     internal var hasPlayingMedia by mutableStateOf(false)
         private set
     private val probeHandles = java.util.concurrent.ConcurrentHashMap.newKeySet<com.miowser.app.grabber.MediaProbeHandle>()
@@ -350,6 +360,7 @@ class Tab(
         cancelDiscovery()
         detectionGeneration.incrementAndGet()
         grabberBridge?.reset()
+        liveVideoTracker?.onNavigationStarted()
         hasPlayingMedia = false
         probeHandles.toList().forEach { it.cancel() }
         probeHandles.clear()
@@ -787,6 +798,9 @@ class Tab(
                 "MiowserGrabber"
             )
             installVideoSnifferScript() // must also run before loadUrl()
+            // Add-on telemetry only; the existing grabber and playback entry points stay intact.
+            liveVideoTracker = LiveVideoTracker(this@Tab.id, this, liveVideoState)
+                .also { it.install() }
 
             // A deliberate depth threshold: ordinary small scrolls should not grow another floating
             // control over the page. One visible WebView height is an intuitive "about one screen"
@@ -914,6 +928,7 @@ class Tab(
                     }
                 },
                 onNewPageStarted = { clearDetections() },
+                onPageCommitted = { liveVideoTracker?.onPageCommitted() },
                 onPageStarted = {
                     pageError = null
                     blockedPageInfo = null
@@ -972,6 +987,7 @@ class Tab(
                     )
                 },
                 onPageLoadFinished = { loadedUrl, loadedTitle ->
+                    liveVideoTracker?.onPageCommitted()
                     if (isDesktopMode && desktopViewportScript == null) {
                         view.applyDesktopViewportNow()
                     }
@@ -998,6 +1014,8 @@ class Tab(
             retireEngineCallbacks = {
                 alive.set(false)
                 grabberBridge?.retire()
+                liveVideoTracker?.retire()
+                liveVideoTracker = null
                 client.retire()
                 bridge.retire("The originating page is no longer available. Reload it and start the download again.")
                 permissionRequests.toList().forEach { request ->

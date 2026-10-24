@@ -55,7 +55,8 @@ class MiowserWebViewClient(
     private val onPageLoadFinished: (url: String, title: String) -> Unit,
     private val onMainFrameBlocked: (BlockedPageInfo) -> Unit = {},
     private val onRequestBlocked: (String) -> Unit = {},
-    private val onScaleChanged: (oldScale: Float, newScale: Float) -> Unit = { _, _ -> }
+    private val onScaleChanged: (oldScale: Float, newScale: Float) -> Unit = { _, _ -> },
+    private val onPageCommitted: () -> Unit = {}
 ) : WebViewClient() {
 
     @Volatile private var currentPageUrl: String = "about:blank"
@@ -63,6 +64,10 @@ class MiowserWebViewClient(
     @Volatile private var blockedMainFrame: BlockedPageInfo? = null
 
     fun retire() { retired = true }
+
+    override fun onPageCommitVisible(view: WebView, url: String?) {
+        if (!retired) onPageCommitted()
+    }
 
     override fun onScaleChanged(view: WebView, oldScale: Float, newScale: Float) {
         if (!retired) onScaleChanged(oldScale, newScale)
