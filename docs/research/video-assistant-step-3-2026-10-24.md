@@ -1,5 +1,10 @@
 # Video Assistant step 3 — contextual fullscreen button
 
+**User verified step 3 works perfectly.** Step 4 now adds core Miowser controls to
+this route; see [its implementation and checklist](video-assistant-step-4-2026-10-24.md).
+This report preserves the step 3 checkpoint, including its browser-control
+fallback behavior before the rich overlay was added.
+
 ## Result
 
 Eligible playing videos in normal browser tabs now get a small Miowser button.

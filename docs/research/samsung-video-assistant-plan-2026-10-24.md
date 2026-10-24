@@ -32,6 +32,12 @@ browser controls until the step 4 rich-control adapter is implemented. Current
 Media3 workflows are preserved. See [the step 3 implementation and device
 checklist](video-assistant-step-3-2026-10-24.md).
 
+The user confirmed step 3 works perfectly. Step 4 adds an owned browser-backed
+controller and reuses the existing transport/timeline/speed/rotation UI, while
+keeping native playback independent. Local checks passed; actual controls and
+seeking still need the user's device checks. See
+[the step 4 report](video-assistant-step-4-2026-10-24.md).
+
 Samsung's inspected **Video Assistant → Fullscreen** path controls a browser-backed
 media session. It does not first ask the user to select a detected URL and open
 that URL in a newly created standalone player.
