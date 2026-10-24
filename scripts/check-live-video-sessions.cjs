@@ -41,6 +41,8 @@ class Element extends Events {
     this.animationCount = 0;
   }
   setAttribute(key, value) { this.attributes[key] = value; }
+  getAttribute(key) { return Object.hasOwn(this.attributes, key) ? this.attributes[key] : null; }
+  removeAttribute(key) { delete this.attributes[key]; }
   appendChild(child) {
     this.children.push(child); child.parentElement = this;
     child.setConnected?.(this.isConnected); return child;
@@ -62,6 +64,8 @@ function video(source = 'blob:https://site.test/video') {
     playbackRate: 1, readyState: 4, videoWidth: 1280, videoHeight: 720, controls: false,
     seeking: false,
     style: style(), textTracks: tracks([]), audioTracks: tracks([]),
+    attributes: {}, setAttribute: Element.prototype.setAttribute, getAttribute: Element.prototype.getAttribute,
+    removeAttribute: Element.prototype.removeAttribute,
     play() { this.paused = false; this.dispatch('play'); return {then(resolve) {resolve();}}; },
     pause() { this.paused = true; this.dispatch('pause'); },
     seekable: { length: 1, start: () => 0, end: () => 45 },
@@ -101,7 +105,7 @@ function fixture(initial = [video()]) {
   window.MiowserLiveVideo = bridge;
   class MutationObserver {
     constructor(callback) { this.callback = callback; this.connected = true; mutations.push(this); }
-    observe() {}
+    observe(target, options) { this.target = target; this.options = options; }
     disconnect() { this.connected = false; }
   }
   class IntersectionObserver {
@@ -132,6 +136,11 @@ function fixture(initial = [video()]) {
   function mutate(added = []) {
     mutations.filter(m => m.connected).forEach(m => m.callback([{ type: 'childList', addedNodes: added }]));
   }
+  function attribute(target, name) {
+    mutations.filter(m => m.connected && (m.target === target || m.options?.subtree) && m.options?.attributes &&
+      (!m.options.attributeFilter || m.options.attributeFilter.includes(name)))
+      .forEach(m => m.callback([{type: 'attributes', target, attributeName: name, addedNodes: []}]));
+  }
   function state() { return messages.filter(m => m.type === 'state').at(-1); }
   function button() { return elements.filter(e => e.tagName === 'BUTTON').at(-1); }
   function policy(enabled, extra = {}, credentials = {}) {
@@ -160,7 +169,7 @@ function fixture(initial = [video()]) {
     bridge.onmessage({data: JSON.stringify({type, documentId: hello.documentId, navigation: 3, token: 'frame-token',
       elementId: active?.elementId, attempt: active?.attempt, recoveryId: 0, ...extra, ...credentials})});
   }
-  return { initial, window, document, messages, timers, intervals, children, intersections,
+  return { initial, window, document, messages, timers, intervals, children, intersections, mutations, attribute,
     run, bind, flush, mutate, state, button, policy, click, render, elements, animationFrames, control, lifecycle, time: () => time };
 }
 let checks = 0;
@@ -302,7 +311,7 @@ check('trusted click opens the exact existing video without changing source/time
   assert.equal(f.document.fullscreenElement, v); assert.equal(v.fullscreenRequests, 1);
   assert.equal(v.currentTime, 12); assert.equal(v.playbackRate, 1.5);
   assert.equal(v.currentSrc, 'blob:https://site.test/video'); assert.equal(v.paused, false);
-  assert.equal(v.controls, true); assert.equal(f.button().hidden, true);
+  assert.equal(v.controls, false); assert.equal(f.button().hidden, true);
 });
 check('return restores website controls and keeps the live position', () => {
   const f = enabledFixture(); const v = f.initial[0]; f.click();
@@ -408,8 +417,8 @@ check('main-frame navigation reset hides the old document action immediately', (
 
 function playingFixture() { const f = enabledFixture(); f.click(); return f; }
 function ack(f, id) { return f.messages.filter(m => m.type === 'controlAck' && m.commandId === id).at(-1); }
-check('rich controls only replace browser controls after explicit attachment', () => {
-  const f = playingFixture(); assert.equal(f.initial[0].controls, true);
+check('browser controls are hidden from entry and an explicit fallback restores them', () => {
+  const f = playingFixture(); assert.equal(f.initial[0].controls, false);
   const id = f.control('richUi', 1);
   assert.equal(ack(f, id).ok, true); assert.equal(f.initial[0].controls, false);
   f.control('richUi', 0); assert.equal(f.initial[0].controls, true);
@@ -621,7 +630,7 @@ check('background and resume reconcile the same video without replaying or seeki
   const f = playingFixture(), v = f.initial[0], source = v.currentSrc;
   f.control('richUi', 1); v.playbackRate = 1.25; f.control('holdRate');
   f.lifecycle('suspendFullscreen', {pip: false});
-  assert.equal(v.playbackRate, 1.25); assert.equal(v.controls, true); assert.equal(v.paused, false);
+  assert.equal(v.playbackRate, 1.25); assert.equal(v.controls, false); assert.equal(v.paused, false);
   v.currentTime = 29;
   f.lifecycle('resumeFullscreen', {recoveryId: 71});
   const response = f.messages.filter(m => m.type === 'fullscreenResumed').at(-1);
@@ -680,7 +689,7 @@ check('native fallback and channel reset make website controls available', () =>
 });
 check('a hanging fullscreen request times out and can be tried again', () => {
   const f = enabledFixture(), v = f.initial[0]; v.requestFullscreen = () => ({catch() {}});
-  f.click(); assert.equal(v.controls, true); f.flush();
+  f.click(); assert.equal(v.controls, false); f.flush();
   assert.equal(v.controls, false); assert.equal(f.messages.filter(m => m.type === 'fullscreenError').length, 1);
   assert.equal(f.button().hidden, false);
   v.requestFullscreen = () => { f.document.fullscreenElement = v; f.document.dispatch('fullscreenchange'); return {catch() {}}; };
@@ -718,8 +727,8 @@ check('source replacement cancels pending seek listeners before their late compl
 });
 check('late lifecycle requests cannot undo a newer suspension or resume', () => {
   const f = playingFixture(), v = f.initial[0]; f.control('richUi', 1);
-  f.lifecycle('suspendFullscreen', {recoveryId: 9, pip: false}); assert.equal(v.controls, true);
-  f.lifecycle('resumeFullscreen', {recoveryId: 8}); assert.equal(v.controls, true);
+  f.lifecycle('suspendFullscreen', {recoveryId: 9, pip: false}); assert.equal(v.controls, false);
+  f.lifecycle('resumeFullscreen', {recoveryId: 8}); assert.equal(v.controls, false);
   assert.equal(f.messages.filter(m => m.type === 'fullscreenResumed').length, 0);
   f.lifecycle('resumeFullscreen', {recoveryId: 10}); assert.equal(v.controls, false);
   f.lifecycle('fallbackFullscreen', {recoveryId: 9}); assert.equal(v.controls, false);
@@ -728,8 +737,8 @@ check('late lifecycle requests cannot undo a newer suspension or resume', () => 
 check('an invalid lifecycle request cannot advance the current entry generation', () => {
   const f = playingFixture(), v = f.initial[0]; f.control('richUi', 1);
   f.lifecycle('suspendFullscreen', {recoveryId: 999}, {attempt: 99});
-  f.lifecycle('suspendFullscreen', {recoveryId: 1}); assert.equal(v.controls, true);
-  f.lifecycle('resumeFullscreen', {recoveryId: -1}); assert.equal(v.controls, true);
+  f.lifecycle('suspendFullscreen', {recoveryId: 1}); assert.equal(v.controls, false);
+  f.lifecycle('resumeFullscreen', {recoveryId: -1}); assert.equal(v.controls, false);
   f.lifecycle('resumeFullscreen', {recoveryId: 2}); assert.equal(v.controls, false);
 });
 check('explicit PiP dismissal pauses the same owned video even if its source just changed', () => {
@@ -739,5 +748,82 @@ check('explicit PiP dismissal pauses the same owned video even if its source jus
   assert.equal(v.paused, true); assert.equal(v.currentTime, 3);
   f.control('play');
   f.control('pause', undefined, {sourceRevision: -1, attempt: 99}); assert.equal(v.paused, false);
+});
+function controlSheets(f) { return f.elements.filter(e => e.tagName === 'STYLE' && e.isConnected); }
+check('UA controls are hidden before fullscreen entry with selectors scoped to the owned video', () => {
+  const other = video(), selected = video(); const f = enabledFixture([other, selected]);
+  selected.dispatch('pointerdown'); f.flush(); f.click();
+  const token = selected.getAttribute('data-miowser-rich-controls'), css = controlSheets(f).map(s => s.textContent).join('');
+  assert(token); assert(css.includes('video[data-miowser-rich-controls="' + token + '"]::-webkit-media-controls{display:none!important;'));
+  assert(css.includes('pointer-events:none!important')); assert(!css.includes('::cue'));
+  assert.equal(selected.style.getPropertyValue('pointer-events'), 'none'); assert.equal(other.getAttribute('data-miowser-rich-controls'), null);
+  assert.equal(other.style.getPropertyValue('pointer-events'), ''); assert.equal(selected.controls, false);
+  assert.equal(selected.currentTime, 12); assert.equal(selected.paused, false);
+});
+check('provider controls changes coalesce to one frame and cannot re-enable the UI', () => {
+  const f = playingFixture(), v = f.initial[0]; f.render();
+  v.controls = true;
+  for (let n = 0; n < 200; n++) f.attribute(v, 'controls');
+  assert.equal(f.animationFrames.size, 1); f.render(); assert.equal(v.controls, false);
+  assert.equal(controlSheets(f).length, 1);
+  assert.equal(f.mutations.filter(m => m.connected && m.target === v).length, 1);
+});
+check('repeated attachment reuses the guard and fallback releases all hidden-control state', () => {
+  const f = playingFixture(), v = f.initial[0]; const token = v.getAttribute('data-miowser-rich-controls');
+  for (let n = 0; n < 20; n++) f.control('richUi', 1);
+  assert.equal(v.getAttribute('data-miowser-rich-controls'), token); assert.equal(controlSheets(f).length, 1);
+  f.control('richUi', 0);
+  assert.equal(v.controls, true); assert.equal(controlSheets(f).length, 0); assert.equal(v.getAttribute('data-miowser-rich-controls'), null);
+  assert.equal(v.style.getPropertyValue('pointer-events'), ''); assert.equal(f.mutations.filter(m => m.connected && m.target === v).length, 0);
+  f.control('richUi', 1); assert.equal(controlSheets(f).length, 1); assert.equal(v.controls, false);
+});
+check('return restores prior pointer styles, priority and even an existing empty marker', () => {
+  const v = video(); v.controls = true; v.style.setProperty('pointer-events', 'auto', 'important');
+  v.setAttribute('data-miowser-rich-controls', ''); const f = enabledFixture([v]); f.click();
+  f.lifecycle('releaseFullscreen');
+  assert.equal(v.controls, true); assert.equal(v.style.getPropertyValue('pointer-events'), 'auto');
+  assert.equal(v.style.getPropertyPriority('pointer-events'), 'important'); assert.equal(v.getAttribute('data-miowser-rich-controls'), '');
+  assert.equal(controlSheets(f).length, 0);
+});
+check('entry failure and pagehide remove guards and cannot keep changing website controls', () => {
+  for (const exit of ['failure', 'pagehide', 'fullscreen']) {
+    const f = enabledFixture(), v = f.initial[0];
+    if (exit === 'failure') v.requestFullscreen = () => { throw new Error('denied'); };
+    f.click();
+    if (exit === 'pagehide') f.window.dispatch('pagehide');
+    if (exit === 'fullscreen') { v.controls = true; f.attribute(v, 'controls'); f.lifecycle('releaseFullscreen'); }
+    assert.equal(controlSheets(f).length, 0); assert.equal(v.getAttribute('data-miowser-rich-controls'), null);
+    assert.equal(f.mutations.filter(m => m.connected && m.target === v).length, 0);
+    v.controls = true; f.render(); assert.equal(v.controls, true);
+  }
+});
+check('suppression also works in an element shadow root without styling other videos', () => {
+  const shadow = new Element('shadow'); shadow.setConnected(true);
+  const v = video(); v.getRootNode = () => shadow; const f = enabledFixture([v]); f.click();
+  assert.equal(shadow.children.filter(e => e.tagName === 'STYLE').length, 1);
+  f.lifecycle('releaseFullscreen'); assert.equal(shadow.children.length, 0);
+});
+check('constructable stylesheet path keeps and restores the providers existing sheets', () => {
+  const f = enabledFixture(), v = f.initial[0], provider = {};
+  f.document.adoptedStyleSheets = [provider];
+  f.window.CSSStyleSheet = class { replaceSync(css) { this.css = css; } };
+  f.click(); assert.equal(f.document.adoptedStyleSheets.length, 2);
+  assert(f.document.adoptedStyleSheets[1].css.includes('::-webkit-media-controls'));
+  assert.equal(controlSheets(f).length, 0);
+  f.lifecycle('releaseFullscreen'); assert.equal(f.document.adoptedStyleSheets.length, 1);
+  assert.equal(f.document.adoptedStyleSheets[0], provider);
+});
+check('ordinary site fullscreen never installs the native-control guard', () => {
+  const f = enabledFixture(), v = f.initial[0]; v.controls = true;
+  f.document.fullscreenElement = v; f.document.dispatch('fullscreenchange');
+  assert.equal(controlSheets(f).length, 0); assert.equal(v.controls, true);
+  assert.equal(v.style.getPropertyValue('pointer-events'), '');
+});
+check('background and PiP roundtrips retain a single guard until the exact owner exits', () => {
+  const f = playingFixture(), v = f.initial[0]; const token = v.getAttribute('data-miowser-rich-controls');
+  f.lifecycle('suspendFullscreen', {recoveryId: 3}); f.lifecycle('resumeFullscreen', {recoveryId: 4});
+  f.lifecycle('suspendFullscreen', {recoveryId: 5, pip: true}); f.lifecycle('resumeFullscreen', {recoveryId: 6});
+  assert.equal(v.getAttribute('data-miowser-rich-controls'), token); assert.equal(controlSheets(f).length, 1); assert.equal(v.controls, false);
+  f.lifecycle('releaseFullscreen', {recoveryId: 7}); assert.equal(controlSheets(f).length, 0);
 });
 console.log(checks + ' live-video script checks passed; no device tests were run.');

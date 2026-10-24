@@ -338,7 +338,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
                 } else if (matches) {
                     if (controls) controls.release();
                     if (message.type === 'releaseFullscreen') assistant.release(message.elementId, message.attempt);
-                    else assistant.rich(message.elementId, message.attempt, message.type === 'suspendFullscreen' && message.pip === true);
+                    else assistant.rich(message.elementId, message.attempt, message.type === 'suspendFullscreen');
                 }
                 return;
             }

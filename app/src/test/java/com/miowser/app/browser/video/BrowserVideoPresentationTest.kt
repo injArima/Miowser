@@ -69,4 +69,14 @@ class BrowserVideoPresentationTest {
         assertEquals(PlayerScaleMode.entries.map { it.name }, BrowserVideoScale.entries.map { it.name })
         assertEquals(PlayerScaleMode.entries.map { it.label }, BrowserVideoScale.entries.map { it.label })
     }
+
+    @Test fun underlyingWebUiIsBlockedOnlyWhileMiowserOwnsTheSession() {
+        val current = state()
+        assertTrue(suppressBrowserSurfaceInput(current))
+        assertTrue(suppressBrowserSurfaceInput(current.copy(phase = BrowserVideoPhase.SUSPENDED)))
+        assertTrue(suppressBrowserSurfaceInput(current.copy(phase = BrowserVideoPhase.RECONNECTING)))
+        assertFalse(suppressBrowserSurfaceInput(BrowserVideoPlaybackState()))
+        assertFalse(suppressBrowserSurfaceInput(current.copy(phase = BrowserVideoPhase.UNAVAILABLE)))
+        assertFalse(suppressBrowserSurfaceInput(current.copy(session = null)))
+    }
 }

@@ -68,9 +68,74 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             return style.display !== 'none' && style.visibility !== 'hidden' && style.visibility !== 'collapse' &&
                 Number(style.opacity) !== 0;
         }
+        function clearControlGuard(entry) {
+            var guard = entry && entry.controlGuard;
+            if (!guard) return;
+            entry.controlGuard = null;
+            if (guard.observer) guard.observer.disconnect();
+            if (guard.frame !== null) window.cancelAnimationFrame(guard.frame);
+            if (guard.adopted) {
+                guard.root.adoptedStyleSheets = Array.from(guard.root.adoptedStyleSheets).filter(function (sheet) { return sheet !== guard.sheet; });
+            } else if (guard.sheet && guard.sheet.parentNode) guard.sheet.parentNode.removeChild(guard.sheet);
+            else if (guard.sheet && guard.sheet.parentElement) guard.sheet.remove();
+            if (guard.attribute === null) entry.video.removeAttribute('data-miowser-rich-controls');
+            else entry.video.setAttribute('data-miowser-rich-controls', guard.attribute);
+            if (guard.pointer) entry.video.style.setProperty('pointer-events', guard.pointer, guard.priority);
+            else entry.video.style.removeProperty('pointer-events');
+        }
+        function hideBrowserControls(entry) {
+            if (entry.controlGuard) { entry.video.controls = false; return; }
+            var video = entry.video, token = 'm' + entry.attempt + Math.random().toString(36).slice(2);
+            var root = video.getRootNode ? video.getRootNode() : document;
+            var guard = {sheet: null, root: root, adopted: false, observer: null, frame: null,
+                attribute: video.getAttribute('data-miowser-rich-controls'),
+                pointer: video.style.getPropertyValue('pointer-events'),
+                priority: video.style.getPropertyPriority('pointer-events')};
+            entry.controlGuard = guard;
+            video.setAttribute('data-miowser-rich-controls', token);
+            // Fullscreen video can force Chromium controls even with controls=false.
+            // Target only this entry, including its UA shadow controls; never hide text-track cues.
+            var selector = 'video[data-miowser-rich-controls="' + token + '"]';
+            var css = ['-webkit-media-controls', '-webkit-media-controls-enclosure',
+                '-webkit-media-controls-panel', '-webkit-media-controls-overlay-enclosure',
+                '-webkit-media-controls-overlay-play-button', '-webkit-media-controls-play-button',
+                '-webkit-media-controls-timeline', '-webkit-media-controls-current-time-display',
+                '-webkit-media-controls-time-remaining-display', '-webkit-media-controls-mute-button',
+                '-webkit-media-controls-volume-slider', '-webkit-media-controls-fullscreen-button',
+                '-internal-media-controls-overlay-cast-button'].map(function (pseudo) {
+                    // Separate rules: an unsupported pseudo must not invalidate the other selectors.
+                    return selector + '::' + pseudo + '{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;}';
+                }).join('\n');
+            // CSSOM sheets also cover pages that disallow inline <style> through CSP.
+            if (window.CSSStyleSheet && 'adoptedStyleSheets' in root) {
+                try {
+                    var compiled = new window.CSSStyleSheet();
+                    compiled.replaceSync(css);
+                    root.adoptedStyleSheets = Array.from(root.adoptedStyleSheets).concat([compiled]);
+                    guard.sheet = compiled; guard.adopted = true;
+                } catch (ignored) {}
+            }
+            if (!guard.adopted) {
+                guard.sheet = document.createElement('style');
+                guard.sheet.textContent = css;
+                (root.head || root.documentElement || root).appendChild(guard.sheet);
+            }
+            video.style.setProperty('pointer-events', 'none', 'important');
+            video.controls = false;
+            guard.observer = new MutationObserver(function () {
+                if (restore !== entry || !entry.controlGuard || !video.controls || guard.frame !== null) return;
+                // One local write per animation frame, even if a provider re-enables controls.
+                guard.frame = window.requestAnimationFrame(function () {
+                    guard.frame = null;
+                    if (restore === entry && entry.controlGuard && video.controls) video.controls = false;
+                });
+            });
+            guard.observer.observe(video, {attributes: true, attributeFilter: ['controls']});
+        }
         function restoreControls() {
             if (!restore) return;
             cancelEntryTimeout();
+            clearControlGuard(restore);
             restore.video.controls = restore.controls;
             if (restore.video.style && restore.objectFit !== undefined) {
                 if (restore.objectFit) restore.video.style.setProperty('object-fit', restore.objectFit, restore.fitPriority);
@@ -104,10 +169,10 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             entryTimeout = setTimeout(function () {
                 if (restore === entry && document.fullscreenElement !== entry.video) failed(entry);
             }, 8000);
-            // Keep browser controls until the native rich overlay confirms it is attached.
-            video.controls = true;
             hide();
             try {
+                // Hide from the first fullscreen frame, before the native overlay attaches.
+                hideBrowserControls(entry);
                 // Must stay in this synchronous trusted click, before any promise/bridge roundtrip.
                 var result = video.requestFullscreen();
                 if (result && typeof result.catch === 'function') result.catch(function () { failed(entry); });
@@ -225,11 +290,14 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             rich: function (elementId, attempt, attached) {
                 if (!restore || restore.record.id !== elementId || restore.attempt !== attempt ||
                     document.fullscreenElement !== restore.video || !restore.video.isConnected) return false;
-                restore.video.controls = !attached;
+                if (attached) hideBrowserControls(restore);
+                else { clearControlGuard(restore); restore.video.controls = true; }
                 return true;
             },
             fallback: function () {
-                if (restore && document.fullscreenElement === restore.video) restore.video.controls = true;
+                if (restore && document.fullscreenElement === restore.video) {
+                    clearControlGuard(restore); restore.video.controls = true;
+                }
             },
             release: function (elementId, attempt) {
                 if (!restore || restore.record.id !== elementId || restore.attempt !== attempt) return;

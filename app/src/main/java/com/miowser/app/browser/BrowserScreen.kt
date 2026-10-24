@@ -107,6 +107,7 @@ import com.miowser.app.adblock.SiteProtection
 import com.miowser.app.bookmarks.BookmarkList
 import com.miowser.app.browser.video.VideoAssistantButtonPolicy
 import com.miowser.app.browser.video.BrowserVideoPlayerOverlay
+import com.miowser.app.browser.video.BrowserVideoSurface
 import com.miowser.app.browser.video.keepBrowserRendererForPip
 import com.miowser.app.downloader.Download
 import com.miowser.app.downloader.DownloadConflictReason
@@ -2972,20 +2973,7 @@ fun BrowserScreen(
         }?.let { fullscreen ->
             key(fullscreen.view) {
                 Box(Modifier.fillMaxSize().zIndex(2f)) {
-                    AndroidView(
-                        modifier = Modifier.fillMaxSize(),
-                        factory = { hostContext ->
-                            FrameLayout(hostContext).apply {
-                                setBackgroundColor(android.graphics.Color.BLACK)
-                                (fullscreen.view.parent as? ViewGroup)?.removeView(fullscreen.view)
-                                addView(fullscreen.view, FrameLayout.LayoutParams(
-                                    ViewGroup.LayoutParams.MATCH_PARENT,
-                                    ViewGroup.LayoutParams.MATCH_PARENT
-                                ))
-                            }
-                        },
-                        onRelease = { host -> host.removeAllViews() }
-                    )
+                    BrowserVideoSurface(fullscreen.view, tabs.firstOrNull { it.id == fullscreen.tabId }?.browserVideoPlayer)
                     tabs.firstOrNull { it.id == fullscreen.tabId }?.let { owner ->
                         BrowserVideoPlayerOverlay(owner.browserVideoPlayer, owner.title, ::exitWebFullscreen,
                             sourceLabel = SiteProtection.host(owner.url).orEmpty())
