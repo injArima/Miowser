@@ -40,9 +40,15 @@ step 4 works perfectly. See
 
 Step 5 adds the shared gestures, temporary 2× hold, brightness/volume, mute,
 Fit/Zoom/Fill, control lock, exposed HTML caption/audio selection and explicit
-browser-owned PiP. Local checks and the normal debug APK build passed; device
-checks remain with the user. Unsupported native-only features retain their
+browser-owned PiP. Local checks and the normal debug APK build passed; the user
+verified step 5 works perfectly. Unsupported native-only features retain their
 existing routes. See [the step 5 report and checklist](video-assistant-step-5-2026-10-24.md).
+
+Step 6 adds exact-owner background/PiP reconciliation, bounded entry/reconnect
+deadlines, idempotent custom View cleanup, source-revision guards and website
+fallback/return actions. Local build and contract checks passed; device checks
+remain with the user. Recovery does not reopen a source or automatically resume
+playback. See [the step 6 report and checklist](video-assistant-step-6-2026-10-24.md).
 
 Samsung's inspected **Video Assistant → Fullscreen** path controls a browser-backed
 media session. It does not first ask the user to select a detected URL and open

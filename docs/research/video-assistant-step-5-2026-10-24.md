@@ -1,5 +1,8 @@
 # Video Assistant step 5 — additional browser-backed controls
 
+Follow-up: the user verified this step works perfectly. Transitions and recovery
+are implemented in [step 6](video-assistant-step-6-2026-10-24.md).
+
 The user verified step 4 works. Step 5 extends the same live browser video with
 supported additional controls, reusing the native player's gesture surface,
 feedback, brightness/volume sheet, icons and menus. It does not create a second
