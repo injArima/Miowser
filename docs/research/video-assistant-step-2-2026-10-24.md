@@ -1,5 +1,10 @@
 # Video Assistant step 2 — live sessions in the main app
 
+Step 3 now adds the contextual action on top of this foundation. See
+[the floating-button implementation and device checklist](video-assistant-step-3-2026-10-24.md).
+The following describes the step 2 checkpoint; its controls-related boundaries
+are historical scope, not a statement that the step 3 button is missing.
+
 ## Result and scope
 
 The live-session foundation now runs in normal browser tabs. It is a separate,

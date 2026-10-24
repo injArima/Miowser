@@ -26,6 +26,12 @@ media discovery, with no playback rerouting or new controls. Local compilation
 and contract checks passed; actual WebView/website behavior remains for the
 user's device checks. See [the step 2 report](video-assistant-step-2-2026-10-24.md).
 
+Step 3 adds a frame-local contextual button in normal tabs. Its trusted click
+opens that exact video's existing browser fullscreen route, using temporary
+browser controls until the step 4 rich-control adapter is implemented. Current
+Media3 workflows are preserved. See [the step 3 implementation and device
+checklist](video-assistant-step-3-2026-10-24.md).
+
 Samsung's inspected **Video Assistant → Fullscreen** path controls a browser-backed
 media session. It does not first ask the user to select a detected URL and open
 that URL in a newly created standalone player.
