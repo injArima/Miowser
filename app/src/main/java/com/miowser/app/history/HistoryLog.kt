@@ -1,6 +1,7 @@
 package com.miowser.app.history
 
 import android.content.Context
+import com.miowser.app.persistence.Persistence
 import androidx.compose.runtime.mutableStateListOf
 
 // A generous but real cap — without one, a long-lived install's history would grow the
@@ -15,43 +16,59 @@ private const val MAX_ENTRIES = 2000
  * with one row per visit the way a raw visit log would.
  */
 object HistoryLog {
-    val entries = mutableStateListOf<HistoryEntry>()
+    private val mutableRecords = mutableStateListOf<HistoryEntry>()
+    val entries: List<HistoryEntry> get() = mutableRecords
 
     @Volatile private var restored = false
 
-    fun restore(context: Context) {
+    suspend fun restoreAsync(context: Context) {
+        Persistence.requireOwner()
         if (restored) return
+        val records = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { HistoryStore.load(context) }
+        if (restored) return
+        mutableRecords.addAll(records)
         restored = true
-        entries.addAll(HistoryStore.load(context))
+    }
+
+    fun restore(context: Context) {
+        Persistence.requireOwner()
+        if (restored) return
+        mutableRecords.addAll(HistoryStore.load(context))
+        restored = true
     }
 
     fun recordVisit(context: Context, url: String, title: String) {
+        Persistence.requireOwner()
         if (url.isBlank() || url == "about:blank") return
-        val existingIndex = entries.indexOfFirst { it.url == url }
-        val visitCount = if (existingIndex >= 0) entries[existingIndex].visitCount + 1 else 1
-        if (existingIndex >= 0) entries.removeAt(existingIndex)
-        entries.add(0, HistoryEntry(url = url, title = title.ifBlank { url }, lastVisitedAt = System.currentTimeMillis(), visitCount = visitCount))
-        while (entries.size > MAX_ENTRIES) entries.removeAt(entries.size - 1)
+        val existingIndex = mutableRecords.indexOfFirst { it.url == url }
+        val visitCount = if (existingIndex >= 0) mutableRecords[existingIndex].visitCount + 1 else 1
+        if (existingIndex >= 0) mutableRecords.removeAt(existingIndex)
+        mutableRecords.add(0, HistoryEntry(url = url, title = title.ifBlank { url }, lastVisitedAt = System.currentTimeMillis(), visitCount = visitCount))
+        while (mutableRecords.size > MAX_ENTRIES) mutableRecords.removeAt(mutableRecords.size - 1)
         persist(context)
     }
 
     fun remove(context: Context, entry: HistoryEntry) {
-        entries.remove(entry)
+        Persistence.requireOwner()
+        mutableRecords.remove(entry)
         persist(context)
     }
 
     /** Bulk-remove (e.g. everything from one date on HistoryPage's group-delete) with a single persist, not one per entry. */
     fun removeAll(context: Context, toRemove: Collection<HistoryEntry>) {
-        entries.removeAll(toRemove)
+        Persistence.requireOwner()
+        mutableRecords.removeAll(toRemove)
         persist(context)
     }
 
     fun clear(context: Context) {
-        entries.clear()
+        Persistence.requireOwner()
+        mutableRecords.clear()
         persist(context)
     }
 
     private fun persist(context: Context) {
-        HistoryStore.save(context, entries)
+        Persistence.requireOwner()
+        HistoryStore.save(context, mutableRecords)
     }
 }

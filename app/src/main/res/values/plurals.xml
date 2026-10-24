@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="library_video_count">
+        <item quantity="one">%d video</item>
+        <item quantity="other">%d videos</item>
+    </plurals>
+    <plurals name="open_tabs">
+        <item quantity="one">Tabs (%d open)</item>
+        <item quantity="other">Tabs (%d open)</item>
+    </plurals>
+    <plurals name="active_downloads">
+        <item quantity="one">More (%d download active)</item>
+        <item quantity="other">More (%d downloads active)</item>
+    </plurals>
+    <plurals name="nav_downloads_active">
+        <item quantity="one">Downloads, %d active</item>
+        <item quantity="other">Downloads, %d active</item>
+    </plurals>
+</resources>

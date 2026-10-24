@@ -1,6 +1,7 @@
 package com.miowser.app.bookmarks
 
 import android.content.Context
+import com.miowser.app.persistence.Persistence
 
 private const val PREFS_NAME = "bookmarks"
 private const val KEY_BOOKMARKS = "bookmarks"
@@ -41,12 +42,15 @@ object BookmarkCodec {
 
 /** Thin SharedPreferences wrapper around [BookmarkCodec]. */
 object BookmarkStore {
-    fun save(context: Context, bookmarks: List<Bookmark>) {
-        // commit(), not apply() — see DownloadStore's matching doc comment for why: apply()'s
-        // async write can be lost to a process death before it lands.
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-            .putString(KEY_BOOKMARKS, BookmarkCodec.encode(bookmarks))
-            .commit()
+    fun save(context: Context, bookmarks: List<Bookmark>): java.util.concurrent.CompletableFuture<Boolean> {
+        Persistence.requireOwner()
+        val appContext = context.applicationContext
+        val snapshot = bookmarks.toList()
+        return Persistence.submitSnapshot("bookmarks") {
+            val saved = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putString(KEY_BOOKMARKS, BookmarkCodec.encode(snapshot)).commit()
+            saved
+        }
     }
 
     fun load(context: Context): List<Bookmark> {

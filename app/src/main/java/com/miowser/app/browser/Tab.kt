@@ -14,6 +14,7 @@ import android.net.Uri
 import android.util.Log
 import android.view.PixelCopy
 import android.view.View
+import android.view.ViewGroup
 import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.GeolocationPermissions
@@ -21,8 +22,14 @@ import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.webkit.WebResourceRequest
+import android.webkit.RenderProcessGoneDetail
+import android.webkit.SslErrorHandler
+import android.net.http.SslError
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +39,7 @@ import com.miowser.app.adblock.AdBlock
 import com.miowser.app.adblock.CosmeticBridge
 import com.miowser.app.downloader.Download
 import com.miowser.app.downloader.RendererResourceDownloader
+import com.miowser.app.downloader.installRendererBlobFrameScript
 import com.miowser.app.downloader.RendererResourceKind
 import com.miowser.app.downloader.rendererResourceKind
 import com.miowser.app.grabber.DetectedMedia
@@ -50,18 +58,27 @@ import com.miowser.app.settings.Settings
 import java.util.Collections
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicBoolean
 
 private const val CONSOLE_TAG = "Miowser/Console"
 
+data class SiteProtectionStats(
+    val blockedRequests: Int,
+    val blockedPopups: Int,
+    val topBlockedHosts: List<Pair<String, Int>>
+)
+
+/** Keep the installed WebView's browser version while requesting a desktop viewport and UA. */
+internal fun desktopUserAgent(mobile: String): String = mobile
+    .replace(Regex("\\(Linux; Android[^)]*\\)"), "(X11; Linux x86_64)")
+    .replace(Regex("Version/\\d+(?:\\.\\d+)* "), "")
+    .replace(" Mobile Safari/", " Safari/")
+
 /**
- * One browser tab: its own persistent WebView plus the Compose-observable state derived from
- * it (title, URL, loading progress, back-stack availability, address-bar editing state, and now
- * the grabber's detected-media list for this page).
- *
- * WebViews are created once per tab and kept alive for the tab's lifetime. Switching tabs
- * shows/hides them (see BrowserScreen's tab Box, which keeps every tab's AndroidView composed
- * and toggles View.VISIBLE/INVISIBLE) rather than destroying and recreating one — "each with
- * its own persistent WebView, not destroyed on switch" was an explicit target.
+ * A lightweight tab record with observable navigation metadata and optional live engine.
+ * Construction and session snapshots do not create WebViews. The activity's TabController
+ * acquires an engine on activation/navigation and retains it across ordinary switches.
+ * Preview decoding is independent of the engine and occurs only for visible overview cards.
  *
  * @param openerTabId the tab whose page opened this one via a real navigation event
  *   (target="_blank"/window.open(), handled by onCreateWindow below) — null for tabs the user
@@ -74,35 +91,83 @@ private const val CONSOLE_TAG = "Miowser/Console"
  *   away or hold the request behind a confirmation dialog first. Either way onCreateWindow itself
  *   always returns true immediately — completing (or simply never completing) resultMsg is what
  *   actually decides the popup's fate, asynchronously, exactly as WebView's own API expects.
- * @param onLinkLongPressed called with a link's URL when the user long-presses one — the entry
+ * @param onLinkLongPressed called with a link's URL and anchor text on a long press — the entry
  *   point for the long-press context menu (open in new/background tab, copy, share).
  */
 class Tab(
     val id: Long,
     context: Context,
+    private val controller: TabController,
     initialUrl: String,
     val openerTabId: Long?,
     val isPrivate: Boolean = false,
     val thumbnailKey: String = UUID.randomUUID().toString(),
     initialTitle: String = "",
     initialLastActiveAt: Long = System.currentTimeMillis(),
+    initialDesktopMode: Boolean = false,
     canCapturePreview: () -> Boolean = { true },
-    onNewWindowRequested: (openerTabId: Long, isUserGesture: Boolean, resultMsg: Message) -> Unit,
-    onLinkLongPressed: (url: String) -> Unit,
-    onDownloadRequested: (WebDownloadRequest) -> Unit,
-    onFileChooserRequested: (ValueCallback<Array<Uri>>, WebChromeClient.FileChooserParams) -> Unit,
-    onWebPermissionRequested: (PermissionRequest) -> Unit,
-    onWebPermissionCanceled: (PermissionRequest) -> Unit,
-    onGeolocationRequested: (String, GeolocationPermissions.Callback) -> Unit,
-    onGeolocationCanceled: () -> Unit,
-    onExternalNavigation: (String) -> Unit
+    private val onNewWindowRequested: (openerTabId: Long, isUserGesture: Boolean, resultMsg: Message) -> Unit,
+    private val onInsecureNavigationRequested: (tabId: Long, url: String) -> Unit,
+    private val onCertificateErrorRequested: (tabId: Long, url: String, handler: SslErrorHandler, error: SslError) -> Unit,
+    private val onPopupRoutingFailed: (tabId: Long) -> Unit,
+    private val onLinkLongPressed: (url: String, text: String?) -> Unit,
+    private val onDownloadRequested: (WebDownloadRequest) -> Unit,
+    private val onFileChooserRequested: (ValueCallback<Array<Uri>>, WebChromeClient.FileChooserParams) -> Unit,
+    private val onFullscreenVideoRequested: (Long, View, WebChromeClient.CustomViewCallback) -> Unit,
+    private val onFullscreenVideoHidden: (Long) -> Unit,
+    private val onWebPermissionRequested: (PermissionRequest) -> Unit,
+    private val onWebPermissionCanceled: (PermissionRequest) -> Unit,
+    private val onGeolocationRequested: (String, GeolocationPermissions.Callback) -> Unit,
+    private val onGeolocationCanceled: () -> Unit,
+    private val onExternalNavigation: (String) -> Unit,
+    private val onRendererUnavailable: (Long) -> Unit
 ) {
     var title by mutableStateOf(
         if (isBrowserHomeUrl(initialUrl)) "Home" else initialTitle.ifBlank { "New Tab" }
     )
-    var url by mutableStateOf(if (isBrowserHomeUrl(initialUrl)) BROWSER_HOME_URL else "")
+    var url by mutableStateOf(initialUrl)
     var isShowingHome by mutableStateOf(isBrowserHomeUrl(initialUrl))
         private set
+    var isDesktopMode by mutableStateOf(initialDesktopMode)
+        private set
+    var pageZoomFactor by mutableFloatStateOf(1f)
+        private set
+    var textZoomPercent by mutableIntStateOf(100)
+        private set
+    private var mobileUserAgent: String? = null
+    private var requestUserAgent: java.util.concurrent.atomic.AtomicReference<String>? = null
+    private var desktopViewportScript: androidx.webkit.ScriptHandler? = null
+
+    fun applyDesktopMode(enabled: Boolean) {
+        if (isDesktopMode == enabled) return
+        isDesktopMode = enabled
+        liveWebView?.let { view ->
+            val settings = view.settings
+            val mobile = mobileUserAgent ?: settings.userAgentString.also { mobileUserAgent = it }
+            if (enabled) {
+                desktopViewportScript = view.installDesktopViewportScript()
+            } else {
+                desktopViewportScript?.remove()
+                desktopViewportScript = null
+            }
+            settings.userAgentString = if (enabled) desktopUserAgent(mobile) else mobile
+            requestUserAgent?.set(settings.userAgentString)
+            settings.useWideViewPort = enabled
+            settings.loadWithOverviewMode = enabled
+            view.reload()
+        }
+    }
+
+    fun zoomPageIn() { liveWebView?.zoomBy(1.2f) }
+    fun zoomPageOut() { liveWebView?.zoomBy(1f / 1.2f) }
+    fun resetPageZoom() {
+        if (pageZoomFactor.isFinite() && pageZoomFactor > 0f)
+            liveWebView?.zoomBy((1f / pageZoomFactor).coerceIn(0.01f, 100f))
+    }
+    fun setTextZoom(percent: Int) {
+        textZoomPercent = percent.coerceIn(50, 200)
+        liveWebView?.settings?.textZoom = textZoomPercent
+    }
     var canGoBack by mutableStateOf(false)
     var canGoForward by mutableStateOf(false)
     var isLoading by mutableStateOf(false)
@@ -117,19 +182,56 @@ class Tab(
         private set
     var pageError by mutableStateOf<String?>(null)
         private set
+    var blockedPageInfo by mutableStateOf<com.miowser.app.adblock.BlockedPageInfo?>(null)
+        private set
+    var rendererUnavailable by mutableStateOf(false)
+        private set
+    var certificateErrorUrl by mutableStateOf<String?>(null)
+        private set
+    var certificateBypassed by mutableStateOf(false)
+        private set
+
+    fun acceptCertificateError() {
+        certificateBypassed = true
+        pageError = null
+        blockedPageInfo = null
+    }
+
+    fun blockCertificateError() {
+        blockedPageInfo = null
+        certificateBypassed = false
+        pageError = "This site's security certificate could not be verified. The connection was blocked."
+    }
     /** Last successfully finished page, retained while its WebView stays alive across tab switches. */
     var lastFinishedUrl by mutableStateOf<String?>(null)
         private set
 
     /** Everything the grabber has found on the current page. Cleared on every new navigation. */
     val detectedMedia = mutableStateListOf<DetectedMedia>()
-    var thumbnail by mutableStateOf(
-        if (isPrivate) null else TabThumbnailCache.load(context, thumbnailKey)
-    )
+    private val detectionIndexes = mutableMapOf<String, Int>()
+    private var grabberBridge: GrabberBridge? = null
+    internal var hasPlayingMedia by mutableStateOf(false)
+        private set
+    private val probeHandles = java.util.concurrent.ConcurrentHashMap.newKeySet<com.miowser.app.grabber.MediaProbeHandle>()
+    var thumbnail by mutableStateOf<Bitmap?>(null)
         private set
     var discoveryProgress by mutableStateOf<DiscoveryProgress?>(null)
         private set
     private var discoveryHandle: DiscoveryHandle? = null
+    private var pendingAutomaticDiscovery: Runnable? = null
+    private val blockedHosts = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
+    private val blockedRequests = java.util.concurrent.atomic.AtomicInteger(0)
+    private val blockedPopups = java.util.concurrent.atomic.AtomicInteger(0)
+    fun protectionStats(): SiteProtectionStats = SiteProtectionStats(
+        blockedRequests.get(), blockedPopups.get(),
+        blockedHosts.entries.sortedByDescending { it.value.get() }.take(6)
+            .map { it.key to it.value.get() }
+    )
+    fun protectionSummary(): String {
+        val hosts = blockedHosts.entries.sortedByDescending { it.value.get() }.take(6)
+            .joinToString("\n") { "${it.key}: ${it.value.get()} requests blocked by network filters" }
+        return listOf(hosts, "${blockedPopups.get()} unsolicited pop-ups blocked").filter(String::isNotBlank).joinToString("\n")
+    }
 
     // Guards against re-probing/re-reporting the same URL (a page can request or expose the same
     // manifest/element more than once) — synchronized because network-level candidates arrive
@@ -140,15 +242,94 @@ class Tab(
     private val mainHandler = Handler(Looper.getMainLooper())
     private val previewCaptureAllowed = canCapturePreview
     private var previewCaptureGeneration = 0L
-    private var lastPreviewCaptureAt = 0L
     private val previewCaptureRunnable = Runnable { captureThumbnail() }
     private lateinit var rendererResourceDownloader: RendererResourceDownloader
+    var rendererTransferCount by mutableIntStateOf(0)
+        private set
     private var destroyed = false
+    private var retireEngineCallbacks: (() -> Unit)? = null
+    private val popupProxies = mutableMapOf<WebView, () -> Unit>()
+    private var interceptingPopupUntil = 0L
+    private var routedPopupTarget: String? = null
 
-    init {
-        if (thumbnail != null) {
-            TabThumbnailMemoryRegistry.touch(thumbnailKey) { thumbnail = null }
+    fun cancelRoutedPopup() {
+        interceptingPopupUntil = 0L
+        routedPopupTarget = null
+    }
+
+    private fun shouldBlockCompanionNavigation(target: String): Boolean {
+        if (SystemClock.uptimeMillis() >= interceptingPopupUntil) {
+            interceptingPopupUntil = 0L
+            return false
         }
+        return target != routedPopupTarget
+    }
+
+    /** Capture a page-created window's first HTTP(S) destination before it can render. */
+    private fun routePopupIntoCurrentTab(resultMsg: Message) {
+        val proxy = WebView(tabContext)
+        val routed = AtomicBoolean(false)
+        val disposed = AtomicBoolean(false)
+        val sourceEngine = liveWebView
+        var rendererGone = false
+        var timeout: Runnable? = null
+        fun disposeProxy() {
+            if (!disposed.compareAndSet(false, true)) return
+            timeout?.let(mainHandler::removeCallbacks)
+            popupProxies.remove(proxy)
+            (proxy.parent as? ViewGroup)?.removeView(proxy)
+            proxy.destroy()
+        }
+        popupProxies[proxy] = {
+            rendererGone = true
+            routed.set(true)
+            disposeProxy()
+        }
+        interceptingPopupUntil = SystemClock.uptimeMillis() + 5_000L
+        routedPopupTarget = null
+        fun route(target: String) {
+            if (disposed.get()) return
+            val scheme = Uri.parse(target).scheme
+            if (scheme != "http" && scheme != "https") return
+            if (!routed.compareAndSet(false, true)) return
+            routedPopupTarget = target
+            interceptingPopupUntil = SystemClock.uptimeMillis() + 30_000L
+            mainHandler.post {
+                disposeProxy()
+                if (!destroyed && !rendererGone && liveWebView === sourceEngine && !rendererUnavailable) navigateTo(target)
+            }
+        }
+        proxy.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                if (request.isForMainFrame) route(request.url.toString())
+                return true
+            }
+            override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+                if (url != null) route(url)
+            }
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                rendererGone = true
+                val pending = !disposed.get()
+                routed.set(true)
+                disposeProxy()
+                if (pending && !destroyed) {
+                    cancelRoutedPopup()
+                    onPopupRoutingFailed(id)
+                }
+                return true
+            }
+        }
+        (resultMsg.obj as WebView.WebViewTransport).webView = proxy
+        resultMsg.sendToTarget()
+        timeout = Runnable {
+            if (!routed.get()) {
+                routed.set(true)
+                disposeProxy()
+                interceptingPopupUntil = 0L
+                if (!destroyed) onPopupRoutingFailed(id)
+            }
+        }
+        mainHandler.postDelayed(timeout, 5_000L)
     }
 
     /**
@@ -163,8 +344,16 @@ class Tab(
      * already-empty list is a no-op.
      */
     fun clearDetections() {
+        blockedHosts.clear()
+        blockedRequests.set(0)
+        blockedPopups.set(0)
         cancelDiscovery()
         detectionGeneration.incrementAndGet()
+        grabberBridge?.reset()
+        hasPlayingMedia = false
+        probeHandles.toList().forEach { it.cancel() }
+        probeHandles.clear()
+        detectionIndexes.clear()
         detectedMedia.clear()
         seenGrabberUrls.clear()
         if (::rendererResourceDownloader.isInitialized) rendererResourceDownloader.invalidatePage()
@@ -172,16 +361,36 @@ class Tab(
 
     /** Attaches this tab's live renderer to a blob:/data: queue item before it is enqueued. */
     fun attachRendererTransfer(download: Download) {
+        val view = liveWebView ?: return
+        val bridge = rendererResourceDownloader
+        val pageToken = bridge.capturePageToken(download)
         val sourceUrl = download.sourceUrl
         download.rendererTransfer = { queued ->
-            rendererResourceDownloader.run(webView, sourceUrl, queued)
+            val resumed = AtomicBoolean(false)
+            mainHandler.post {
+                if (!destroyed && liveWebView === view && !rendererUnavailable && bridge.isCurrentPageToken(pageToken)) {
+                    resumed.set(true)
+                    rendererTransferCount++
+                    // The Media page pauses its WebView. Its renderer still has to run the
+                    // user-requested blob transfer, without resuming the page's video.
+                    view.onResume()
+                    if (!previewCaptureAllowed()) pausePageMedia()
+                }
+            }
+            try {
+                bridge.run(view, sourceUrl, queued, pageToken)
+            } finally {
+                mainHandler.post {
+                    if (resumed.getAndSet(false)) rendererTransferCount = (rendererTransferCount - 1).coerceAtLeast(0)
+                }
+            }
         }
     }
 
     /** Captures the pixels currently shown inside the live WebView, at its real scroll position. */
     fun captureThumbnail(onComplete: () -> Unit = {}) {
         mainHandler.removeCallbacks(previewCaptureRunnable)
-        val view = webView
+        val view = liveWebView ?: run { onComplete(); return }
         val activity = tabContext.findActivity()
         if (destroyed || isShowingHome || !previewCaptureAllowed() || activity == null ||
             view.width <= 0 || view.height <= 0 || !view.isShown || view.visibility != View.VISIBLE
@@ -251,23 +460,98 @@ class Tab(
     }
 
     /** Lazy-grid items may be disposed while offscreen; restore their bounded cached preview. */
-    fun restoreThumbnailIfMissing() {
+    suspend fun restoreThumbnailIfMissing() {
         if (destroyed || isPrivate || thumbnail != null) return
-        val restored = TabThumbnailCache.load(tabContext, thumbnailKey) ?: return
+        val generation = previewCaptureGeneration
+        val restored = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { TabThumbnailCache.load(tabContext.applicationContext, thumbnailKey) }.getOrNull()
+        } ?: return
+        if (destroyed || generation != previewCaptureGeneration || thumbnail != null) {
+            restored.recycle()
+            return
+        }
         thumbnail = restored
         TabThumbnailMemoryRegistry.touch(thumbnailKey) { thumbnail = null }
     }
 
     /** Invalidates page-bound bridge tokens before releasing the underlying WebView. */
+    internal val canRetireEngine: Boolean get() = !destroyed && !rendererUnavailable &&
+        !isLoading && !hasPlayingMedia && rendererTransferCount == 0 && popupProxies.isEmpty() &&
+        com.miowser.app.downloader.DownloadQueue.downloads.none {
+            it.kind == com.miowser.app.downloader.DownloadKind.WEBVIEW_RESOURCE &&
+                it.rendererTransfer != null && it.pageUrl == url &&
+                it.status in setOf(com.miowser.app.downloader.DownloadStatus.QUEUED,
+                    com.miowser.app.downloader.DownloadStatus.DOWNLOADING,
+                    com.miowser.app.downloader.DownloadStatus.PAUSED)
+        }
+
+    internal fun retireBackgroundEngine() {
+        val view = liveWebView ?: return
+        if (!canRetireEngine) return
+        // Process-local, bounded navigation state, including private tabs; never a backup/session file.
+        if (view.copyBackForwardList().size <= 32) runCatching {
+            val state = android.os.Bundle()
+            if (view.saveState(state) != null) controller.rememberNavigation(id, state)
+        }
+        retireEngineCallbacks?.invoke()
+        retireEngineCallbacks = null
+        previewCaptureGeneration++
+        mainHandler.removeCallbacks(previewCaptureRunnable)
+        clearDetections()
+        cancelRoutedPopup()
+        lastFinishedUrl = null
+        controller.release(id, view)
+    }
+
     fun destroy() {
         if (destroyed) return
         destroyed = true
+        controller.takeNavigation(id)
         previewCaptureGeneration++
         mainHandler.removeCallbacks(previewCaptureRunnable)
         TabThumbnailMemoryRegistry.remove(thumbnailKey)
-        cancelDiscovery()
-        if (::rendererResourceDownloader.isInitialized) rendererResourceDownloader.invalidatePage()
-        webView.destroy()
+        retireEngineCallbacks?.invoke()
+        retireEngineCallbacks = null
+        popupProxies.values.toList().forEach { it() }
+        clearDetections()
+        controller.release(id)
+    }
+
+    private fun handleRendererGone(view: WebView, crashed: Boolean) {
+        if (liveWebView !== view) return
+        blockedPageInfo = null
+        rendererUnavailable = true
+        retireEngineCallbacks?.invoke()
+        retireEngineCallbacks = null
+        previewCaptureGeneration++
+        mainHandler.removeCallbacks(previewCaptureRunnable)
+        clearDetections()
+        cancelRoutedPopup()
+        // Related proxies receive their own crash callback. Retire our pending routes as
+        // well so their timeout/navigation cannot fire after the owning page has failed.
+        popupProxies.values.toList().forEach { it() }
+        isLoading = false
+        loadProgress = 0f
+        canGoBack = false
+        canGoForward = false
+        showJumpToTop = false
+        lastFinishedUrl = null
+        pageError = if (crashed) "This page stopped unexpectedly. Reload to open it again."
+            else "This page was closed to free memory. Reload to open it again."
+        onRendererUnavailable(id)
+        controller.release(id, view)
+    }
+
+    /** Recovery is explicit; switching to an affected tab must not silently reload it. */
+    fun reload() {
+        if (destroyed || isShowingHome) return
+        blockedPageInfo = null
+        rendererUnavailable = false
+        pageError = null
+        lastFinishedUrl = null
+        clearDetections()
+        val view = liveWebView
+        if (view != null) view.reload() else ensureWebView()
     }
 
     // Appends a new detection, or replaces an existing one sharing the same URL — needed because
@@ -278,11 +562,17 @@ class Tab(
     // DetectedMediaSheet's LazyColumn, which keys rows by url and crashes ("Key ... was already
     // used") the moment that happens — caught via a real on-device crash tapping the sheet open
     // after a live HLS page had re-detected its own manifest.
+    private fun markGrabberSeen(address: String): Boolean = synchronized(seenGrabberUrls) {
+        address.length <= 8192 && seenGrabberUrls.size < 256 && seenGrabberUrls.add(address)
+    }
+
     private fun addOrReplaceDetection(media: DetectedMedia) {
-        val existingIndex = detectedMedia.indexOfFirst { it.url == media.url }
+        if (media.url.length > 8192) return
+        val existingIndex = detectionIndexes[media.url] ?: -1
         if (existingIndex >= 0) {
             detectedMedia[existingIndex] = mergeDetectedMedia(detectedMedia[existingIndex], media)
-        } else {
+        } else if (detectedMedia.size < 128) {
+            detectionIndexes[media.url] = detectedMedia.size
             detectedMedia.add(media)
         }
     }
@@ -293,19 +583,46 @@ class Tab(
     // branch (a direct navigation to an .m3u8/.mpd still benefits from real body-verification,
     // resolution, and variant-count extraction, not just the headers WebView already has).
     private fun probeCandidate(candidateUrl: String, guessedType: MediaType, userAgent: String,
-                               sourcePageUrl: String = this@Tab.url) {
+                               sourcePageUrl: String = this@Tab.url,
+                               requestReferer: String? = null,
+                               requestOrigin: String? = null,
+                               sourceIsAlive: () -> Boolean = { true }) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            val generation = detectionGeneration.get()
+            mainHandler.post {
+                if (!destroyed && generation == detectionGeneration.get() && sourceIsAlive())
+                    probeCandidate(candidateUrl, guessedType, userAgent, sourcePageUrl,
+                        requestReferer, requestOrigin, sourceIsAlive)
+            }
+            return
+        }
+        probeHandles.removeAll { it.stopped.get() || it.future?.isDone == true }
+        if (candidateUrl.length > 8192 || sourcePageUrl.length > 8192 || probeHandles.size >= 48) return
         val generation = detectionGeneration.get()
-        MediaProbe.probe(
+        var handle: com.miowser.app.grabber.MediaProbeHandle? = null
+        handle = MediaProbe.probe(
             url = candidateUrl,
             pageUrl = sourcePageUrl,
             userAgent = userAgent,
             guessedType = guessedType
         ) { result ->
+            handle?.let { probeHandles.remove(it) }
             // onResult is always main-thread-dispatched (see MediaProbe), so reading
             // this@Tab.title here is safe regardless of which thread called probeCandidate.
-            if (result != null && generation == detectionGeneration.get() && !destroyed) {
-                addOrReplaceDetection(result.copy(pageTitle = this@Tab.title))
+            if (result != null && generation == detectionGeneration.get() && !destroyed && sourceIsAlive()) {
+                val observed = detectedMedia.firstOrNull { it.url == candidateUrl }
+                addOrReplaceDetection(result.copy(
+                    pageUrl = this@Tab.url,
+                    pageTitle = this@Tab.title,
+                    requestReferer = observed?.requestReferer ?: requestReferer,
+                    requestOrigin = observed?.requestOrigin ?: requestOrigin
+                ))
             }
+        }
+        probeHandles.add(handle)
+        if (generation != detectionGeneration.get() || destroyed || !sourceIsAlive()) {
+            probeHandles.remove(handle)
+            handle.cancel()
         }
     }
 
@@ -318,6 +635,8 @@ class Tab(
 
     fun cancelDiscovery() {
         discoveryGeneration.incrementAndGet()
+        pendingAutomaticDiscovery?.let(mainHandler::removeCallbacks)
+        pendingAutomaticDiscovery = null
         discoveryHandle?.cancel()
         discoveryHandle = null
         discoveryProgress = null
@@ -327,22 +646,25 @@ class Tab(
         cancelDiscovery()
         val generation = detectionGeneration.get()
         val scanGeneration = discoveryGeneration.get()
-        val userAgent = webView.settings.userAgentString
+        val userAgent = liveWebView?.settings?.userAgentString ?: return
         if (showProgress) discoveryProgress = DiscoveryProgress(0, pageLimit, false)
         discoveryHandle = StaticMediaDiscovery.scan(startUrl, userAgent, depth, pageLimit,
             onCandidate = { candidate, type, sourcePageUrl ->
+                // The scan callback is on its worker; filtering can be expensive and does
+                // not need WebView or Compose access.
+                val blocked = AppSettings.current.adBlockEnabled &&
+                    AdBlock.engine.decide(sourcePageUrl, candidate, emptyMap(), false) != null
                 mainHandler.post {
                     if (destroyed || generation != detectionGeneration.get() ||
                         scanGeneration != discoveryGeneration.get()) return@post
-                    if (AppSettings.current.adBlockEnabled &&
-                        AdBlock.engine.decide(sourcePageUrl, candidate, emptyMap(), false) != null) return@post
-                    if (seenGrabberUrls.add(candidate)) {
+                    if (blocked) return@post
+                    if (markGrabberSeen(candidate)) {
                         probeCandidate(candidate, type, userAgent, sourcePageUrl)
                     }
                 }
             },
             onProgress = { progress ->
-                mainHandler.post {
+                if (showProgress) mainHandler.post {
                     if (destroyed || generation != detectionGeneration.get() ||
                         scanGeneration != discoveryGeneration.get()) return@post
                     if (showProgress) discoveryProgress = progress
@@ -359,321 +681,522 @@ class Tab(
     // qualifier since it's a constructor parameter rather than a declared property.
     private val tabContext = context
 
+    /** A lookup never creates a renderer. Only navigation/activation/popup transport may acquire one. */
+    val liveWebView: WebView? get() = controller.peek(id)
+
+    fun ensureWebView(): WebView {
+        check(!destroyed) { "Tab is closed" }
+        check(!rendererUnavailable) { "Reload this tab before opening its renderer" }
+        return controller.acquire(id) { createWebView(url) }
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
-    val webView: WebView = WebView(context).apply {
-        settings.javaScriptEnabled = AppSettings.current.javaScriptEnabled
-        settings.domStorageEnabled = true
-        settings.setGeolocationEnabled(true)
-        settings.allowFileAccess = false
-        settings.allowFileAccessFromFileURLs = false
-        settings.allowUniversalAccessFromFileURLs = false
-        settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
-        settings.safeBrowsingEnabled = true
-        settings.setSupportMultipleWindows(AppSettings.current.popupsEnabled)
-        settings.javaScriptCanOpenWindowsAutomatically = AppSettings.current.popupsEnabled
-        CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
-        // Cached here (main thread, at tab creation) rather than read from settings inside
-        // onCandidateMediaUrl below: that callback fires from shouldInterceptRequest, which
-        // Chromium calls off the main thread, and WebView.getSettings() — like any WebView
-        // method — throws if called from there ("A WebView method was called on thread
-        // 'ThreadPoolForeg'"), crashing the app. Caught via a real on-device crash while
-        // verifying the grabber against a live HLS stream.
-        val cachedUserAgent = settings.userAgentString
-        addJavascriptInterface(CosmeticBridge(AdBlock.engine), "MiowserAdBlock")
-        installCosmeticInjectionScript() // must run before loadUrl()
+    private fun createWebView(initialTarget: String): WebView {
+        // A retained WebView keeps its actual scale across navigation; a newly created one does not.
+        pageZoomFactor = 1f
+        val view = WebView(tabContext)
+        val alive = AtomicBoolean(true)
+        val permissionRequests = mutableSetOf<PermissionRequest>()
+        return try { view.apply {
+            CookieManager.getInstance().setAcceptCookie(AppSettings.current.cookiesEnabled)
+            settings.javaScriptEnabled = AppSettings.current.javaScriptEnabled
+            mobileUserAgent = settings.userAgentString
+            if (isDesktopMode) {
+                settings.userAgentString = desktopUserAgent(mobileUserAgent!!)
+                settings.useWideViewPort = true
+                settings.loadWithOverviewMode = true
+            }
+            settings.domStorageEnabled = true
+            settings.textZoom = textZoomPercent
+            settings.setSupportZoom(true)
+            settings.builtInZoomControls = true
+            settings.displayZoomControls = false
+            settings.setGeolocationEnabled(true)
+            settings.allowFileAccess = false
+            settings.allowFileAccessFromFileURLs = false
+            settings.allowUniversalAccessFromFileURLs = false
+            settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            settings.safeBrowsingEnabled = true
+            settings.setSupportMultipleWindows(AppSettings.current.popupsEnabled)
+            settings.javaScriptCanOpenWindowsAutomatically = AppSettings.current.popupsEnabled
+            CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
+            // Request interception runs off-main-thread and cannot read WebView settings there.
+            // Keep this renderer's agent current when the desktop switch changes it.
+            val cachedUserAgent = java.util.concurrent.atomic.AtomicReference(settings.userAgentString)
+            requestUserAgent = cachedUserAgent
+            addJavascriptInterface(CosmeticBridge(AdBlock.engine), "MiowserAdBlock")
+            installCosmeticInjectionScript() // must run before loadUrl()
+            desktopViewportScript = if (isDesktopMode) installDesktopViewportScript() else null
 
-        rendererResourceDownloader = RendererResourceDownloader(tabContext)
-        addJavascriptInterface(rendererResourceDownloader, "MiowserDownloadBridge")
+            val bridge = RendererResourceDownloader(tabContext)
+            rendererResourceDownloader = bridge
+            addJavascriptInterface(bridge, "MiowserDownloadBridge")
+            installRendererBlobFrameScript()
 
-        addJavascriptInterface(
-            GrabberBridge { src, duration, width, height ->
-                val generation = detectionGeneration.get()
-                mainHandler.post {
-                    if (generation != detectionGeneration.get() || destroyed) return@post
-                    // Marking it seen still prevents a redundant HTTP probe later, but every DOM
-                    // metadata update is merged: loadedmetadata commonly arrives after the URL
-                    // was first observed and carries the missing duration/dimensions.
-                    val firstSeen = seenGrabberUrls.add(src)
-                    val rendererKind = rendererResourceKind(src)
-                    val dataMime = src.takeIf { rendererKind == RendererResourceKind.DATA }
-                        ?.substringAfter("data:", "")
-                        ?.substringBefore(',')
-                        ?.substringBefore(';')
-                    val detectedType = dataMime?.let(MediaUrlClassifier::classifyByMimeType)
-                        ?: if (rendererKind != null) MediaType.UNKNOWN
-                        else (MediaUrlClassifier.classify(src) ?: MediaType.UNKNOWN)
-                    addOrReplaceDetection(
-                        DetectedMedia(
-                            url = src,
-                            pageUrl = this@Tab.url,
-                            type = detectedType,
-                            // Renderer URLs are downloadable through Miowser's tokenized bridge,
-                            // but aren't network-fetchable by the rich player. Keep them
-                            // unconfirmed here so row-tap never hands an unusable blob: URL to
-                            // Media3; DetectedMediaPage independently enables its download icon.
-                            isConfirmed = rendererKind == null,
-                            sizeBytes = null,
-                            isSizeApproximate = false,
-                            durationSeconds = duration.takeIf { it.isFinite() && it > 0.0 },
-                            variantCount = null,
-                            // The element's own rendered dimensions — real, DOM-sourced data,
-                            // unlike the manifest-derived resolution on the network-probe path.
-                            resolution = if (width > 0 && height > 0) "${width}x${height}" else null,
-                            isEncrypted = false,
-                            pageTitle = this@Tab.title
+            addJavascriptInterface(
+                GrabberBridge(onActivity = { playing -> if (alive.get()) hasPlayingMedia = playing }) { src, duration, width, height, frameUrl, isAudio ->
+                    if (!alive.get()) return@GrabberBridge
+                    val generation = detectionGeneration.get()
+                    mainHandler.post {
+                        if (!alive.get() || generation != detectionGeneration.get() || destroyed) return@post
+                        // Marking it seen still prevents a redundant HTTP probe later, but every DOM
+                        // metadata update is merged: loadedmetadata commonly arrives after the URL
+                        // was first observed and carries the missing duration/dimensions.
+                        val firstSeen = markGrabberSeen(src)
+                        val rendererKind = rendererResourceKind(src)
+                        val dataMime = src.takeIf { rendererKind == RendererResourceKind.DATA }
+                            ?.substringAfter("data:", "")
+                            ?.substringBefore(',')
+                            ?.substringBefore(';')
+                        val detectedType = dataMime?.let(MediaUrlClassifier::classifyByMimeType)
+                            ?: MediaUrlClassifier.classify(src)
+                            ?: if (isAudio) MediaType.AUDIO else MediaType.UNKNOWN
+                        val frameReferer = frameUrl.takeIf {
+                            it.startsWith("https://", ignoreCase = true) ||
+                                it.startsWith("http://", ignoreCase = true)
+                        }
+                        addOrReplaceDetection(
+                            DetectedMedia(
+                                url = src,
+                                pageUrl = this@Tab.url,
+                                type = detectedType,
+                                // Renderer URLs are downloadable through Miowser's tokenized bridge,
+                                // but aren't network-fetchable by the rich player. Keep them
+                                // unconfirmed here so row-tap never hands an unusable blob: URL to
+                                // Media3; DetectedMediaPage independently enables its download icon.
+                                isConfirmed = rendererKind == null,
+                                sizeBytes = null,
+                                isSizeApproximate = false,
+                                durationSeconds = duration.takeIf { it.isFinite() && it > 0.0 },
+                                variantCount = null,
+                                // The element's own rendered dimensions — real, DOM-sourced data,
+                                // unlike the manifest-derived resolution on the network-probe path.
+                                resolution = if (width > 0 && height > 0) "${width}x${height}" else null,
+                                isEncrypted = false,
+                                pageTitle = this@Tab.title,
+                                requestReferer = frameReferer.takeIf { rendererKind != null }
+                            )
                         )
-                    )
-                    if (firstSeen && rendererKind == null) {
-                        probeCandidate(src, detectedType, cachedUserAgent)
+                        if (firstSeen && rendererKind == null) {
+                            probeCandidate(src, detectedType, cachedUserAgent.get(),
+                                sourcePageUrl = frameReferer ?: this@Tab.url,
+                                requestReferer = frameReferer)
+                        }
+                    }
+                }.also { grabberBridge = it },
+                "MiowserGrabber"
+            )
+            installVideoSnifferScript() // must also run before loadUrl()
+
+            // A deliberate depth threshold: ordinary small scrolls should not grow another floating
+            // control over the page. One visible WebView height is an intuitive "about one screen"
+            // threshold and naturally adapts to portrait, landscape, and split-screen layouts.
+            setOnScrollChangeListener { view, _, scrollY, _, _ ->
+                if (!alive.get()) return@setOnScrollChangeListener
+                showJumpToTop = view.height > 0 && scrollY >= view.height
+                // Refresh after scrolling settles while this tab is still on screen. In particular,
+                // a later switch must use this saved viewport instead of trying to copy a hidden tab.
+                // Do not allocate/copy/compress previews during a fling. The debounced
+                // capture runs after scrolling stops; opening Tabs can still request one.
+                schedulePreviewCapture()
+                pendingAutomaticDiscovery?.let { pending ->
+                    mainHandler.removeCallbacks(pending)
+                    mainHandler.postDelayed(pending, 1_000L)
+                }
+            }
+
+            // The other half of the "no downloader embedded" gap: without this, WebView falls back
+            // to its own default handling — historically observed as the OS just downloading the raw
+            // file — for any URL whose response it can't render itself, which includes a direct
+            // navigation (typed in the address bar, or a plain <a href> link) straight to an .mpd,
+            // .m3u8, or any direct media file. shouldInterceptRequest's network-classify path only
+            // catches *sub-resources* a page requests while rendering; a direct navigation *to* the
+            // media file never gets that far; this is the real browser↔downloader handoff point 1DM
+            // itself uses (project memory: 1dm-browser-downloader-handoff.md,
+            // DownloadHandler.onDownloadStart). WebView only fires this once it already knows the
+            // response can't be rendered, so contentLength/mimeType here are real, already-fetched
+            // header data — no separate verification probe needed for a direct file the way
+            // onCandidateMediaUrl below needs one for a URL merely seen in passing.
+            setDownloadListener { downloadUrl, downloadUserAgent, contentDisposition, mimeType, contentLength ->
+                if (!alive.get()) return@setDownloadListener
+                val guessedType = MediaUrlClassifier.classify(downloadUrl)
+                    ?: MediaUrlClassifier.classifyByMimeType(mimeType)
+                val rendererKind = rendererResourceKind(downloadUrl)
+                if (markGrabberSeen(downloadUrl)) {
+                    if (guessedType != null && MediaUrlClassifier.isManifestType(guessedType)) {
+                        probeCandidate(downloadUrl, guessedType, cachedUserAgent.get())
+                    } else {
+                        addOrReplaceDetection(
+                            DetectedMedia(
+                                url = downloadUrl,
+                                pageUrl = this@Tab.url,
+                                type = guessedType ?: MediaType.UNKNOWN,
+                                isConfirmed = rendererKind == null,
+                                sizeBytes = contentLength.takeIf { it > 0 },
+                                isSizeApproximate = false,
+                                durationSeconds = null,
+                                variantCount = null,
+                                resolution = null,
+                                isEncrypted = false,
+                                pageTitle = this@Tab.title
+                            )
+                        )
+                        if (guessedType != null && rendererKind == null) {
+                            // DownloadListener provides a quick row immediately; the bounded probe
+                            // then enriches it with redirect/name/MIME/size and MP4 metadata.
+                            probeCandidate(downloadUrl, guessedType, cachedUserAgent.get())
+                        }
                     }
                 }
-            },
-            "MiowserGrabber"
-        )
-        installVideoSnifferScript() // must also run before loadUrl()
 
-        // A deliberate depth threshold: ordinary small scrolls should not grow another floating
-        // control over the page. One visible WebView height is an intuitive "about one screen"
-        // threshold and naturally adapts to portrait, landscape, and split-screen layouts.
-        setOnScrollChangeListener { view, _, scrollY, _, _ ->
-            showJumpToTop = view.height > 0 && scrollY >= view.height
-            // Refresh after scrolling settles while this tab is still on screen. In particular,
-            // a later switch must use this saved viewport instead of trying to copy a hidden tab.
-            val now = SystemClock.uptimeMillis()
-            if (now - lastPreviewCaptureAt >= 1_200L) {
-                lastPreviewCaptureAt = now
-                captureThumbnail()
-            }
-            schedulePreviewCapture()
-        }
-
-        // The other half of the "no downloader embedded" gap: without this, WebView falls back
-        // to its own default handling — historically observed as the OS just downloading the raw
-        // file — for any URL whose response it can't render itself, which includes a direct
-        // navigation (typed in the address bar, or a plain <a href> link) straight to an .mpd,
-        // .m3u8, or any direct media file. shouldInterceptRequest's network-classify path only
-        // catches *sub-resources* a page requests while rendering; a direct navigation *to* the
-        // media file never gets that far; this is the real browser↔downloader handoff point 1DM
-        // itself uses (project memory: 1dm-browser-downloader-handoff.md,
-        // DownloadHandler.onDownloadStart). WebView only fires this once it already knows the
-        // response can't be rendered, so contentLength/mimeType here are real, already-fetched
-        // header data — no separate verification probe needed for a direct file the way
-        // onCandidateMediaUrl below needs one for a URL merely seen in passing.
-        setDownloadListener { downloadUrl, downloadUserAgent, contentDisposition, mimeType, contentLength ->
-            val guessedType = MediaUrlClassifier.classify(downloadUrl)
-                ?: MediaUrlClassifier.classifyByMimeType(mimeType)
-            val rendererKind = rendererResourceKind(downloadUrl)
-            if (seenGrabberUrls.add(downloadUrl)) {
-                if (guessedType != null && MediaUrlClassifier.isManifestType(guessedType)) {
-                    probeCandidate(downloadUrl, guessedType, cachedUserAgent)
-                } else {
-                    addOrReplaceDetection(
-                        DetectedMedia(
+                // A bare manifest navigation remains a grabber detection so pasting an .m3u8/.mpd
+                // into the address bar doesn't unexpectedly begin a download. If the server marks
+                // that same manifest as an attachment, or this is any ordinary/direct file, this is
+                // a genuine webpage download and should enter Miowser's queue immediately.
+                val isBareManifestNavigation = guessedType?.let(MediaUrlClassifier::isManifestType) == true &&
+                    contentDisposition.isNullOrBlank()
+                if (!isBareManifestNavigation) {
+                    onDownloadRequested(
+                        WebDownloadRequest(
+                            originatingTabId = this@Tab.id,
                             url = downloadUrl,
                             pageUrl = this@Tab.url,
-                            type = guessedType ?: MediaType.UNKNOWN,
-                            isConfirmed = rendererKind == null,
-                            sizeBytes = contentLength.takeIf { it > 0 },
-                            isSizeApproximate = false,
-                            durationSeconds = null,
-                            variantCount = null,
-                            resolution = null,
-                            isEncrypted = false,
-                            pageTitle = this@Tab.title
+                            pageTitle = this@Tab.title,
+                            userAgent = downloadUserAgent?.takeIf(String::isNotBlank) ?: cachedUserAgent.get(),
+                            contentDisposition = contentDisposition,
+                            mimeType = mimeType,
+                            contentLength = contentLength
                         )
                     )
-                    if (guessedType != null && rendererKind == null) {
-                        // DownloadListener provides a quick row immediately; the bounded probe
-                        // then enriches it with redirect/name/MIME/size and MP4 metadata.
-                        probeCandidate(downloadUrl, guessedType, cachedUserAgent)
+                }
+            }
+
+            val client = MiowserWebViewClient(
+                isPrivate = isPrivate,
+                onCertificateError = { target, handler, error ->
+                    blockedPageInfo = null
+                    certificateErrorUrl = target
+                    certificateBypassed = false
+                    pageError = "This site's security certificate could not be verified."
+                    onCertificateErrorRequested(this@Tab.id, target, handler, error)
+                },
+                onInsecureNavigationRequested = { target -> onInsecureNavigationRequested(this@Tab.id, target) },
+                shouldBlockCompanionNavigation = ::shouldBlockCompanionNavigation,
+                onRequestBlocked = { requestUrl ->
+                    blockedRequests.incrementAndGet()
+                    com.miowser.app.adblock.SiteProtection.host(requestUrl)?.let { host ->
+                        if (blockedHosts.size < 32 || blockedHosts.containsKey(host)) {
+                            blockedHosts.computeIfAbsent(host) { java.util.concurrent.atomic.AtomicInteger(0) }.incrementAndGet()
+                        }
+                    }
+                },
+                onScaleChanged = { oldScale, newScale ->
+                    if (oldScale > 0f && newScale > 0f) {
+                        pageZoomFactor = (pageZoomFactor * newScale / oldScale).coerceIn(0.25f, 5f)
+                    }
+                },
+                adBlockEngine = AdBlock.engine,
+                onNavigationStateChanged = { back, forward ->
+                    canGoBack = back
+                    canGoForward = forward
+                },
+                onUrlChanged = { newUrl ->
+                    // Qualified with this@Tab: unqualified `url` here would resolve to WebView's
+                    // own read-only `url` synthetic property (from getUrl()) via the enclosing
+                    // apply{} receiver, not Tab's — caught by the compiler as "val cannot be
+                    // reassigned" rather than silently doing the wrong thing.
+                    val isHome = isBrowserHomeUrl(newUrl)
+                    isShowingHome = isHome
+                    this@Tab.url = if (isHome) BROWSER_HOME_URL else newUrl
+                    if (isHome) this@Tab.title = "Home"
+                    if (!isAddressBarFocused) {
+                        addressBarText = TextFieldValue(if (isHome) "" else newUrl)
+                    }
+                },
+                onNewPageStarted = { clearDetections() },
+                onPageStarted = {
+                    pageError = null
+                    blockedPageInfo = null
+                    if (certificateErrorUrl?.let(com.miowser.app.adblock.SiteProtection::host) !=
+                        com.miowser.app.adblock.SiteProtection.host(this@Tab.url)) {
+                        certificateErrorUrl = null
+                        certificateBypassed = false
+                    }
+                    lastFinishedUrl = null
+                    if (routedPopupTarget == this@Tab.url) interceptingPopupUntil = 0L
+                },
+                onPageError = { message -> pageError = message; blockedPageInfo = null },
+                onMainFrameBlocked = { info -> blockedPageInfo = info },
+                onRendererGone = ::handleRendererGone,
+                onExternalNavigation = onExternalNavigation,
+                onCandidateMediaUrl = { candidateUrl, guessedType, referer, origin ->
+                    if (!alive.get()) return@MiowserWebViewClient
+                    val browserReferer = referer?.takeIf {
+                        it.startsWith("https://", ignoreCase = true) ||
+                            it.startsWith("http://", ignoreCase = true)
+                    }
+                    val browserOrigin = origin?.takeIf {
+                        it.startsWith("https://", ignoreCase = true) ||
+                            it.startsWith("http://", ignoreCase = true)
+                    }
+                    if (markGrabberSeen(candidateUrl)) {
+                        probeCandidate(candidateUrl, guessedType, cachedUserAgent.get(),
+                            sourcePageUrl = browserReferer ?: this@Tab.url,
+                            requestReferer = browserReferer,
+                            requestOrigin = browserOrigin,
+                            sourceIsAlive = alive::get)
+                    } else if (browserReferer != null || browserOrigin != null) {
+                        val generation = detectionGeneration.get()
+                        mainHandler.post {
+                            if (!alive.get() || generation != detectionGeneration.get() || destroyed) return@post
+                            val existing = detectedMedia.firstOrNull { it.url == candidateUrl }
+                            if (existing != null) addOrReplaceDetection(existing.copy(
+                                requestReferer = browserReferer ?: existing.requestReferer,
+                                requestOrigin = browserOrigin ?: existing.requestOrigin
+                            ))
+                        }
+                    }
+                },
+                onLikelyDownloadNavigation = { downloadUrl ->
+                    onDownloadRequested(
+                        WebDownloadRequest(
+                            originatingTabId = this@Tab.id,
+                            url = downloadUrl,
+                            pageUrl = this@Tab.url,
+                            pageTitle = this@Tab.title,
+                            userAgent = cachedUserAgent.get(),
+                            contentDisposition = null,
+                            mimeType = null,
+                            contentLength = -1L
+                        )
+                    )
+                },
+                onPageLoadFinished = { loadedUrl, loadedTitle ->
+                    if (isDesktopMode && desktopViewportScript == null) {
+                        view.applyDesktopViewportNow()
+                    }
+                    if (pageError == null) lastFinishedUrl = loadedUrl
+                    if (pageError == null) schedulePreviewCapture()
+                    if (pageError == null && !isBrowserHomeUrl(loadedUrl)) {
+                        pendingAutomaticDiscovery?.let(mainHandler::removeCallbacks)
+                        val generation = detectionGeneration.get()
+                        val pending = Runnable {
+                            pendingAutomaticDiscovery = null
+                            if (!destroyed && generation == detectionGeneration.get()) {
+                                launchDiscovery(loadedUrl, depth = 0, pageLimit = 1, showProgress = false)
+                            }
+                        }
+                        pendingAutomaticDiscovery = pending
+                        mainHandler.postDelayed(pending, 1_000L)
+                    }
+                    if (pageError == null && !isPrivate && !isBrowserHomeUrl(loadedUrl)) {
+                        HistoryLog.recordVisit(tabContext, loadedUrl, loadedTitle)
+                    }
+                }
+            )
+            webViewClient = client
+            retireEngineCallbacks = {
+                alive.set(false)
+                grabberBridge?.retire()
+                client.retire()
+                bridge.retire("The originating page is no longer available. Reload it and start the download again.")
+                permissionRequests.toList().forEach { request ->
+                    onWebPermissionCanceled(request)
+                    runCatching { request.deny() }
+                }
+                permissionRequests.clear()
+            }
+            webChromeClient = object : WebChromeClient() {
+                override fun onShowCustomView(customView: View, callback: CustomViewCallback) {
+                    if (!alive.get()) { callback.onCustomViewHidden(); return }
+                    onFullscreenVideoRequested(this@Tab.id, customView, callback)
+                }
+
+                override fun onHideCustomView() {
+                    if (!alive.get()) return
+                    onFullscreenVideoHidden(this@Tab.id)
+                }
+
+                override fun onShowFileChooser(
+                    webView: WebView,
+                    filePathCallback: ValueCallback<Array<Uri>>,
+                    fileChooserParams: FileChooserParams
+                ): Boolean {
+                    if (!alive.get()) { filePathCallback.onReceiveValue(null); return true }
+                    onFileChooserRequested(filePathCallback, fileChooserParams)
+                    return true
+                }
+
+                override fun onPermissionRequest(request: PermissionRequest) {
+                    if (!alive.get()) { request.deny(); return }
+                    permissionRequests.add(request)
+                    onWebPermissionRequested(request)
+                }
+
+                override fun onPermissionRequestCanceled(request: PermissionRequest) {
+                    permissionRequests.remove(request)
+                    onWebPermissionCanceled(request)
+                }
+
+                override fun onGeolocationPermissionsShowPrompt(
+                    origin: String,
+                    callback: GeolocationPermissions.Callback
+                ) {
+                    if (!alive.get()) { callback.invoke(origin, false, false); return }
+                    onGeolocationRequested(origin, callback)
+                }
+
+                override fun onGeolocationPermissionsHidePrompt() {
+                    if (!alive.get()) return
+                    onGeolocationCanceled()
+                }
+
+                override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
+                    // Page-supplied text can contain tokens or personal data. Log location only.
+                    com.miowser.app.diagnostics.SafeLog.debug(CONSOLE_TAG,
+                        "Page console ${consoleMessage.messageLevel()} at ${com.miowser.app.diagnostics.safeDiagnosticUrl(consoleMessage.sourceId())}:${consoleMessage.lineNumber()}")
+                    return true
+                }
+
+                override fun onProgressChanged(view: WebView, newProgress: Int) {
+                    if (!alive.get()) return
+                    loadProgress = newProgress / 100f
+                    isLoading = newProgress < 100
+                }
+
+                override fun onReceivedTitle(view: WebView, title: String?) {
+                    if (!alive.get()) return
+                    if (!isShowingHome) {
+                        this@Tab.title = title?.takeIf { it.isNotBlank() } ?: "New Tab"
+                        if (!isPrivate && !title.isNullOrBlank()) {
+                            SpeedDials.updateAutoTitle(context, view.url ?: this@Tab.url, title)
+                        }
+                    }
+                }
+
+                override fun onReceivedIcon(view: WebView, icon: Bitmap) {
+                    if (!alive.get()) return
+                    if (!isPrivate && !isShowingHome) {
+                        SpeedDialSiteMetadataStore.cacheVisitedIcon(context, view.url ?: this@Tab.url, icon)
+                    }
+                }
+
+                // target="_blank" links and window.open() land here rather than navigating this
+                // tab in place — requires setSupportMultipleWindows(true) above, otherwise WebView
+                // never calls this at all. Must return true immediately (WebView needs a synchronous
+                // answer to "will you provide a window"), but the actual tab creation and
+                // resultMsg completion happen later, once BrowserScreen has decided — see
+                // onNewWindowRequested's own doc comment above.
+                override fun onCreateWindow(
+                    view: WebView,
+                    isDialog: Boolean,
+                    isUserGesture: Boolean,
+                    resultMsg: Message
+                ): Boolean {
+                    if (!alive.get()) return false
+                    val host = com.miowser.app.adblock.SiteProtection.host(this@Tab.url)
+                    val mode = host?.let(com.miowser.app.adblock.SiteProtection::mode)
+                    if (!isUserGesture && AppSettings.current.adBlockEnabled &&
+                        mode != com.miowser.app.adblock.SiteProtectionMode.OFF) {
+                        blockedPopups.incrementAndGet()
+                        return false
+                    }
+                    if (isUserGesture && host != null &&
+                        com.miowser.app.adblock.SiteProtection.openPageLinksHere(host)) {
+                        routePopupIntoCurrentTab(resultMsg)
+                        return true
+                    }
+                    onNewWindowRequested(this@Tab.id, isUserGesture, resultMsg)
+                    return true
+                }
+            }
+
+            // hitTestResult reliably tells us whether the long-pressed node is a link, but its `extra`
+            // value is ambiguous for SRC_IMAGE_ANCHOR_TYPE on real WebView builds: some return the
+            // enclosing anchor and others return the image source. requestFocusNodeHref resolves the
+            // focused DOM node and returns separate "url" (the <a href>) and "src" values, so opening
+            // a video-card thumbnail follows the card link rather than loading its JPEG.
+            setOnLongClickListener {
+                if (!alive.get()) return@setOnLongClickListener false
+                val result = hitTestResult
+                if (
+                    result.type != WebView.HitTestResult.SRC_ANCHOR_TYPE &&
+                    result.type != WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE
+                ) {
+                    return@setOnLongClickListener false
+                }
+
+                val plainAnchorFallback = result.extra.takeIf {
+                    result.type == WebView.HitTestResult.SRC_ANCHOR_TYPE
+                }
+                val hrefHandler = Handler(Looper.getMainLooper()) { message ->
+                    if (!alive.get()) return@Handler true
+                    val href = message.data.getString("url")?.takeIf(String::isNotBlank)
+                        ?: plainAnchorFallback
+                    if (href != null) onLinkLongPressed(
+                        href, message.data.getString("title")?.trim()?.takeIf(String::isNotEmpty)
+                    )
+                    true
+                }
+                requestFocusNodeHref(hrefHandler.obtainMessage())
+                true
+            }
+
+            if (initialTarget.isNotBlank() && !isBrowserHomeUrl(initialTarget)) {
+                if (HttpNavigationApproval.requiresWarning(initialTarget, isPrivate)) {
+                    onInsecureNavigationRequested(this@Tab.id, initialTarget)
+                } else {
+                    val state = controller.takeNavigation(this@Tab.id)
+                    val restored = state?.let { runCatching { restoreState(it) }.getOrNull() }
+                    if (restored == null) loadUrl(initialTarget)
+                    else {
+                        this@Tab.canGoBack = canGoBack()
+                        this@Tab.canGoForward = canGoForward()
                     }
                 }
             }
-
-            // A bare manifest navigation remains a grabber detection so pasting an .m3u8/.mpd
-            // into the address bar doesn't unexpectedly begin a download. If the server marks
-            // that same manifest as an attachment, or this is any ordinary/direct file, this is
-            // a genuine webpage download and should enter Miowser's queue immediately.
-            val isBareManifestNavigation = guessedType?.let(MediaUrlClassifier::isManifestType) == true &&
-                contentDisposition.isNullOrBlank()
-            if (!isBareManifestNavigation) {
-                onDownloadRequested(
-                    WebDownloadRequest(
-                        originatingTabId = this@Tab.id,
-                        url = downloadUrl,
-                        pageUrl = this@Tab.url,
-                        pageTitle = this@Tab.title,
-                        userAgent = downloadUserAgent?.takeIf(String::isNotBlank) ?: cachedUserAgent,
-                        contentDisposition = contentDisposition,
-                        mimeType = mimeType,
-                        contentLength = contentLength
-                    )
-                )
-            }
+        } } catch (failure: Exception) {
+            alive.set(false)
+            retireEngineCallbacks?.invoke()
+            retireEngineCallbacks = null
+            view.destroy()
+            throw failure
         }
-
-        webViewClient = MiowserWebViewClient(
-            adBlockEngine = AdBlock.engine,
-            onNavigationStateChanged = { back, forward ->
-                canGoBack = back
-                canGoForward = forward
-            },
-            onUrlChanged = { newUrl ->
-                // Qualified with this@Tab: unqualified `url` here would resolve to WebView's
-                // own read-only `url` synthetic property (from getUrl()) via the enclosing
-                // apply{} receiver, not Tab's — caught by the compiler as "val cannot be
-                // reassigned" rather than silently doing the wrong thing.
-                val isHome = isBrowserHomeUrl(newUrl)
-                isShowingHome = isHome
-                this@Tab.url = if (isHome) BROWSER_HOME_URL else newUrl
-                if (isHome) this@Tab.title = "Home"
-                if (!isAddressBarFocused) {
-                    addressBarText = TextFieldValue(if (isHome) "" else newUrl)
-                }
-            },
-            onNewPageStarted = { clearDetections() },
-            onPageStarted = {
-                pageError = null
-                lastFinishedUrl = null
-            },
-            onPageError = { message -> pageError = message },
-            onExternalNavigation = onExternalNavigation,
-            onCandidateMediaUrl = { candidateUrl, guessedType ->
-                if (seenGrabberUrls.add(candidateUrl)) probeCandidate(candidateUrl, guessedType, cachedUserAgent)
-            },
-            onLikelyDownloadNavigation = { downloadUrl ->
-                onDownloadRequested(
-                    WebDownloadRequest(
-                        originatingTabId = this@Tab.id,
-                        url = downloadUrl,
-                        pageUrl = this@Tab.url,
-                        pageTitle = this@Tab.title,
-                        userAgent = cachedUserAgent,
-                        contentDisposition = null,
-                        mimeType = null,
-                        contentLength = -1L
-                    )
-                )
-            },
-            onPageLoadFinished = { loadedUrl, loadedTitle ->
-                if (pageError == null) lastFinishedUrl = loadedUrl
-                if (pageError == null) schedulePreviewCapture()
-                if (pageError == null && !isBrowserHomeUrl(loadedUrl)) {
-                    launchDiscovery(loadedUrl, depth = 0, pageLimit = 1, showProgress = false)
-                }
-                if (pageError == null && !isPrivate && !isBrowserHomeUrl(loadedUrl)) {
-                    HistoryLog.recordVisit(tabContext, loadedUrl, loadedTitle)
-                }
-            }
-        )
-        webChromeClient = object : WebChromeClient() {
-            override fun onShowFileChooser(
-                webView: WebView,
-                filePathCallback: ValueCallback<Array<Uri>>,
-                fileChooserParams: FileChooserParams
-            ): Boolean {
-                onFileChooserRequested(filePathCallback, fileChooserParams)
-                return true
-            }
-
-            override fun onPermissionRequest(request: PermissionRequest) {
-                onWebPermissionRequested(request)
-            }
-
-            override fun onPermissionRequestCanceled(request: PermissionRequest) {
-                onWebPermissionCanceled(request)
-            }
-
-            override fun onGeolocationPermissionsShowPrompt(
-                origin: String,
-                callback: GeolocationPermissions.Callback
-            ) {
-                onGeolocationRequested(origin, callback)
-            }
-
-            override fun onGeolocationPermissionsHidePrompt() {
-                onGeolocationCanceled()
-            }
-
-            override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
-                Log.d(CONSOLE_TAG, "${consoleMessage.message()} (${consoleMessage.sourceId()}:${consoleMessage.lineNumber()})")
-                return true
-            }
-
-            override fun onProgressChanged(view: WebView, newProgress: Int) {
-                loadProgress = newProgress / 100f
-                isLoading = newProgress < 100
-            }
-
-            override fun onReceivedTitle(view: WebView, title: String?) {
-                if (!isShowingHome) {
-                    this@Tab.title = title?.takeIf { it.isNotBlank() } ?: "New Tab"
-                }
-            }
-
-            // target="_blank" links and window.open() land here rather than navigating this
-            // tab in place — requires setSupportMultipleWindows(true) above, otherwise WebView
-            // never calls this at all. Must return true immediately (WebView needs a synchronous
-            // answer to "will you provide a window"), but the actual tab creation and
-            // resultMsg completion happen later, once BrowserScreen has decided — see
-            // onNewWindowRequested's own doc comment above.
-            override fun onCreateWindow(
-                view: WebView,
-                isDialog: Boolean,
-                isUserGesture: Boolean,
-                resultMsg: Message
-            ): Boolean {
-                onNewWindowRequested(this@Tab.id, isUserGesture, resultMsg)
-                return true
-            }
-        }
-
-        // hitTestResult reliably tells us whether the long-pressed node is a link, but its `extra`
-        // value is ambiguous for SRC_IMAGE_ANCHOR_TYPE on real WebView builds: some return the
-        // enclosing anchor and others return the image source. requestFocusNodeHref resolves the
-        // focused DOM node and returns separate "url" (the <a href>) and "src" values, so opening
-        // a video-card thumbnail follows the card link rather than loading its JPEG.
-        setOnLongClickListener {
-            val result = hitTestResult
-            if (
-                result.type != WebView.HitTestResult.SRC_ANCHOR_TYPE &&
-                result.type != WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE
-            ) {
-                return@setOnLongClickListener false
-            }
-
-            val plainAnchorFallback = result.extra.takeIf {
-                result.type == WebView.HitTestResult.SRC_ANCHOR_TYPE
-            }
-            val hrefHandler = Handler(Looper.getMainLooper()) { message ->
-                val href = message.data.getString("url")?.takeIf(String::isNotBlank)
-                    ?: plainAnchorFallback
-                if (href != null) onLinkLongPressed(href)
-                true
-            }
-            requestFocusNodeHref(hrefHandler.obtainMessage())
-            true
-        }
-
-        if (initialUrl.isNotBlank()) loadUrl(initialUrl)
     }
 
     fun navigateTo(targetUrl: String) {
+        controller.takeNavigation(id)
         if (targetUrl.isBlank()) return
+        if (HttpNavigationApproval.requiresWarning(targetUrl, isPrivate)) {
+            onInsecureNavigationRequested(id, targetUrl)
+            return
+        }
         lastFinishedUrl = null
+        rendererUnavailable = false
+        pageError = null
+        blockedPageInfo = null
         clearDetections()
+        // The native homepage has no AddressBar. If it was removed while focused, its last
+        // focus callback may never clear this flag; then WebView navigation callbacks cannot
+        // publish the URL of a speed dial (or another programmatic navigation) to the bar.
+        isAddressBarFocused = false
         isShowingHome = isBrowserHomeUrl(targetUrl)
         if (isShowingHome) {
             title = "Home"
             url = BROWSER_HOME_URL
             addressBarText = TextFieldValue("")
         }
-        webView.loadUrl(targetUrl)
+        url = targetUrl
+        addressBarText = TextFieldValue(if (isShowingHome) "" else targetUrl)
+        val engine = liveWebView
+        if (engine != null) engine.loadUrl(targetUrl)
+        else if (!isShowingHome) ensureWebView()
     }
 
     fun showHome() = navigateTo(BROWSER_HOME_URL)
 
     fun markActive(now: Long = System.currentTimeMillis()) {
+        controller.touch(id)
         lastActiveAt = now
     }
 
@@ -693,18 +1216,19 @@ class Tab(
     }
 
     fun applyBrowserPreferences(preferences: Settings) {
+        val webView = liveWebView ?: return
         webView.settings.javaScriptEnabled = preferences.javaScriptEnabled
         webView.settings.setSupportMultipleWindows(preferences.popupsEnabled)
         webView.settings.javaScriptCanOpenWindowsAutomatically = preferences.popupsEnabled
     }
 
     fun jumpToTop() {
-        webView.evaluateJavascript("window.scrollTo({top: 0, left: 0, behavior: 'smooth'});", null)
+        liveWebView?.evaluateJavascript("window.scrollTo({top: 0, left: 0, behavior: 'smooth'});", null)
     }
 
     /** Stops page-owned media before Miowser's rich player takes over audio/video playback. */
     fun pausePageMedia() {
-        webView.evaluateJavascript(
+        liveWebView?.evaluateJavascript(
             """
             (() => {
                 document.querySelectorAll('video, audio').forEach(media => {

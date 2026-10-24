@@ -4,6 +4,7 @@ import android.net.Uri
 import com.miowser.app.grabber.MediaType
 import com.miowser.app.library.LibraryEntry
 import com.miowser.app.library.LibrarySourceKind
+import com.miowser.app.library.toLibrarySubtitle
 
 /** Converts a successful player handoff into the persistent shape used by the Hub Library. */
 internal fun PlaybackRequest.toLibraryEntry(
@@ -11,6 +12,7 @@ internal fun PlaybackRequest.toLibraryEntry(
     durationMs: Long = 0L
 ): LibraryEntry = when (this) {
     is PlaybackRequest.Remote -> LibraryEntry(
+        explicitlySaved = false,
         mediaUri = url,
         pageUrl = pageUrl,
         title = title,
@@ -18,15 +20,19 @@ internal fun PlaybackRequest.toLibraryEntry(
         sourceKind = LibrarySourceKind.REMOTE_STREAM,
         mediaType = mediaType,
         userAgent = userAgent,
+        requestReferer = requestReferer,
+        requestOrigin = requestOrigin,
         thumbnailUrl = null,
         lastPlayedAt = playedAt,
         positionMs = startPositionMs.coerceAtLeast(0L),
         durationMs = durationMs.coerceAtLeast(0L),
         pageTitle = pageTitle,
-        videoName = videoName
+        videoName = videoName,
+        selectedSubtitle = externalSubtitles.firstOrNull { it.url == preferredSubtitleUrl }?.toLibrarySubtitle()
     )
 
     is PlaybackRequest.Local -> LibraryEntry(
+        explicitlySaved = false,
         mediaUri = uri.toString(),
         pageUrl = pageUrl,
         title = title,
@@ -52,13 +58,17 @@ internal fun LibraryEntry.toPlaybackRequest(
         url = mediaUri,
         pageUrl = pageUrl ?: mediaUri,
         userAgent = userAgent ?: fallbackUserAgent,
+        requestReferer = requestReferer,
+        requestOrigin = requestOrigin,
         cookies = freshCookies,
         mediaType = mediaType ?: MediaType.UNKNOWN,
         title = title,
         sourceLabel = sourceLabel,
         pageTitle = pageTitle,
         videoName = videoName,
-        startPositionMs = libraryResumePosition(positionMs, durationMs)
+        startPositionMs = libraryResumePosition(positionMs, durationMs),
+        externalSubtitles = selectedSubtitle?.let { listOf(it.toDetectedMedia(pageTitle)) }.orEmpty(),
+        preferredSubtitleUrl = selectedSubtitle?.url
     )
 
     LibrarySourceKind.LOCAL_FILE -> PlaybackRequest.Local(

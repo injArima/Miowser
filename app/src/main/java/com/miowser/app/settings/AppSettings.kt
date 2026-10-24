@@ -19,13 +19,22 @@ object AppSettings {
 
     @Volatile private var loaded = false
 
-    fun load(context: Context) {
+    suspend fun loadAsync(context: Context) {
+        com.miowser.app.persistence.Persistence.requireOwner()
         if (loaded) return
-        loaded = true
+        val settings = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { SettingsStore.load(context) }
+        if (!loaded) { current = settings; loaded = true }
+    }
+
+    fun load(context: Context) {
+        com.miowser.app.persistence.Persistence.requireOwner()
+        if (loaded) return
         current = SettingsStore.load(context)
+        loaded = true
     }
 
     fun update(context: Context, transform: (Settings) -> Settings) {
+        load(context)
         val updated = transform(current)
         current = updated
         SettingsStore.save(context.applicationContext, updated)

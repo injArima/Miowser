@@ -21,20 +21,36 @@ private const val VIDEO_SNIFFER_SCRIPT = """
             if (!bridge) return;
 
             var reported = new Set();
+            var watched = new WeakSet();
+            var playing = new Set();
+            var token = bridge.documentToken();
             function report(el) {
                 var src = el.currentSrc || el.src;
-                if (!src) return;
+                if (!src || src.length > 8192 || location.href.length > 8192) return;
                 var key = src + '|' + el.duration;
                 if (reported.has(key)) return;
+                if (reported.size >= 256) reported.clear();
                 reported.add(key);
                 var duration = isFinite(el.duration) ? el.duration : -1;
-                bridge.reportVideoElement(src, duration, el.videoWidth || 0, el.videoHeight || 0);
+                bridge.reportVideoElementForDocument(token, src, duration, el.videoWidth || 0, el.videoHeight || 0,
+                    location.href, el.tagName.toLowerCase() === 'audio');
             }
 
             function watch(el) {
                 report(el);
+                if (watched.has(el)) return;
+                watched.add(el);
                 el.addEventListener('loadedmetadata', function() { report(el); });
                 el.addEventListener('durationchange', function() { report(el); });
+                function activity() {
+                    if (!el.paused && !el.ended && (playing.has(el) || playing.size < 32)) playing.add(el);
+                    else playing.delete(el);
+                    bridge.reportMediaActivityForDocument(token, playing.size > 0);
+                }
+                el.addEventListener('play', activity);
+                el.addEventListener('pause', activity);
+                el.addEventListener('ended', activity);
+                activity();
             }
 
             function scan(root) {
@@ -42,6 +58,7 @@ private const val VIDEO_SNIFFER_SCRIPT = """
             }
 
             function whenReady() {
+                token = bridge.documentToken();
                 scan(document);
                 var observer = new MutationObserver(function(mutations) {
                     mutations.forEach(function(m) {
@@ -51,6 +68,8 @@ private const val VIDEO_SNIFFER_SCRIPT = """
                             if (node.querySelectorAll) scan(node);
                         });
                     });
+                    playing.forEach(function(el) { if (!el.isConnected || el.paused || el.ended) playing.delete(el); });
+                    bridge.reportMediaActivityForDocument(token, playing.size > 0);
                 });
                 observer.observe(document.documentElement || document, { childList: true, subtree: true });
             }
@@ -71,9 +90,9 @@ private const val VIDEO_SNIFFER_SCRIPT = """
  * installCosmeticInjectionScript.
  */
 fun WebView.installVideoSnifferScript() {
-    if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-        Log.w(TAG, "DOCUMENT_START_SCRIPT not supported — video-element sniffing degraded")
-        return
+    if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+        WebViewCompat.addDocumentStartJavaScript(this, VIDEO_SNIFFER_SCRIPT, setOf("*"))
+    } else {
+        com.miowser.app.diagnostics.SafeLog.warning(TAG, "DOCUMENT_START_SCRIPT not supported — video-element sniffing degraded")
     }
-    WebViewCompat.addDocumentStartJavaScript(this, VIDEO_SNIFFER_SCRIPT, setOf("*"))
 }

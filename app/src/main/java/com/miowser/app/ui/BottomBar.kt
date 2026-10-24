@@ -1,14 +1,15 @@
 package com.miowser.app.ui
 
+import com.miowser.app.ui.theme.LocalMotionPolicy
+import com.miowser.app.ui.theme.MotionTokens
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -40,11 +41,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
+import com.miowser.app.R
 import com.miowser.app.ui.theme.ExpressiveTokens
 
 /**
@@ -76,14 +82,17 @@ fun BottomBar(
     onHomeLongClick: () -> Unit,
     tabCount: Int,
     onTabs: () -> Unit,
+    onTabsLongClick: () -> Unit,
     activeDownloadCount: Int,
-    onMenu: () -> Unit
+    onMenu: () -> Unit,
+    ready: Boolean = true
 ) {
+    val motion = LocalMotionPolicy.current
     val homeInteraction = remember { MutableInteractionSource() }
     val homePressed by homeInteraction.collectIsPressedAsState()
-    val homePressColor by animateColorAsState(
+    val homePressColor = animateColorAsState(
         targetValue = if (homePressed) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-        animationSpec = tween(ExpressiveTokens.compactMotionMillis),
+        animationSpec = motion.spec(if (homePressed) MotionTokens.press else MotionTokens.release),
         label = "Home button press"
     )
     // BottomBar sits in Scaffold's bottomBar slot, which — unlike Material3's own NavigationBar
@@ -96,49 +105,66 @@ fun BottomBar(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            IconButton(onClick = onBack, enabled = canGoBack) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+        BoxWithConstraints {
+            val sidePadding = if (maxWidth >= 336.dp) 12.dp else 4.dp
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = sidePadding, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+            IconButton(onClick = onBack, enabled = ready && canGoBack) {
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.nav_back))
             }
-            IconButton(onClick = onForward, enabled = canGoForward) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = "Forward")
+            IconButton(onClick = onForward, enabled = ready && canGoForward) {
+                Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = stringResource(R.string.nav_forward))
             }
-            IconButton(onClick = onBookmarks) {
-                Icon(Icons.Rounded.Bookmarks, contentDescription = "Bookmarks", tint = MaterialTheme.colorScheme.primary)
+            IconButton(onClick = onBookmarks, enabled = ready) {
+                Icon(Icons.Rounded.Bookmarks, contentDescription = stringResource(R.string.nav_bookmarks), tint = MaterialTheme.colorScheme.primary)
             }
             Box(
                 modifier = Modifier
                     .size(ExpressiveTokens.minimumTouchTarget)
                     .clip(CircleShape)
-                    .background(homePressColor)
+                    .drawBehind { drawRect(homePressColor.value) }
                     .combinedClickable(
+                        enabled = ready,
                         interactionSource = homeInteraction,
                         indication = null,
                         role = Role.Button,
                         onClick = onHome,
-                        onLongClickLabel = "Focus search or address bar",
+                        onLongClickLabel = stringResource(R.string.nav_focus_address),
                         onLongClick = onHomeLongClick
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Rounded.Home, contentDescription = "Home")
+                Icon(Icons.Rounded.Home, contentDescription = stringResource(R.string.nav_home))
             }
-            IconButton(onClick = onTabs) {
+            Box(
+                modifier = Modifier
+                    .size(ExpressiveTokens.minimumTouchTarget)
+                    .testTag("browser_tabs")
+                    .clip(CircleShape)
+                    .combinedClickable(
+                        enabled = ready,
+                        role = Role.Button,
+                        onClick = onTabs,
+                        onLongClickLabel = stringResource(R.string.nav_open_new_tab),
+                        onLongClick = onTabsLongClick
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
                 TabCountIcon(count = tabCount)
             }
-            IconButton(onClick = onMenu) {
+            IconButton(onClick = onMenu, enabled = ready) {
                 if (activeDownloadCount > 0) {
                     BadgedBox(badge = { Badge { Text(activeDownloadCount.coerceAtMost(99).toString()) } }) {
-                        Icon(Icons.Rounded.Menu, contentDescription = "More ($activeDownloadCount downloads active)")
+                        Icon(Icons.Rounded.Menu, contentDescription = pluralStringResource(R.plurals.active_downloads, activeDownloadCount, activeDownloadCount))
                     }
                 } else {
-                    Icon(Icons.Rounded.Menu, contentDescription = "More")
+                    Icon(Icons.Rounded.Menu, contentDescription = stringResource(R.string.nav_more))
                 }
+            }
             }
         }
     }
@@ -153,11 +179,12 @@ fun BottomBar(
 @Composable
 private fun TabCountIcon(count: Int) {
     val tint = LocalContentColor.current
+    val description = pluralStringResource(R.plurals.open_tabs, count, count)
     Box(
         modifier = Modifier
             .size(24.dp)
             .border(width = 2.dp, color = tint, shape = RoundedCornerShape(5.dp))
-            .clearAndSetSemantics { contentDescription = "Tabs ($count open)" },
+            .clearAndSetSemantics { contentDescription = description },
         contentAlignment = Alignment.Center
     ) {
         Text(

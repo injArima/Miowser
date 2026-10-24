@@ -1,21 +1,33 @@
 package com.miowser.app.bookmarks
 
 import android.content.Context
+import com.miowser.app.persistence.Persistence
 import androidx.compose.runtime.mutableStateListOf
 
 /** The bookmark list — mirrors DownloadQueue/HistoryLog's singleton-object pattern. */
 object BookmarkList {
-    val bookmarks = mutableStateListOf<Bookmark>()
+    private val mutableRecords = mutableStateListOf<Bookmark>()
+    val bookmarks: List<Bookmark> get() = mutableRecords
 
     @Volatile private var restored = false
 
-    fun restore(context: Context) {
+    suspend fun restoreAsync(context: Context) {
+        Persistence.requireOwner()
         if (restored) return
+        val records = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BookmarkStore.load(context) }
+        if (restored) return
+        mutableRecords.addAll(records)
         restored = true
-        bookmarks.addAll(BookmarkStore.load(context))
     }
 
-    fun isBookmarked(url: String): Boolean = bookmarks.any { it.url == url }
+    fun restore(context: Context) {
+        Persistence.requireOwner()
+        if (restored) return
+        mutableRecords.addAll(BookmarkStore.load(context))
+        restored = true
+    }
+
+    fun isBookmarked(url: String): Boolean = mutableRecords.any { it.url == url }
 
     /**
      * Adds a bookmark for [url] if it isn't already one, or removes it if it is — the address
@@ -24,23 +36,26 @@ object BookmarkList {
      * snackbar makes sense on add, not on remove.
      */
     fun toggle(context: Context, url: String, title: String): Boolean {
-        val existingIndex = bookmarks.indexOfFirst { it.url == url }
+        Persistence.requireOwner()
+        val existingIndex = mutableRecords.indexOfFirst { it.url == url }
         val nowBookmarked = existingIndex < 0
         if (existingIndex >= 0) {
-            bookmarks.removeAt(existingIndex)
+            mutableRecords.removeAt(existingIndex)
         } else {
-            bookmarks.add(0, Bookmark(url = url, title = title.ifBlank { url }, addedAt = System.currentTimeMillis()))
+            mutableRecords.add(0, Bookmark(url = url, title = title.ifBlank { url }, addedAt = System.currentTimeMillis()))
         }
         persist(context)
         return nowBookmarked
     }
 
     fun remove(context: Context, bookmark: Bookmark) {
-        bookmarks.remove(bookmark)
+        Persistence.requireOwner()
+        mutableRecords.remove(bookmark)
         persist(context)
     }
 
     private fun persist(context: Context) {
-        BookmarkStore.save(context, bookmarks)
+        Persistence.requireOwner()
+        BookmarkStore.save(context, mutableRecords)
     }
 }

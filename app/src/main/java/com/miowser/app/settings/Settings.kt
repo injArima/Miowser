@@ -4,7 +4,16 @@ package com.miowser.app.settings
 enum class SearchEngine(val label: String, val queryUrlPrefix: String) {
     DUCKDUCKGO("DuckDuckGo", "https://duckduckgo.com/?q="),
     GOOGLE("Google", "https://www.google.com/search?q="),
-    BING("Bing", "https://www.bing.com/search?q=")
+    BING("Bing", "https://www.bing.com/search?q="),
+    BRAVE("Brave", "https://search.brave.com/search?q="),
+    CUSTOM("Custom", "https://duckduckgo.com/?q=")
+}
+
+enum class InactiveTabRetention(val label: String, val days: Int?) {
+    NEVER("Never", null),
+    DAYS_7("7 days", 7),
+    DAYS_30("30 days", 30),
+    DAYS_90("90 days", 90)
 }
 
 enum class HomePageMode(val label: String) {
@@ -20,9 +29,9 @@ enum class HomePageMode(val label: String) {
  * genuine link tap.
  */
 enum class NewTabConfirmation(val label: String) {
+    NEVER("Never ask"),
     NON_GESTURE_ONLY("Only for popups"),
-    ALWAYS("Always ask"),
-    NEVER("Never ask")
+    ALWAYS("Always ask")
 }
 
 /**
@@ -34,7 +43,7 @@ enum class NewTabConfirmation(val label: String) {
  * strictly a speed optimization, never something a download should fail over.
  */
 enum class DownloadThreadCount(val count: Int, val label: String) {
-    ONE(1, "1 (off)"),
+    ONE(1, "1 (no parallel downloads)"),
     TWO(2, "2"),
     FOUR(4, "4"),
     EIGHT(8, "8")
@@ -51,6 +60,7 @@ data class Settings(
     val homePageUrl: String = "https://en.wikipedia.org",
     val homePageMode: HomePageMode = HomePageMode.MIOWSER,
     val searchEngine: SearchEngine = SearchEngine.DUCKDUCKGO,
+    val customSearchUrl: String = "https://duckduckgo.com/?q=%s",
     val restoreTabsOnStartup: Boolean = true,
     val newTabConfirmation: NewTabConfirmation = NewTabConfirmation.NON_GESTURE_ONLY,
     val downloadThreadCount: DownloadThreadCount = DownloadThreadCount.FOUR,
@@ -58,5 +68,20 @@ data class Settings(
     val cookiesEnabled: Boolean = true,
     val popupsEnabled: Boolean = true,
     val grabberMinimumDurationSeconds: Int = 0,
-    val autoDeleteInactiveTabs: Boolean = true
-)
+    val inactiveTabRetention: InactiveTabRetention = InactiveTabRetention.DAYS_30,
+    val reduceMotion: Boolean = false
+) {
+    val autoDeleteInactiveTabs: Boolean get() = inactiveTabRetention != InactiveTabRetention.NEVER
+    val searchUrlTemplate: String get() = if (searchEngine == SearchEngine.CUSTOM) customSearchUrl
+        else searchEngine.queryUrlPrefix + "%s"
+
+    fun searchUrl(query: String): String = searchUrlTemplate.replace(
+        "%s", java.net.URLEncoder.encode(query, "UTF-8")
+    )
+}
+
+fun isValidCustomSearchUrl(template: String): Boolean = runCatching {
+    if (template.split("%s").size != 2) return@runCatching false
+    val uri = java.net.URI(template.replace("%s", "test"))
+    uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank()
+}.getOrDefault(false)

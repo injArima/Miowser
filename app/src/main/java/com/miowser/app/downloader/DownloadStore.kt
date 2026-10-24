@@ -1,6 +1,7 @@
 package com.miowser.app.downloader
 
 import android.content.Context
+import com.miowser.app.persistence.Persistence
 
 private const val PREFS_NAME = "downloads"
 private const val KEY_DOWNLOADS = "downloads"
@@ -117,21 +118,16 @@ object DownloadCodec {
 
 /** Thin SharedPreferences wrapper around [DownloadCodec] — the only Context-dependent part. */
 object DownloadStore {
-    // commit(), not apply(): confirmed on-device as a real data-loss bug, not just a theoretical
-    // one — apply() queues the disk write on SharedPreferences' own worker thread and returns
-    // immediately, so it's only "eventually" durable. DownloadQueue.persist() (the caller here)
-    // is itself called from a background executor thread right after a download finishes, and
-    // under real memory pressure (observed directly in logcat as sustained background GC — a
-    // long session with several tabs/downloads alive is enough to trigger it) that queued write
-    // can still be sitting unflushed when the process dies (a real force-stop reproduced this: a
-    // download that showed "Done" in the UI was gone after relaunch, and the persisted file was
-    // empty). commit() blocks until the write actually lands, which is exactly the guarantee
-    // needed here — the cost is a synchronous block, harmless since this is only ever called a
-    // few times per download, never per-frame or per-keystroke.
-    fun save(context: Context, downloads: List<SavedDownload>) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-            .putString(KEY_DOWNLOADS, DownloadCodec.encode(downloads))
-            .commit()
+    fun save(context: Context, downloads: List<SavedDownload>, onSaved: () -> Unit = {}): java.util.concurrent.CompletableFuture<Boolean> {
+        Persistence.requireOwner()
+        val appContext = context.applicationContext
+        val snapshot = downloads.toList()
+        return Persistence.submitSnapshot("downloads") {
+            val saved = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putString(KEY_DOWNLOADS, DownloadCodec.encode(snapshot)).commit()
+            if (saved) Persistence.onOwner(onSaved)
+            saved
+        }
     }
 
     fun load(context: Context): List<SavedDownload> {

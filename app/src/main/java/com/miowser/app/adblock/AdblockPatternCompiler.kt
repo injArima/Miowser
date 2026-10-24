@@ -7,8 +7,14 @@ package com.miowser.app.adblock
  * supported here; see [FilterListParser], which skips them rather than misinterpreting them.
  */
 object AdblockPatternCompiler {
+    private val domainCharacters = Regex("[a-zA-Z0-9.-]+")
 
     fun compile(pattern: String): Regex {
+        return Regex(expression(pattern), RegexOption.IGNORE_CASE)
+    }
+
+    /** Keep the small expression; compiled Pattern nodes are created only for candidates. */
+    internal fun expression(pattern: String): String {
         val sb = StringBuilder()
         var i = 0
 
@@ -26,15 +32,18 @@ object AdblockPatternCompiler {
 
         while (i < end) {
             when (pattern[i]) {
-                '*' -> sb.append(".*")
-                '^' -> sb.append("(?:[^a-zA-Z0-9_.%-]|$)")
-                else -> sb.append(Regex.escape(pattern[i].toString()))
+                '*' -> { sb.append(".*"); i++ }
+                '^' -> { sb.append("(?:[^a-zA-Z0-9_.%-]|$)"); i++ }
+                else -> {
+                    val start = i
+                    while (i < end && pattern[i] != '*' && pattern[i] != '^') i++
+                    sb.append(Regex.escape(pattern.substring(start, i)))
+                }
             }
-            i++
         }
         if (endAnchored) sb.append("$")
 
-        return Regex(sb.toString(), RegexOption.IGNORE_CASE)
+        return sb.toString()
     }
 
     /**
@@ -48,7 +57,7 @@ object AdblockPatternCompiler {
         val endIdx = rest.indexOfFirst { it == '/' || it == '^' || it == '*' || it == '|' || it == '$' }
         if (endIdx != -1 && rest[endIdx] == '*') return null
         val domainPart = if (endIdx == -1) rest else rest.substring(0, endIdx)
-        if (domainPart.isBlank() || !domainPart.matches(Regex("[a-zA-Z0-9.-]+"))) return null
+        if (domainPart.isBlank() || !domainPart.matches(domainCharacters)) return null
         return domainPart.lowercase()
     }
 }

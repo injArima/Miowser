@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import java.io.Closeable
 import java.io.File
@@ -33,7 +34,7 @@ private const val TAG = "Miowser/Downloader"
  *    (maxSdkVersion 28) isn't suffient on its own; without an actual grant, mkdirs()/
  *    outputStream() throw a SecurityException. [openViaLegacyFile] checks first and fails
  *    cleanly (a normal "could not create output file", not a crash) if it's missing —
- *    MainActivity requests it proactively so this should be the rare path in practice.
+ *    Browser download actions request it before starting on API 26–28.
  * 2. A file written directly to external storage isn't visible to MediaStore / other apps'
  *    pickers / the Downloads app until something scans it — unlike the Q+ path, where inserting
  *    through ContentResolver makes it visible automatically. [finish] triggers a
@@ -86,16 +87,26 @@ object MediaStoreOutput {
     }
 
     /** Publishes a completely-written private recovery artifact as one atomic user-visible result. */
-    fun publishFile(context: Context, source: File, fileName: String, mimeType: String): Uri? {
+    fun publishFile(context: Context, source: File, fileName: String, mimeType: String, checkActive: () -> Unit = {}): Uri? {
         if (!source.isFile) return null
         val opened = open(context, fileName, mimeType) ?: return null
         return try {
-            source.inputStream().use { input -> opened.stream.use { output -> input.copyTo(output) } }
+            source.inputStream().use { input -> opened.stream.use { output ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    checkActive()
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    output.write(buffer, 0, read)
+                }
+            } }
+            checkActive()
             finish(context, opened.uri, mimeType)
             opened.uri
         } catch (e: Exception) {
             runCatching { opened.stream.close() }
             abandon(context, opened.uri)
+            if (e is DownloadYieldException || e is java.util.concurrent.CancellationException) throw e
             null
         }
     }
@@ -132,6 +143,7 @@ object MediaStoreOutput {
     /** Deletes a finished public file when the user explicitly chooses "File and record". */
     fun delete(context: Context, uri: Uri) = abandon(context, uri)
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun insertMediaStoreEntry(context: Context, fileName: String, mimeType: String): Uri? {
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, fileName)
@@ -142,6 +154,7 @@ object MediaStoreOutput {
         return context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
     }
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun openViaMediaStore(context: Context, fileName: String, mimeType: String): Opened? {
         val uri = insertMediaStoreEntry(context, fileName, mimeType) ?: return null
         return try {
@@ -173,7 +186,7 @@ object MediaStoreOutput {
 
     private fun openViaLegacyFile(context: Context, fileName: String): Opened? {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-            Log.d(TAG, "WRITE_EXTERNAL_STORAGE not granted; can't write $fileName on this pre-Q device")
+            com.miowser.app.diagnostics.SafeLog.debug(TAG, "WRITE_EXTERNAL_STORAGE not granted; can't write $fileName on this pre-Q device")
             return null
         }
         val file = reserveLegacyFile(fileName) ?: return null
@@ -188,6 +201,7 @@ object MediaStoreOutput {
     // "rw" (not "rwt"): mode is passed straight to ContentResolver.openFileDescriptor, which
     // treats it as the standard ParcelFileDescriptor mode string — "rwt" would truncate on open,
     // fighting every thread that opens its own descriptor onto the same already-inserted entry.
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun openRandomAccessViaMediaStore(context: Context, fileName: String, mimeType: String): OpenedRandomAccess? {
         val uri = insertMediaStoreEntry(context, fileName, mimeType) ?: return null
         var pfd: android.os.ParcelFileDescriptor? = null
@@ -205,7 +219,7 @@ object MediaStoreOutput {
 
     private fun openRandomAccessViaLegacyFile(context: Context, fileName: String): OpenedRandomAccess? {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-            Log.d(TAG, "WRITE_EXTERNAL_STORAGE not granted; can't write $fileName on this pre-Q device")
+            com.miowser.app.diagnostics.SafeLog.debug(TAG, "WRITE_EXTERNAL_STORAGE not granted; can't write $fileName on this pre-Q device")
             return null
         }
         val file = reserveLegacyFile(fileName) ?: return null

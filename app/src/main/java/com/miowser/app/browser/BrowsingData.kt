@@ -26,26 +26,33 @@ data class BrowsingDataSelection(
 
 /** Clear only selected categories. Downloaded files are never deleted by this screen. */
 object BrowsingData {
+    /** WebView's HTTP cache is shared by every tab; Android exposes no per-origin cache purge. */
+    fun clearCache(context: Context, tabs: List<Tab>) {
+        val existing = tabs.firstNotNullOfOrNull { it.liveWebView }
+        if (existing != null) existing.clearCache(true)
+        else WebView(context).apply { clearCache(true); destroy() }
+    }
+
     fun clear(context: Context, tabs: List<Tab>, selected: BrowsingDataSelection, onFinished: () -> Unit) {
+        fun finish() {
+            if (selected.history || selected.downloadRecords || selected.libraryRecords) {
+                com.miowser.app.persistence.Persistence.afterWrites(onFinished)
+            } else onFinished()
+        }
         if (selected.history) {
             HistoryLog.clear(context)
-            tabs.forEach { it.webView.clearHistory() }
+            tabs.forEach { it.liveWebView?.clearHistory() }
         }
-        if (selected.cache) {
-            if (tabs.isNotEmpty()) tabs.first().webView.clearCache(true)
-            else WebView(context).apply { clearCache(true); destroy() }
-        }
+        if (selected.cache) clearCache(context, tabs)
         if (selected.formData) {
-            tabs.forEach { it.webView.clearFormData() }
+            tabs.forEach { it.liveWebView?.clearFormData() }
             WebViewDatabase.getInstance(context).clearFormData()
         }
         if (selected.sitePermissions) {
             SitePermissionStore.clear(context)
             GeolocationPermissions.getInstance().clearAll()
         }
-        if (selected.downloadRecords) DownloadQueue.downloads.toList().forEach {
-            DownloadQueue.delete(context, it, deleteFile = false)
-        }
+        if (selected.downloadRecords) DownloadQueue.deleteAll(context, DownloadQueue.downloads.toList())
         if (selected.libraryRecords) {
             MediaLibrary.clear(context)
             LibraryThumbnailStore.pruneAsync(context, emptyList())
@@ -54,10 +61,10 @@ object BrowsingData {
             WebStorage.getInstance().deleteAllData()
             CookieManager.getInstance().removeAllCookies {
                 CookieManager.getInstance().flush()
-                onFinished()
+                finish()
             }
         } else {
-            onFinished()
+            finish()
         }
     }
 

@@ -84,22 +84,20 @@ object DashDownloader {
                     itemCount = videoCount + audioCount
                 )
             )
-            val completedCount = AtomicInteger(
-                (0 until videoCount + audioCount).count { index ->
-                    DownloadRecoveryStore.isVerifiedItem(
-                        DownloadRecoveryStore.itemFile(context, download.id, index),
-                        verifyDigest = true
-                    )
-                }
-            )
+            val verified = (0 until videoCount + audioCount).filterTo(mutableSetOf()) { index ->
+                download.checkTransferActive()
+                DownloadRecoveryStore.isVerifiedItem(
+                    DownloadRecoveryStore.itemFile(context, download.id, index), verifyDigest = true)
+            }
+            val completedCount = AtomicInteger(verified.size)
             download.bytesDownloaded = completedCount.get().toLong()
 
             val videoFile = videoTrack?.let {
-                downloadTrack(context, it, recoveryDir, "video", 0, download, completedCount, recoverySession)
+                downloadTrack(context, it, recoveryDir, "video", 0, download, completedCount, recoverySession, verified)
             }
             if (download.isCanceled) return markCanceled(context, download)
             val audioFile = audioTrack?.let {
-                downloadTrack(context, it, recoveryDir, "audio", videoCount, download, completedCount, recoverySession)
+                downloadTrack(context, it, recoveryDir, "audio", videoCount, download, completedCount, recoverySession, verified)
             }
             if (download.isCanceled) return markCanceled(context, download)
             if (videoFile == null && audioFile == null) return fail(download, "Segment download failed")
@@ -109,24 +107,28 @@ object DashDownloader {
             if (download.isCanceled) return markCanceled(context, download)
             val muxedFile = File(recoveryDir, "muxed.mp4")
             try {
-                SegmentMuxer.muxTracks(videoFile, audioFile, muxedFile.absolutePath)
+                SegmentMuxer.muxTracks(videoFile, audioFile, muxedFile.absolutePath, download::checkTransferActive)
             } catch (e: SegmentMuxer.MuxException) {
                 return fail(download, e.message ?: "Muxing failed")
             }
 
+            if (download.isCanceled) return markCanceled(context, download)
             download.displayName = finalFileName
-            val uri = MediaStoreOutput.publishFile(context, muxedFile, finalFileName, "video/mp4")
+            download.checkTransferActive()
+            val uri = MediaStoreOutput.publishFile(context, muxedFile, finalFileName, "video/mp4", download::checkTransferActive)
                 ?: return fail(download, "Could not create output file")
             MediaStoreOutput.legacyFileName(uri)?.let { download.displayName = it }
             download.savedUri = uri
             download.status = DownloadStatus.COMPLETED
             DownloadRecoveryStore.clear(context, download.id)
         } catch (e: DashDownloadException) {
-            Log.d(TAG, "DASH download rejected for ${download.sourceUrl}: ${e.message}")
+            download.awaitIfPaused()
+            com.miowser.app.diagnostics.SafeLog.debug(TAG, "DASH download rejected for ${download.sourceUrl}: ${e.message}")
             if (download.isCanceled) markCanceled(context, download)
             else fail(download, e.message ?: "Unsupported DASH structure")
         } catch (e: Exception) {
-            Log.d(TAG, "DASH download failed for ${download.sourceUrl}: ${e.message}")
+            download.awaitIfPaused()
+            com.miowser.app.diagnostics.SafeLog.debug(TAG, "DASH download failed for ${download.sourceUrl}: ${e.message}")
             if (download.isCanceled) markCanceled(context, download)
             else fail(download, e.message ?: "Unknown error")
         }
@@ -181,47 +183,27 @@ object DashDownloader {
         itemOffset: Int,
         download: Download,
         completedCount: AtomicInteger,
-        recoverySession: DownloadRecoverySession
+        recoverySession: DownloadRecoverySession,
+        verified: Set<Int>
     ): File? {
         if (track.mediaSegments.isEmpty()) return null
         val segmentFiles = List(track.mediaSegments.size) { index ->
             DownloadRecoveryStore.itemFile(context, download.id, itemOffset + index)
         }
-        val failure = AtomicReference<String?>(null)
         val missing = segmentFiles.indices.filterNot {
-            DownloadRecoveryStore.isVerifiedItem(segmentFiles[it], verifyDigest = true)
+            itemOffset + it in verified
         }
-        val latch = CountDownLatch(missing.size)
-
-        for (index in missing) {
-            val segment = track.mediaSegments[index]
-            segmentExecutor.execute {
-                val temporary = File(segmentFiles[index].parentFile, "${segmentFiles[index].name}.tmp")
-                try {
-                    download.awaitIfPaused()
-                    if (!download.isCanceled && failure.get() == null) {
-                        temporary.delete()
-                        fetchToFile(segment, temporary, download)
-                        if (!download.isCanceled) {
-                            DownloadRecoveryStore.commitVerifiedItem(temporary, segmentFiles[index])
-                            download.bytesDownloaded = completedCount.incrementAndGet().toLong()
-                            recoverySession.updateElapsed(download.elapsedActiveMillis())
-                        }
-                    }
-                } catch (e: Exception) {
-                    failure.compareAndSet(null, e.message ?: "Segment download failed")
-                } finally {
-                    temporary.delete()
-                    latch.countDown()
-                }
-            }
-        }
-        latch.await()
-        if (download.isCanceled) return null
-        failure.get()?.let { throw DashDownloadException(it) }
-
-        if (!segmentFiles.all { DownloadRecoveryStore.isVerifiedItem(it, verifyDigest = true) }) {
-            throw DashDownloadException("A downloaded DASH segment could not be verified")
+        boundedSegmentWork(missing, segmentExecutor, checkActive = download::checkTransferActive) { index ->
+            val temporary = File(segmentFiles[index].parentFile, "${segmentFiles[index].name}.tmp")
+            try {
+                temporary.delete()
+                fetchToFile(track.mediaSegments[index], temporary, download)
+                download.checkTransferActive()
+                DownloadRecoveryStore.commitVerifiedItem(temporary, segmentFiles[index])
+                completedCount.incrementAndGet()
+                download.addProgress(1L)
+                recoverySession.updateElapsed(download.elapsedActiveMillis())
+            } finally { temporary.delete() }
         }
         val initFile = track.initSegmentUrl?.let { initUrl ->
             File(recoveryDir, "${label}_init.part").also { file ->
@@ -235,11 +217,11 @@ object DashDownloader {
         }
         val outputFile = File(recoveryDir, "$label.mp4")
         outputFile.outputStream().use { output ->
-            initFile?.inputStream()?.use { it.copyTo(output) }
+            initFile?.inputStream()?.use { it.copyPausableTo(output, download) }
             for (file in segmentFiles) {
                 download.awaitIfPaused()
                 if (download.isCanceled) return null
-                file.inputStream().use { it.copyTo(output) }
+                file.inputStream().use { it.copyPausableTo(output, download) }
             }
         }
         return outputFile
@@ -273,7 +255,7 @@ object DashDownloader {
             if (offset != expected) throw DashDownloadException("$label range ended early")
             return result
         } finally {
-            connection.disconnect()
+            download.closeConnection(connection)
         }
     }
 
@@ -308,7 +290,7 @@ object DashDownloader {
                 if (written != range.length) throw DashDownloadException("DASH range ended early")
             }
         } finally {
-            connection.disconnect()
+            download.closeConnection(connection)
         }
     }
 
@@ -335,7 +317,7 @@ object DashDownloader {
         range?.let { "${it.start}-${it.endInclusive}" }.orEmpty()
 
     private fun markCanceled(context: Context, download: Download) {
-        DownloadRecoveryStore.clear(context, download.id)
+        if (!download.preserveRecoveryOnCancel) DownloadRecoveryStore.clear(context, download.id)
         download.status = DownloadStatus.CANCELED
     }
 
@@ -345,7 +327,7 @@ object DashDownloader {
             if (connection.responseCode !in 200..299) null
             else connection.inputStream.use { it.readBytesPausable(download).toString(Charsets.UTF_8) }
         } finally {
-            connection.disconnect()
+            download.closeConnection(connection)
         }
     }
 
@@ -353,7 +335,7 @@ object DashDownloader {
         url: String,
         download: Download,
         range: DashByteRange? = null
-    ): HttpURLConnection = (URL(url).openConnection() as HttpURLConnection).apply {
+    ): HttpURLConnection = download.openConnection(URL(url)).apply {
         connectTimeout = CONNECT_TIMEOUT_MS
         readTimeout = READ_TIMEOUT_MS
         instanceFollowRedirects = true

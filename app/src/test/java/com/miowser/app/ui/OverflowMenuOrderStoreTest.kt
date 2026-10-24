@@ -21,7 +21,8 @@ class OverflowMenuOrderStoreTest {
                 OverflowMenuAction.ADBLOCK,
                 OverflowMenuAction.DOWNLOADS,
                 OverflowMenuAction.DETECTED,
-                OverflowMenuAction.SETTINGS
+                OverflowMenuAction.SETTINGS,
+                OverflowMenuAction.ZOOM
             ),
             normalized
         )

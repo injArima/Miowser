@@ -1,10 +1,15 @@
 package com.miowser.app.browser
+import com.miowser.app.ui.theme.LocalMotionPolicy
+import androidx.compose.ui.platform.testTag
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,7 +19,9 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items as listItems
@@ -29,12 +36,16 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -43,21 +54,41 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import com.miowser.app.ui.SimplePageScaffold
 import com.miowser.app.ui.ExpressiveEmptyState
+import com.miowser.app.ui.MiowserDropdownMenu
+import com.miowser.app.ui.MiowserMenuItem
 import java.text.DateFormat
 import java.util.Date
+import kotlin.math.abs
+import kotlin.math.roundToInt
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 @Composable
 fun TabsPage(
@@ -66,6 +97,7 @@ fun TabsPage(
     activeTabId: Long?,
     onSelectTab: (Long) -> Unit,
     onCloseTab: (Long) -> Unit,
+    onCloseTabs: (Set<Long>, Boolean) -> Unit,
     onRestoreInactive: (InactiveTabRecord) -> Unit,
     onDeleteInactive: (InactiveTabRecord) -> Unit,
     onNewTab: () -> Unit,
@@ -75,7 +107,9 @@ fun TabsPage(
     val activeIsPrivate = tabs.firstOrNull { it.id == activeTabId }?.isPrivate == true
     var section by remember(activeTabId) { mutableIntStateOf(if (activeIsPrivate) 1 else 0) }
     var showingInactive by remember { mutableStateOf(false) }
+    var actionsExpanded by remember { mutableStateOf(false) }
     val visibleTabs = tabs.filter { it.isPrivate == (section == 1) }
+    val activeInSection = visibleTabs.any { it.id == activeTabId }
     // The grid is created at the selected card's index before its first measure. A remembered
     // saveable grid can restore an old index despite a different initial index, and the old
     // LaunchedEffect then visibly scrolled from that position after the page appeared.
@@ -85,14 +119,62 @@ fun TabsPage(
     BackHandler(enabled = showingInactive) { showingInactive = false }
 
     SimplePageScaffold(
-        title = if (showingInactive) "Inactive tabs" else "Tabs",
+        title = if (showingInactive) "Inactive tabs" else "",
         onBack = { if (showingInactive) showingInactive = false else onBack() },
         actions = {
             if (!showingInactive) {
-                IconButton(onClick = { if (section == 0) onNewTab() else onNewPrivateTab() }) {
-                    Icon(
-                        Icons.Rounded.Add,
-                        contentDescription = if (section == 0) "New browsing tab" else "New private tab"
+                Box {
+                    IconButton(onClick = { actionsExpanded = true }) {
+                        Icon(Icons.Rounded.MoreVert, contentDescription = "Tab actions")
+                    }
+                    MiowserDropdownMenu(actionsExpanded, { actionsExpanded = false }) {
+                        MiowserMenuItem(text = { Text("Close current tab") }, enabled = activeInSection,
+                            onClick = {
+                                actionsExpanded = false
+                                activeTabId?.let(onCloseTab)
+                            })
+                        MiowserMenuItem(text = { Text("Close other tabs") },
+                            enabled = activeInSection && visibleTabs.size > 1,
+                            onClick = {
+                                actionsExpanded = false
+                                onCloseTabs(visibleTabs.map { it.id }.filter { it != activeTabId }.toSet(), false)
+                            })
+                        MiowserMenuItem(text = { Text("Close all tabs") }, enabled = tabs.isNotEmpty(),
+                            onClick = {
+                                actionsExpanded = false
+                                onCloseTabs(tabs.map { it.id }.toSet(), false)
+                            })
+                        MiowserMenuItem(text = { Text("Close all tabs and exit browser") },
+                            enabled = tabs.isNotEmpty(), onClick = {
+                                actionsExpanded = false
+                                onCloseTabs(tabs.map { it.id }.toSet(), true)
+                            })
+                    }
+                }
+                IconToggleButton(
+                    checked = section == 0,
+                    onCheckedChange = { section = 0 },
+                    modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(
+                        if (section == 0) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                        RoundedCornerShape(14.dp)
+                    )
+                ) {
+                    Icon(Icons.Rounded.Language, contentDescription = "Browsing tabs",
+                        tint = if (section == 0) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                IconToggleButton(
+                    checked = section == 1,
+                    onCheckedChange = { section = 1 },
+                    modifier = Modifier.padding(end = 8.dp).clip(RoundedCornerShape(14.dp)).background(
+                        if (section == 1) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                        RoundedCornerShape(14.dp)
+                    )
+                ) {
+                    IncognitoIcon(
+                        tint = if (section == 1) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp).semantics { contentDescription = "Private tabs" }
                     )
                 }
             }
@@ -103,26 +185,8 @@ fun TabsPage(
             return@SimplePageScaffold
         }
 
-        Column(modifier = modifier.fillMaxSize()) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
-            ) {
-                FilterChip(
-                    selected = section == 0,
-                    onClick = { section = 0 },
-                    label = { Text("Browsing (${tabs.count { !it.isPrivate }})") },
-                    modifier = Modifier.weight(1f)
-                )
-                FilterChip(
-                    selected = section == 1,
-                    onClick = { section = 1 },
-                    leadingIcon = { Icon(Icons.Rounded.VisibilityOff, contentDescription = null) },
-                    label = { Text("Private (${tabs.count { it.isPrivate }})") },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
+        Box(modifier = modifier.fillMaxSize()) {
+          Column(Modifier.fillMaxSize()) {
             if (section == 0 && inactiveTabs.isNotEmpty()) {
                 InactiveTabsCard(
                     count = inactiveTabs.size,
@@ -147,21 +211,137 @@ fun TabsPage(
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(156.dp),
                     state = gridState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(12.dp),
+                    modifier = Modifier.fillMaxSize().testTag("tabs_grid"),
+                    contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = 88.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     gridItems(visibleTabs, key = { it.id }, contentType = { "tab-preview" }) { tab ->
-                        TabPreviewCard(
+                        SwipeCloseTabCard(
                             tab = tab,
                             isActive = tab.id == activeTabId,
+                            gridState = gridState,
                             onClick = { onSelectTab(tab.id) },
                             onClose = { onCloseTab(tab.id) }
                         )
                     }
                 }
             }
+          }
+          FloatingActionButton(
+              onClick = { if (section == 0) onNewTab() else onNewPrivateTab() },
+              modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
+                  .testTag("new_tab_fab"),
+              containerColor = MaterialTheme.colorScheme.primaryContainer,
+              contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+          ) {
+              Icon(Icons.Rounded.Add,
+                  contentDescription = if (section == 0) "New browsing tab" else "New private tab")
+          }
+        }
+    }
+}
+
+@Composable
+private fun SwipeCloseTabCard(
+    tab: Tab,
+    isActive: Boolean,
+    gridState: LazyGridState,
+    onClick: () -> Unit,
+    onClose: () -> Unit
+) {
+    val motion = rememberUpdatedState(LocalMotionPolicy.current)
+    val swipe = remember(tab.id) { TabSwipeMotion() }
+    val scope = rememberCoroutineScope()
+    var settleJob by remember(tab.id) { mutableStateOf<Job?>(null) }
+    val latestOnClose = rememberUpdatedState(onClose)
+    var cardWidthPx by remember(tab.id) { mutableIntStateOf(0) }
+    Box(
+        modifier = Modifier.fillMaxWidth()
+            .onSizeChanged {
+                val previousWidth = cardWidthPx
+                cardWidthPx = it.width
+                if (previousWidth != 0 && previousWidth != it.width) {
+                    settleJob?.cancel()
+                    val token = swipe.takeControl()
+                    settleJob = scope.launch {
+                        swipe.settle(token, 0f, it.width.toFloat(), 0f, motion.value)
+                    }
+                }
+            }
+            .clip(MaterialTheme.shapes.medium)
+            .pointerInput(tab.id, gridState, cardWidthPx) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    if (gridState.isScrollInProgress) return@awaitEachGesture
+                    settleJob?.cancel()
+                    val token = swipe.takeControl()
+                    val startOffset = swipe.offset
+                    val velocity = VelocityTracker().also { it.addPosition(down.uptimeMillis, down.position) }
+                    var dx = 0f
+                    var dy = 0f
+                    var dragging = false
+                    var released = false
+                    try {
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            if (event.changes.any { it.id != down.id && it.pressed }) break
+                            val change = event.changes
+                                .firstOrNull { it.id == down.id } ?: break
+                            velocity.addPosition(change.uptimeMillis, change.position)
+                            if (!change.pressed) {
+                                released = change.previousPressed && !change.isConsumed
+                                if (dragging) change.consume()
+                                break
+                            }
+                            if (change.isConsumed) break
+                            val delta = change.positionChange()
+                            dx += delta.x
+                            dy += delta.y
+                            if (!dragging) {
+                                dragging = startsTabCloseSwipe(dx, dy, viewConfiguration.touchSlop)
+                                // Once vertical scrolling wins, leave the entire gesture to the grid.
+                                if (!dragging && abs(dy) > viewConfiguration.touchSlop) break
+                            }
+                            if (dragging) {
+                                change.consume()
+                                swipe.drag(token, startOffset + dx, cardWidthPx.toFloat())
+                            }
+                        }
+                    } catch (cancelled: CancellationException) {
+                        released = false
+                        throw cancelled
+                    } finally {
+                        val width = cardWidthPx.toFloat()
+                        val close = dragging && released &&
+                            commitsTabCloseSwipe(swipe.offset, dy, width, 72.dp.toPx())
+                        val destination = if (close) { if (swipe.offset > 0f) width else -width } else 0f
+                        if ((dragging || swipe.offset != 0f) && swipe.owns(token)) settleJob = scope.launch {
+                            swipe.settle(token, destination, width,
+                                if (released) velocity.calculateVelocity().x else 0f, motion.value,
+                                if (close) ({ latestOnClose.value() }) else null)
+                        }
+                    }
+                }
+            }
+    ) {
+        Row(
+            modifier = Modifier.matchParentSize()
+                .background(MaterialTheme.colorScheme.errorContainer)
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Rounded.Close, contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer)
+            Icon(Icons.Rounded.Close, contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer)
+        }
+        Box(Modifier.offset { IntOffset(swipe.offset.roundToInt(), 0) }) {
+            TabPreviewCard(tab = tab, isActive = isActive, onClick = onClick, onClose = {
+                settleJob?.cancel()
+                swipe.closeImmediately { latestOnClose.value() }
+            })
         }
     }
 }
@@ -169,7 +349,7 @@ fun TabsPage(
 @Composable
 private fun InactiveTabsCard(count: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Card(
-        modifier = modifier.fillMaxWidth().clickable(onClick = onClick),
+        modifier = modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).clickable(onClick = onClick),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
     ) {
@@ -178,16 +358,34 @@ private fun InactiveTabsCard(count: Int, onClick: () -> Unit, modifier: Modifier
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(Icons.Rounded.History, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-            Column(modifier = Modifier.weight(1f).padding(horizontal = 14.dp)) {
-                Text("$count inactive ${if (count == 1) "tab" else "tabs"}", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "Unused or duplicate tabs",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Text("$count inactive ${if (count == 1) "tab" else "tabs"}",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f).padding(horizontal = 14.dp))
             Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = "View inactive tabs")
         }
+    }
+}
+
+@Composable
+private fun IncognitoIcon(tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val u = size.width / 24f
+        val hat = Path().apply {
+            moveTo(7f * u, 10f * u)
+            lineTo(8.5f * u, 3f * u)
+            quadraticTo(12f * u, 2f * u, 15.5f * u, 3f * u)
+            lineTo(17f * u, 10f * u)
+            close()
+        }
+        drawPath(hat, tint)
+        drawLine(tint, Offset(3f * u, 10.5f * u), Offset(21f * u, 10.5f * u),
+            strokeWidth = 2.5f * u, cap = StrokeCap.Round)
+        drawCircle(tint, radius = 3.2f * u, center = Offset(8f * u, 17f * u),
+            style = Stroke(width = 2f * u))
+        drawCircle(tint, radius = 3.2f * u, center = Offset(16f * u, 17f * u),
+            style = Stroke(width = 2f * u))
+        drawLine(tint, Offset(11.2f * u, 17f * u), Offset(12.8f * u, 17f * u),
+            strokeWidth = 2f * u)
     }
 }
 
@@ -220,7 +418,7 @@ private fun InactiveTabList(
     ) {
         listItems(records, key = { it.id }) { record ->
             Card(
-                modifier = Modifier.fillMaxWidth().clickable { onRestore(record) },
+                modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable { onRestore(record) },
                 shape = MaterialTheme.shapes.medium,
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
             ) {
@@ -255,11 +453,14 @@ private fun formatInactiveDate(time: Long): String = if (time <= 0L) "Archived" 
 
 @Composable
 private fun TabPreviewCard(tab: Tab, isActive: Boolean, onClick: () -> Unit, onClose: () -> Unit) {
-    LaunchedEffect(tab.thumbnailKey, tab.thumbnail == null) { tab.restoreThumbnailIfMissing() }
+    if (!tab.isShowingHome) {
+        LaunchedEffect(tab.thumbnailKey, tab.thumbnail == null) { tab.restoreThumbnailIfMissing() }
+    }
     val shape = MaterialTheme.shapes.medium
     Card(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth().testTag("tab_card")
             .let { if (isActive) it.border(2.dp, MaterialTheme.colorScheme.primary, shape) else it }
+            .clip(shape)
             .clickable(onClick = onClick),
         shape = shape,
         colors = CardDefaults.cardColors(
@@ -273,7 +474,9 @@ private fun TabPreviewCard(tab: Tab, isActive: Boolean, onClick: () -> Unit, onC
                 .background(MaterialTheme.colorScheme.surfaceVariant)
         ) {
             val preview = tab.thumbnail?.takeUnless { it.isRecycled }
-            if (preview != null) {
+            if (tab.isShowingHome) {
+                HomeTabPreview(Modifier.fillMaxSize())
+            } else if (preview != null) {
                 val image = remember(preview) { preview.asImageBitmap() }
                 Image(bitmap = image, contentDescription = "Preview of ${tab.title}",
                     contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
@@ -298,6 +501,47 @@ private fun TabPreviewCard(tab: Tab, isActive: Boolean, onClick: () -> Unit, onC
                 Text(tab.url, style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeTabPreview(modifier: Modifier = Modifier) {
+    val dials = SpeedDials.entries.filter { it.folderId == null }.take(3)
+    Column(
+        modifier = modifier.background(MaterialTheme.colorScheme.surface).padding(14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("Miowser", style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(top = 24.dp, bottom = 14.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(16.dp))
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(14.dp))
+            Text("Search or enter address", style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+                overflow = TextOverflow.Ellipsis)
+        }
+        Text("Speed dial", style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 10.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            dials.forEach { dial ->
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(Modifier.size(30.dp)
+                        .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center) {
+                        Text(dial.title.take(1).uppercase(), style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                    Text(dial.title, style = MaterialTheme.typography.labelSmall, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis)
+                }
             }
         }
     }

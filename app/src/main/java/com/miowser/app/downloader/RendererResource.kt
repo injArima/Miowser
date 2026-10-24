@@ -107,6 +107,7 @@ internal class BlobTransferLedger(
     private val maxTotalBytes: Long,
     private val maxChunkBytes: Int
 ) {
+    private var begun = false
     var expectedBytes: Long = -1L
         private set
     var receivedBytes: Long = 0L
@@ -114,18 +115,21 @@ internal class BlobTransferLedger(
     private var nextChunkIndex = 0
 
     fun begin(totalBytes: Long): Boolean {
-        if (expectedBytes >= 0L || totalBytes <= 0L || totalBytes > maxTotalBytes) return false
+        if (begun || totalBytes != -1L && (totalBytes <= 0L || totalBytes > maxTotalBytes)) return false
+        begun = true
         expectedBytes = totalBytes
         return true
     }
 
     fun acceptChunk(index: Int, byteCount: Int): Boolean {
-        if (expectedBytes < 0L || index != nextChunkIndex || byteCount !in 1..maxChunkBytes) return false
-        if (receivedBytes + byteCount > expectedBytes || receivedBytes + byteCount > maxTotalBytes) return false
+        if (!begun || index != nextChunkIndex || byteCount !in 1..maxChunkBytes) return false
+        if (expectedBytes >= 0L && receivedBytes + byteCount > expectedBytes) return false
+        if (receivedBytes + byteCount > maxTotalBytes) return false
         receivedBytes += byteCount
         nextChunkIndex++
         return true
     }
 
-    fun isComplete(): Boolean = expectedBytes > 0L && receivedBytes == expectedBytes
+    fun isComplete(): Boolean = begun && receivedBytes > 0L &&
+        (expectedBytes < 0L || receivedBytes == expectedBytes)
 }

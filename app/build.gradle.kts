@@ -3,6 +3,13 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val releaseKeystore = providers.environmentVariable("MIOWSER_RELEASE_KEYSTORE").orNull
+val releaseStorePassword = providers.environmentVariable("MIOWSER_RELEASE_STORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("MIOWSER_RELEASE_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("MIOWSER_RELEASE_KEY_PASSWORD").orNull
+val releaseSigningConfigured = listOf(releaseKeystore, releaseStorePassword,
+    releaseKeyAlias, releaseKeyPassword).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.miowser.app"
     compileSdk = 37
@@ -17,13 +24,40 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        if (releaseSigningConfigured) create("publisher") {
+            storeFile = file(requireNotNull(releaseKeystore))
+            storePassword = releaseStorePassword
+            keyAlias = releaseKeyAlias
+            keyPassword = releaseKeyPassword
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            if (releaseSigningConfigured) signingConfig = signingConfigs.getByName("publisher")
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+        create("development") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            matchingFallbacks += "debug"
+        }
+        // Isolated, locally signed release-like target. Toggle R8 only after capturing baseline.
+        create("benchmark") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".benchmark"
+            signingConfig = signingConfigs.getByName("debug")
+            isDebuggable = false
+            isMinifyEnabled = providers.gradleProperty("benchmark.r8").orNull == "true"
+            isShrinkResources = isMinifyEnabled
+            matchingFallbacks += "release"
         }
     }
 
@@ -37,7 +71,26 @@ android {
     // plugin (which we deliberately don't apply; see root build.gradle.kts).
 
     buildFeatures {
+        buildConfig = true
         compose = true
+    }
+
+    // Step-one Video Assistant lab is an additive prototype, never part of release builds.
+    sourceSets {
+        getByName("debug") {
+            kotlin.directories.add("src/videoPrototype/java")
+            assets.directories.add("src/videoPrototype/assets")
+        }
+        getByName("development") {
+            kotlin.directories.add("src/videoPrototype/java")
+            assets.directories.add("src/videoPrototype/assets")
+        }
+    }
+
+    externalNativeBuild {
+        ndkBuild {
+            path = file("src/main/jni/Android.mk")
+        }
     }
 }
 
@@ -60,8 +113,12 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer.dash)
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.work.runtime)
+    // Explicit ownership of profile delivery, rather than relying on a transitive dependency.
+    implementation(libs.androidx.profileinstaller)
 
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.junit)
 }

@@ -1,9 +1,10 @@
 package com.miowser.app.browser
 
+import androidx.activity.compose.BackHandler
+import com.miowser.app.ui.theme.LocalMotionPolicy
+import com.miowser.app.ui.theme.MotionTokens
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -29,6 +31,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -42,18 +45,19 @@ import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Sort
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import com.miowser.app.ui.ConfirmationAction
+import com.miowser.app.ui.ConfirmationTone
+import com.miowser.app.ui.MiowserConfirmationDialog
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -62,11 +66,17 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -74,13 +84,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.miowser.app.ui.theme.ExpressiveTokens
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.net.HttpURLConnection
-import java.net.URI
-import java.net.URL
-import java.util.concurrent.ConcurrentHashMap
+import androidx.compose.ui.unit.IntSize
+import com.miowser.app.settings.SearchEngine
+import com.miowser.app.ui.MiowserMenuDivider
+import com.miowser.app.ui.MiowserMenuItem
+import com.miowser.app.ui.MiowserDropdownMenu
 
 /** Internal address kept in WebView history while the native homepage is drawn over it. */
 const val BROWSER_HOME_URL = "about:blank#miowser-home"
@@ -93,9 +101,10 @@ fun BrowserHomePage(
     folders: List<SpeedDialFolder>,
     sort: SpeedDialSort,
     focusRequestKey: Int,
-    searchEngineName: String,
-    isPrivate: Boolean = false,
+    searchEngine: SearchEngine,
+    suggestionsEnabled: Boolean,
     onSearch: (String) -> Unit,
+    onSearchSuggestion: (String) -> Unit,
     onOpenSpeedDial: (SpeedDial) -> Unit,
     onSaveSpeedDial: (id: Long?, title: String, url: String, folderId: Long?) -> Unit,
     onMoveSpeedDial: (id: Long, folderId: Long?) -> Unit,
@@ -106,14 +115,15 @@ fun BrowserHomePage(
     onAddFolder: (String) -> Unit,
     onRenameFolder: (id: Long, name: String) -> Unit,
     onRemoveFolder: (SpeedDialFolder) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isPrivate: Boolean = false
 ) {
     var searchText by rememberSaveable { mutableStateOf("") }
     var currentFolderId by rememberSaveable { mutableStateOf<Long?>(null) }
     var editingDial by remember { mutableStateOf<SpeedDial?>(null) }
     var editorFolderId by remember { mutableStateOf<Long?>(null) }
     var showDialEditor by remember { mutableStateOf(false) }
-    var movingDialIds by remember { mutableStateOf<Set<Long>?>(null) }
+    var bulkMoveMenuExpanded by remember { mutableStateOf(false) }
     var selectedDialIds by remember { mutableStateOf(emptySet<Long>()) }
     var showBulkDeleteConfirmation by remember { mutableStateOf(false) }
     var sortMenuExpanded by remember { mutableStateOf(false) }
@@ -121,12 +131,24 @@ fun BrowserHomePage(
     var showFolderEditor by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
+    var searchFocused by remember { mutableStateOf(false) }
+    var searchFieldSize by remember { mutableStateOf(IntSize.Zero) }
+    val suggestions = rememberSearchSuggestions(searchText, searchEngine, searchFocused && suggestionsEnabled)
+    LaunchedEffect(suggestionsEnabled) {
+        if (!suggestionsEnabled) focusManager.clearFocus()
+    }
     val searchFocusRequester = remember { FocusRequester() }
+    val lastHandledFocusRequest = remember { mutableIntStateOf(focusRequestKey) }
     val currentFolder = folders.firstOrNull { it.id == currentFolderId }
     val visibleDials = sortSpeedDials(speedDials.filter { it.folderId == currentFolderId }, sort)
+    BackHandler(enabled = currentFolderId != null) {
+        selectedDialIds = emptySet()
+        currentFolderId = null
+    }
 
     LaunchedEffect(focusRequestKey) {
-        if (focusRequestKey > 0) {
+        if (focusRequestKey > lastHandledFocusRequest.intValue) {
+            lastHandledFocusRequest.intValue = focusRequestKey
             searchFocusRequester.requestFocus()
             keyboardController?.show()
         }
@@ -168,17 +190,41 @@ fun BrowserHomePage(
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(bottom = 18.dp)
                 )
-                OutlinedTextField(
-                    value = searchText,
-                    onValueChange = { searchText = it },
-                    modifier = Modifier.fillMaxWidth().focusRequester(searchFocusRequester),
-                    placeholder = { Text("Search with $searchEngineName or enter address") },
-                    leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
-                    singleLine = true,
-                    shape = MaterialTheme.shapes.extraLarge,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                    keyboardActions = KeyboardActions(onGo = { submitSearch() })
-                )
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = searchText,
+                        onValueChange = { searchText = it },
+                        modifier = Modifier.fillMaxWidth()
+                            .onSizeChanged { searchFieldSize = it }
+                            .focusRequester(searchFocusRequester)
+                            .onFocusChanged { searchFocused = it.isFocused },
+                        placeholder = { Text("Search with ${searchEngine.label} or enter address") },
+                        leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                        trailingIcon = {
+                            SearchFieldActions(
+                                showClear = searchText.isNotEmpty(),
+                                onClear = { searchText = "" },
+                                onSubmit = { submitSearch() },
+                                submitEnabled = searchText.isNotBlank(),
+                                submitDescription = "Go to address or search"
+                            )
+                        },
+                        singleLine = true,
+                        shape = MaterialTheme.shapes.extraLarge,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                        keyboardActions = KeyboardActions(onGo = { submitSearch() })
+                    )
+                    SearchSuggestionPopup(
+                        suggestions = suggestions,
+                        anchorSize = searchFieldSize,
+                        onSelect = { suggestion ->
+                            searchText = suggestion
+                            focusManager.clearFocus()
+                            onSearchSuggestion(suggestion)
+                        },
+                        onComplete = { suggestion -> searchText = suggestion }
+                    )
+                }
             }
         }
         item(span = { GridItemSpan(maxLineSpan) }) {
@@ -189,8 +235,26 @@ fun BrowserHomePage(
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.weight(1f)
                     )
-                    IconButton(onClick = { movingDialIds = selectedDialIds }) {
-                        Icon(Icons.Rounded.DriveFileMove, contentDescription = "Move selected speed dials")
+                    Box {
+                        IconButton(onClick = { bulkMoveMenuExpanded = true }) {
+                            Icon(Icons.Rounded.DriveFileMove, contentDescription = "Move selected speed dials")
+                        }
+                        val selectedEntries = speedDials.filter { it.id in selectedDialIds }
+                        val selectedFolders = selectedEntries.map(SpeedDial::folderId).distinct()
+                        MiowserDropdownMenu(
+                            expanded = bulkMoveMenuExpanded,
+                            onDismissRequest = { bulkMoveMenuExpanded = false }
+                        ) {
+                            SpeedDialFolderMenuItems(
+                                folders = folders,
+                                selectedFolderId = selectedFolders.singleOrNull(),
+                                showCurrent = selectedEntries.isNotEmpty() && selectedFolders.size == 1
+                            ) { folderId ->
+                                bulkMoveMenuExpanded = false
+                                onMoveSpeedDials(selectedDialIds, folderId)
+                                selectedDialIds = emptySet()
+                            }
+                        }
                     }
                     IconButton(onClick = { showBulkDeleteConfirmation = true }) {
                         Icon(
@@ -266,7 +330,7 @@ fun BrowserHomePage(
         items(visibleDials, key = SpeedDial::id) { entry ->
             SpeedDialTile(
                 entry = entry,
-                canMove = folders.isNotEmpty() || entry.folderId != null,
+                folders = folders,
                 selected = entry.id in selectedDialIds,
                 selectionMode = selectedDialIds.isNotEmpty(),
                 onClick = {
@@ -282,7 +346,7 @@ fun BrowserHomePage(
                     editorFolderId = entry.folderId
                     showDialEditor = true
                 },
-                onMove = { movingDialIds = setOf(entry.id) },
+                onMove = { folderId -> onMoveSpeedDial(entry.id, folderId) },
                 onRemove = { onRemoveSpeedDial(entry) }
             )
         }
@@ -308,63 +372,20 @@ fun BrowserHomePage(
         )
     }
 
-    movingDialIds?.let { ids ->
-        val selectedEntries = speedDials.filter { it.id in ids }
-        val selectedFolders = selectedEntries.map { it.folderId }.distinct()
-        val selectedFolder = selectedFolders.singleOrNull()
-        val allInSameFolder = selectedFolders.size == 1
-        AlertDialog(
-            onDismissRequest = { movingDialIds = null },
-            title = { Text("Move to folder") },
-            text = {
-                Column {
-                    FolderDestinationRow(
-                        label = "Speed dial home",
-                        selected = selectedEntries.isNotEmpty() && allInSameFolder && selectedFolder == null,
-                        icon = { Icon(Icons.Rounded.Home, contentDescription = null) }
-                    ) {
-                        if (ids.size == 1) onMoveSpeedDial(ids.first(), null) else onMoveSpeedDials(ids, null)
-                        selectedDialIds = emptySet()
-                        movingDialIds = null
-                    }
-                    folders.forEach { folder ->
-                        FolderDestinationRow(
-                            label = folder.name,
-                            selected = allInSameFolder && selectedFolder == folder.id,
-                            icon = { Icon(Icons.Rounded.Folder, contentDescription = null) }
-                        ) {
-                            if (ids.size == 1) {
-                                onMoveSpeedDial(ids.first(), folder.id)
-                            } else {
-                                onMoveSpeedDials(ids, folder.id)
-                            }
-                            selectedDialIds = emptySet()
-                            movingDialIds = null
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = { TextButton(onClick = { movingDialIds = null }) { Text("Cancel") } }
-        )
-    }
-
     if (showBulkDeleteConfirmation) {
-        AlertDialog(
-            onDismissRequest = { showBulkDeleteConfirmation = false },
-            title = { Text("Delete ${selectedDialIds.size} speed dials?") },
-            text = { Text("This removes the selected shortcuts from the homepage.") },
-            confirmButton = {
-                TextButton(onClick = {
+        MiowserConfirmationDialog(
+            title = "Delete ${selectedDialIds.size} speed dials?",
+            message = "This removes the selected shortcuts from the homepage.",
+            onDismiss = { showBulkDeleteConfirmation = false },
+            actions = listOf(
+                ConfirmationAction("Cancel", { showBulkDeleteConfirmation = false }, ConfirmationTone.CAUTION),
+                ConfirmationAction("Delete", {
                     val ids = selectedDialIds
                     showBulkDeleteConfirmation = false
                     selectedDialIds = emptySet()
                     onRemoveSpeedDials(ids)
-                }) { Text("Delete") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showBulkDeleteConfirmation = false }) { Text("Cancel") }
-            }
+                }, ConfirmationTone.CAUTION)
+            )
         )
     }
 
@@ -383,26 +404,38 @@ fun BrowserHomePage(
 @Composable
 private fun SpeedDialTile(
     entry: SpeedDial,
-    canMove: Boolean,
+    folders: List<SpeedDialFolder>,
     selected: Boolean,
     selectionMode: Boolean,
     onClick: () -> Unit,
     onSelect: () -> Unit,
     onEdit: () -> Unit,
-    onMove: () -> Unit,
+    onMove: (Long?) -> Unit,
     onRemove: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+    var moveSubmenuExpanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     val favicon by produceState<Bitmap?>(initialValue = null, entry.url) {
-        value = SpeedDialFaviconLoader.load(entry.url)
+        value = SpeedDialSiteMetadataStore.cachedIcon(context, entry.url)
+        val metadata = SpeedDialSiteMetadataStore.fetch(
+            context, entry.url, entry.autoTitle && entry.title == defaultSpeedDialTitle(entry.url)
+        )
+        if (metadata.icon != null) value = metadata.icon
+        if (entry.autoTitle && !metadata.title.isNullOrBlank()) {
+            SpeedDials.updateAutoTitle(context, entry.url, metadata.title)
+        }
     }
     Box {
         CompactDialTile(
-            label = defaultSpeedDialTitle(entry.url),
+            label = entry.title,
             selected = selected,
             onClick = onClick,
             onLongClick = {
-                if (selectionMode) onClick() else menuExpanded = true
+                if (selectionMode) onClick() else {
+                    moveSubmenuExpanded = false
+                    menuExpanded = true
+                }
             }
         ) {
             if (favicon != null) {
@@ -414,7 +447,7 @@ private fun SpeedDialTile(
                 )
             } else {
                 Text(
-                    defaultSpeedDialTitle(entry.url).firstOrNull()?.uppercase() ?: "?",
+                    entry.title.firstOrNull()?.uppercase() ?: "?",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -428,30 +461,53 @@ private fun SpeedDialTile(
                 modifier = Modifier.align(Alignment.TopEnd).size(18.dp)
             )
         }
-        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-            DropdownMenuItem(
-                text = { Text("Select") },
-                leadingIcon = { Icon(Icons.Rounded.CheckCircle, contentDescription = null) },
-                onClick = { menuExpanded = false; onSelect() }
-            )
-            DropdownMenuItem(
-                text = { Text("Edit") },
-                leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
-                onClick = { menuExpanded = false; onEdit() }
-            )
-            DropdownMenuItem(
-                text = { Text("Move to folder") },
-                leadingIcon = { Icon(Icons.Rounded.DriveFileMove, contentDescription = null) },
-                enabled = canMove,
-                onClick = { menuExpanded = false; onMove() }
-            )
-            DropdownMenuItem(
-                text = { Text("Remove") },
-                leadingIcon = {
-                    Icon(Icons.Rounded.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                },
-                onClick = { menuExpanded = false; onRemove() }
-            )
+        MiowserDropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false; moveSubmenuExpanded = false }
+        ) {
+            if (moveSubmenuExpanded) {
+                MiowserMenuItem(
+                    text = { Text("Back") },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null) },
+                    onClick = { moveSubmenuExpanded = false }
+                )
+                MiowserMenuDivider()
+                SpeedDialFolderMenuItems(
+                    folders = folders,
+                    selectedFolderId = entry.folderId,
+                    showCurrent = true
+                ) { folderId ->
+                    menuExpanded = false
+                    moveSubmenuExpanded = false
+                    onMove(folderId)
+                }
+            } else {
+                MiowserMenuItem(
+                    text = { Text("Select") },
+                    leadingIcon = { Icon(Icons.Rounded.CheckCircle, contentDescription = null) },
+                    onClick = { menuExpanded = false; onSelect() }
+                )
+                MiowserMenuItem(
+                    text = { Text("Edit") },
+                    leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
+                    onClick = { menuExpanded = false; onEdit() }
+                )
+                MiowserMenuItem(
+                    text = { Text("Move to folder") },
+                    leadingIcon = { Icon(Icons.Rounded.DriveFileMove, contentDescription = null) },
+                    trailingIcon = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null) },
+                    enabled = folders.isNotEmpty() || entry.folderId != null,
+                    onClick = { moveSubmenuExpanded = true }
+                )
+                MiowserMenuDivider()
+                MiowserMenuItem(
+                    text = { Text("Remove") },
+                    leadingIcon = {
+                        Icon(Icons.Rounded.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                    },
+                    onClick = { menuExpanded = false; onRemove() }
+                )
+            }
         }
     }
 }
@@ -467,24 +523,27 @@ private fun SpeedDialFolderTile(
     var menuExpanded by remember { mutableStateOf(false) }
     Box {
         CompactDialTile(folder.name, false, onOpen, { menuExpanded = true }) {
-            Box(contentAlignment = Alignment.Center) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(38.dp)) {
                 Icon(Icons.Rounded.Folder, contentDescription = null, modifier = Modifier.size(34.dp))
                 if (itemCount > 0) {
                     Text(
-                        itemCount.coerceAtMost(99).toString(),
+                        if (itemCount > 99) "99+" else itemCount.toString(),
                         style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.align(Alignment.BottomEnd)
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.align(Alignment.Center).offset(y = 4.dp)
                     )
                 }
             }
         }
-        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-            DropdownMenuItem(
+        MiowserDropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+            MiowserMenuItem(
                 text = { Text("Rename") },
                 leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
                 onClick = { menuExpanded = false; onRename() }
             )
-            DropdownMenuItem(
+            MiowserMenuDivider()
+            MiowserMenuItem(
                 text = { Text("Remove folder") },
                 leadingIcon = {
                     Icon(Icons.Rounded.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
@@ -503,15 +562,17 @@ private fun CompactDialTile(
     onLongClick: () -> Unit,
     icon: @Composable () -> Unit
 ) {
-    val tileColor by animateColorAsState(
+    val motion = LocalMotionPolicy.current
+    val tileColor = animateColorAsState(
         targetValue = if (selected) MaterialTheme.colorScheme.tertiaryContainer
         else MaterialTheme.colorScheme.primaryContainer,
-        animationSpec = tween(ExpressiveTokens.compactMotionMillis),
+        animationSpec = motion.spec(MotionTokens.selection),
         label = "Speed dial selection"
     )
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 2.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -519,7 +580,7 @@ private fun CompactDialTile(
         Surface(
             modifier = Modifier.size(46.dp),
             shape = MaterialTheme.shapes.medium,
-            color = tileColor,
+            color = Color.Transparent,
             contentColor = if (selected) {
                 MaterialTheme.colorScheme.onTertiaryContainer
             } else {
@@ -527,7 +588,8 @@ private fun CompactDialTile(
             },
             border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
         ) {
-            Box(contentAlignment = Alignment.Center) { icon() }
+            Box(Modifier.fillMaxSize().drawBehind { drawRect(tileColor.value) },
+                contentAlignment = Alignment.Center) { icon() }
         }
         Text(
             label,
@@ -554,10 +616,11 @@ private fun SpeedDialSortMenu(
     onDismiss: () -> Unit,
     onSelect: (SpeedDialSort) -> Unit
 ) {
-    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+    MiowserDropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
         SpeedDialSort.entries.forEach { option ->
-            DropdownMenuItem(
+            MiowserMenuItem(
                 text = { Text(option.label) },
+                selected = option == selected,
                 trailingIcon = {
                     if (option == selected) {
                         Icon(Icons.Rounded.CheckCircle, contentDescription = "Selected")
@@ -572,18 +635,32 @@ private fun SpeedDialSortMenu(
 private fun Set<Long>.toggle(id: Long): Set<Long> = if (id in this) this - id else this + id
 
 @Composable
-private fun FolderDestinationRow(
-    label: String,
-    selected: Boolean,
-    icon: @Composable () -> Unit,
-    onClick: () -> Unit
+private fun SpeedDialFolderMenuItems(
+    folders: List<SpeedDialFolder>,
+    selectedFolderId: Long?,
+    showCurrent: Boolean,
+    onSelect: (Long?) -> Unit
 ) {
-    ListItem(
-        headlineContent = { Text(label) },
-        supportingContent = if (selected) ({ Text("Current location") }) else null,
-        leadingContent = icon,
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
+    MiowserMenuItem(
+        text = { Text("Speed dial home") },
+        leadingIcon = { Icon(Icons.Rounded.Home, contentDescription = null) },
+        selected = showCurrent && selectedFolderId == null,
+        trailingIcon = if (showCurrent && selectedFolderId == null) {
+            { Icon(Icons.Rounded.CheckCircle, contentDescription = "Current location") }
+        } else null,
+        onClick = { onSelect(null) }
     )
+    folders.forEach { folder ->
+        MiowserMenuItem(
+            text = { Text(folder.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            leadingIcon = { Icon(Icons.Rounded.Folder, contentDescription = null) },
+            selected = showCurrent && selectedFolderId == folder.id,
+            trailingIcon = if (showCurrent && selectedFolderId == folder.id) {
+                { Icon(Icons.Rounded.CheckCircle, contentDescription = "Current location") }
+            } else null,
+            onClick = { onSelect(folder.id) }
+        )
+    }
 }
 
 @Composable
@@ -595,6 +672,7 @@ private fun SpeedDialEditorDialog(
     var title by remember(existing?.id) { mutableStateOf(existing?.title.orEmpty()) }
     var url by remember(existing?.id) { mutableStateOf(existing?.url.orEmpty()) }
     val canSave = url.isNotBlank()
+    val savedTitle = if (existing?.autoTitle == true && title == existing.title) "" else title
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (existing == null) "Add speed dial" else "Edit speed dial") },
@@ -613,11 +691,11 @@ private fun SpeedDialEditorDialog(
                     leadingIcon = { Icon(Icons.Rounded.Language, contentDescription = null) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { if (canSave) onSave(title, url) })
+                    keyboardActions = KeyboardActions(onDone = { if (canSave) onSave(savedTitle, url) })
                 )
             }
         },
-        confirmButton = { TextButton(enabled = canSave, onClick = { onSave(title, url) }) { Text("Save") } },
+        confirmButton = { TextButton(enabled = canSave, onClick = { onSave(savedTitle, url) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
@@ -647,34 +725,4 @@ private fun FolderEditorDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
-}
-
-private object SpeedDialFaviconLoader {
-    private val memoryCache = ConcurrentHashMap<String, Bitmap>()
-
-    suspend fun load(pageUrl: String): Bitmap? = withContext(Dispatchers.IO) {
-        val faviconUrl = runCatching {
-            val page = URI(pageUrl)
-            val host = page.host ?: return@runCatching null
-            "${page.scheme ?: "https"}://$host/favicon.ico"
-        }.getOrNull() ?: return@withContext null
-        memoryCache[faviconUrl]?.let { return@withContext it }
-        val connection = runCatching { URL(faviconUrl).openConnection() as HttpURLConnection }
-            .getOrNull() ?: return@withContext null
-        try {
-            connection.connectTimeout = 4_000
-            connection.readTimeout = 4_000
-            connection.instanceFollowRedirects = true
-            connection.setRequestProperty("User-Agent", "Miowser")
-            if (connection.responseCode !in 200..299) return@withContext null
-            val bitmap = connection.inputStream.buffered().use(BitmapFactory::decodeStream)
-                ?: return@withContext null
-            memoryCache[faviconUrl] = bitmap
-            bitmap
-        } catch (_: Exception) {
-            null
-        } finally {
-            connection.disconnect()
-        }
-    }
 }

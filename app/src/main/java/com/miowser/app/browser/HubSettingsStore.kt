@@ -1,6 +1,7 @@
 package com.miowser.app.browser
 
 import android.content.Context
+import com.miowser.app.persistence.Persistence
 
 private const val PREFS_NAME = "hub_settings"
 private const val KEY_LIBRARY_SORT = "library_sort"
@@ -32,9 +33,14 @@ object HubSettingsStore {
     }
 
     fun save(context: Context, settings: HubSettings) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-            .putString(KEY_LIBRARY_SORT, settings.librarySort.name)
-            .putString(KEY_DOWNLOAD_SECTION, settings.defaultDownloadSection.name)
-            .commit()
+        Persistence.requireOwner()
+        com.miowser.app.startup.AppStartup.updateHubSettings(settings)
+        val appContext = context.applicationContext
+        Persistence.submitSnapshot("hub-settings") {
+            appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putString(KEY_LIBRARY_SORT, settings.librarySort.name)
+                .putString(KEY_DOWNLOAD_SECTION, settings.defaultDownloadSection.name)
+                .commit()
+        }
     }
 }

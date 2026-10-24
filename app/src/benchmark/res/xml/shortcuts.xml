@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="browser"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_browser"
+        android:shortcutShortLabel="@string/shortcut_browser"
+        android:shortcutLongLabel="@string/shortcut_browser_long">
+        <intent
+            android:action="com.miowser.app.action.OPEN_BROWSER"
+            android:targetPackage="com.miowser.app.benchmark"
+            android:targetClass="com.miowser.app.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="new_tab"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_new_tab"
+        android:shortcutShortLabel="@string/shortcut_new_tab"
+        android:shortcutLongLabel="@string/shortcut_new_tab_long">
+        <intent
+            android:action="com.miowser.app.action.NEW_TAB"
+            android:targetPackage="com.miowser.app.benchmark"
+            android:targetClass="com.miowser.app.MainActivity" />
+    </shortcut>
+</shortcuts>

@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cross-origin video fixture</title>
+<style>body { margin: 0; background: #101010; color: white; font: 16px system-ui; } iframe { width: 100%; height: 80vh; border: 0; }</style>
+<p>Video below belongs to a different local HTTPS origin.</p>
+<iframe id="frame" title="Cross-origin video" allow="fullscreen" allowfullscreen></iframe>
+<script>
+  const query = new URLSearchParams(location.search);
+  const url = new URL('https://frame.miowser.invalid/assets/video-lab/video.html');
+  url.searchParams.set('kind', 'iframe');
+  url.searchParams.set('generation', query.get('generation'));
+  url.searchParams.set('nonce', query.get('nonce'));
+  document.getElementById('frame').src = url.href;
+</script>
+</html>

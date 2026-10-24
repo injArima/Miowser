@@ -1,5 +1,9 @@
 package com.miowser.app.browser
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -8,38 +12,56 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.contextmenu.modifier.appendTextContextMenuComponents
+import androidx.compose.foundation.text.contextmenu.builder.item
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.TextFieldDecorator
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.flow.collect
 
 /**
  * The browser's address bar: a single text field doubling as URL entry and search box (see
@@ -49,26 +71,57 @@ import androidx.compose.ui.unit.dp
  */
 @Composable
 fun AddressBar(
+    tabId: Long,
     value: TextFieldValue,
     onValueChange: (TextFieldValue) -> Unit,
     onFocusChanged: (Boolean) -> Unit,
+    onSearchSelection: (String) -> Unit,
     onSubmit: () -> Unit,
     onReload: () -> Unit,
     onStop: () -> Unit,
     isLoading: Boolean,
-    loadProgress: Float,
+    loadProgress: () -> Float,
     detectedCount: Int,
     onOpenDetected: () -> Unit,
     isBookmarked: Boolean,
     onToggleBookmark: () -> Unit,
-    isPrivate: Boolean = false,
+    siteSecurity: SiteSecurity,
+    onOpenSiteInfo: () -> Unit,
     focusRequestKey: Int,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isPrivate: Boolean = false
 ) {
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
+    var fieldFocused by remember(tabId) { mutableStateOf(false) }
+    val textState = remember(tabId) { TextFieldState(value.text, value.selection) }
+    val textScroll = remember(tabId) { ScrollState(0) }
+    val fieldInteraction = remember(tabId) { MutableInteractionSource() }
+    val currentOnValueChange by rememberUpdatedState(onValueChange)
+    // Navigation and Home can replace the address externally; IME edits flow back to the tab.
+    LaunchedEffect(tabId, value.text, value.selection) {
+        if (textState.text.toString() != value.text || textState.selection != value.selection) {
+            textState.edit {
+                replace(0, length, value.text)
+                selection = value.selection
+            }
+        }
+    }
+    LaunchedEffect(tabId) {
+        snapshotFlow { TextFieldValue(textState.text.toString(), textState.selection) }
+            .collect { currentOnValueChange(it) }
+    }
+    // A full selection should expose its trailing end; Compose's default selection follow
+    // behavior otherwise leaves long URLs scrolled to their beginning.
+    LaunchedEffect(fieldFocused, textState.selection, textScroll.maxValue) {
+        if (fieldFocused && textState.text.isNotEmpty() &&
+            textState.selection.end == textState.text.length
+        ) textScroll.scrollTo(textScroll.maxValue)
+    }
+    val lastHandledFocusRequest = remember { mutableIntStateOf(focusRequestKey) }
     LaunchedEffect(focusRequestKey) {
-        if (focusRequestKey > 0) {
+        if (focusRequestKey > lastHandledFocusRequest.intValue) {
+            lastHandledFocusRequest.intValue = focusRequestKey
             focusRequester.requestFocus()
             keyboardController?.show()
         }
@@ -115,30 +168,95 @@ fun AddressBar(
                         tint = if (isBookmarked) MaterialTheme.colorScheme.primary else LocalContentColor.current
                     )
                 }
-                OutlinedTextField(
-                    value = value,
-                    onValueChange = onValueChange,
-                    modifier = Modifier
-                        .weight(1f)
-                        .focusRequester(focusRequester)
-                        .onFocusChanged { onFocusChanged(it.isFocused) },
-                    singleLine = true,
-                    placeholder = { Text(if (isPrivate) "Private search or address" else "Search or enter address") },
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                    keyboardActions = KeyboardActions(onGo = { onSubmit() }),
-                    shape = MaterialTheme.shapes.extraLarge
-                )
-                if (detectedCount > 0) {
-                    IconButton(onClick = onOpenDetected) {
-                        BadgedBox(badge = { Badge { Text(detectedCount.coerceAtMost(99).toString()) } }) {
-                            // Primary-tinted, unlike reload beside it — this only appears once the
-                            // grabber's actually found something, so it doubles as "there's
-                            // something here" the way the badge count alone wouldn't at a glance.
-                            Icon(
-                                Icons.Rounded.PlayArrow,
-                                contentDescription = "Detected media ($detectedCount)",
-                                tint = MaterialTheme.colorScheme.primary
+                Box(modifier = Modifier.weight(1f)) {
+                    BasicTextField(
+                        state = textState,
+                        modifier = Modifier.fillMaxWidth()
+                            .focusRequester(focusRequester)
+                            .onFocusChanged {
+                                fieldFocused = it.isFocused
+                                onFocusChanged(it.isFocused)
+                            }
+                            .appendTextContextMenuComponents {
+                                val selection = textState.selection
+                                if (!selection.collapsed) {
+                                    val selected = textState.text.substring(selection.min, selection.max).trim()
+                                    if (selected.isNotEmpty()) {
+                                        item(key = "address-web-search", label = "Web search") {
+                                            close()
+                                            onSearchSelection(selected)
+                                        }
+                                    }
+                                }
+                            },
+                        textStyle = LocalTextStyle.current.copy(color = MaterialTheme.colorScheme.onSurface),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                        onKeyboardAction = { onSubmit() },
+                        lineLimits = TextFieldLineLimits.SingleLine,
+                        scrollState = textScroll,
+                        interactionSource = fieldInteraction,
+                        decorator = TextFieldDecorator { inner ->
+                            OutlinedTextFieldDefaults.DecorationBox(
+                                value = textState.text.toString(),
+                                innerTextField = inner,
+                                enabled = true,
+                                singleLine = true,
+                                visualTransformation = VisualTransformation.None,
+                                interactionSource = fieldInteraction,
+                                leadingIcon = {
+                                    IconButton(onClick = onOpenSiteInfo) {
+                                        Icon(
+                                            imageVector = if (siteSecurity == SiteSecurity.SECURE) Icons.Rounded.Lock
+                                                else Icons.Rounded.LockOpen,
+                                            contentDescription = "Site information: ${siteSecurity.label}",
+                                            tint = when (siteSecurity) {
+                                                SiteSecurity.SECURE -> MaterialTheme.colorScheme.primary
+                                                SiteSecurity.INSECURE, SiteSecurity.CERTIFICATE_ERROR,
+                                                SiteSecurity.CERTIFICATE_BYPASSED -> MaterialTheme.colorScheme.error
+                                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                            }
+                                        )
+                                    }
+                                },
+                                placeholder = { Text(if (isPrivate) "Private search or address" else "Search or enter address") },
+                                trailingIcon = {
+                                    if (fieldFocused) SearchFieldActions(
+                                        showClear = textState.text.isNotEmpty(),
+                                        onClear = { textState.edit { replace(0, length, "") } },
+                                        onSubmit = onSubmit,
+                                        submitEnabled = textState.text.isNotBlank(),
+                                        submitDescription = "Go to address or search"
+                                    )
+                                },
+                                container = {
+                                    OutlinedTextFieldDefaults.Container(
+                                        enabled = true,
+                                        isError = false,
+                                        interactionSource = fieldInteraction,
+                                        shape = MaterialTheme.shapes.extraLarge
+                                    )
+                                }
                             )
+                        }
+                    )
+                }
+                if (detectedCount > 0) {
+                    Box(
+                        modifier = Modifier.size(48.dp)
+                            .clickable(role = Role.Button, onClick = onOpenDetected)
+                    ) {
+                        Icon(
+                            Icons.Rounded.PlayArrow,
+                            contentDescription = "Detected media ($detectedCount)",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                        // Badge has its own measured space inside the tap target. Keeping it
+                        // outside IconButton avoids the button's circular clip at the top edge.
+                        Badge(modifier = Modifier.align(Alignment.TopEnd)
+                            .padding(top = 2.dp, end = 2.dp)) {
+                            Text(detectedCount.coerceAtMost(99).toString())
                         }
                     }
                 }
@@ -151,7 +269,7 @@ fun AddressBar(
             }
             if (isLoading) {
                 LinearProgressIndicator(
-                    progress = { loadProgress },
+                    progress = loadProgress,
                     modifier = Modifier.fillMaxWidth(),
                     color = MaterialTheme.colorScheme.primary
                 )

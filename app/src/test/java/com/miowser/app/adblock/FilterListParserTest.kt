@@ -100,6 +100,26 @@ class FilterListParserTest {
     }
 
     @Test
+    fun `hosts rows from Peter Lowe list become domain anchored network rules`() {
+        val parsed = FilterListParser.parse(
+            "# hosts file\n127.0.0.1 ads.example.com tracker.example.org\n0.0.0.0 ADS.EXAMPLE.COM",
+            FilterSource.SUBSCRIBED
+        )
+        assertEquals(listOf("||ads.example.com^", "||tracker.example.org^"),
+            parsed.networkRules.map { it.raw })
+        assertEquals(0, parsed.skippedMalformed)
+    }
+
+    @Test
+    fun `valid lists are accepted past the former 120000 rule limit`() {
+        val text = buildString {
+            repeat(120_001) { index -> append("127.0.0.1 ad$index.example\n") }
+        }
+        val parsed = FilterListParser.parse(text, FilterSource.SUBSCRIBED)
+        assertEquals(120_001, parsed.networkRules.size)
+    }
+
+    @Test
     fun `cosmetic rule with domain is scoped, generic rule is not`() {
         val result = FilterListParser.parse("example.com##.ad-banner\n###generic-id", FilterSource.SUBSCRIBED)
         val scoped = result.cosmeticRules.first { it.selector == ".ad-banner" }

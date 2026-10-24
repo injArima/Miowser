@@ -1,6 +1,8 @@
 package com.miowser.app.browser
 
 import android.content.Context
+import com.miowser.app.persistence.Persistence
+import com.miowser.app.settings.InactiveTabRetention
 import androidx.compose.runtime.mutableStateListOf
 import java.util.UUID
 
@@ -44,46 +46,68 @@ object InactiveTabCodec {
 }
 
 object InactiveTabs {
-    val records = mutableStateListOf<InactiveTabRecord>()
+    private val mutableRecords = mutableStateListOf<InactiveTabRecord>()
+    val records: List<InactiveTabRecord> get() = mutableRecords
     private var loaded = false
 
-    fun restore(context: Context, autoDeleteEnabled: Boolean, now: Long = System.currentTimeMillis()) {
+    suspend fun restoreAsync(context: Context, retention: InactiveTabRetention) {
+        Persistence.requireOwner()
         if (!loaded) {
-            loaded = true
+            val records = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                InactiveTabCodec.decode(context.getSharedPreferences(INACTIVE_PREFS, Context.MODE_PRIVATE)
+                    .getString(INACTIVE_RECORDS, "").orEmpty())
+            }
+            if (!loaded) { mutableRecords.addAll(records); loaded = true }
+        }
+        prune(context, retention, System.currentTimeMillis())
+    }
+
+    fun restore(context: Context, retention: InactiveTabRetention, now: Long = System.currentTimeMillis()) {
+        Persistence.requireOwner()
+        if (!loaded) {
             val raw = context.getSharedPreferences(INACTIVE_PREFS, Context.MODE_PRIVATE)
                 .getString(INACTIVE_RECORDS, "").orEmpty()
-            records.clear()
-            records.addAll(InactiveTabCodec.decode(raw))
+            mutableRecords.clear()
+            mutableRecords.addAll(InactiveTabCodec.decode(raw))
+            loaded = true
         }
-        prune(context, autoDeleteEnabled, now)
+        prune(context, retention, now)
     }
 
     fun archive(context: Context, newRecords: List<InactiveTabRecord>) {
+        Persistence.requireOwner()
         if (newRecords.isEmpty()) return
-        records.addAll(0, newRecords)
+        mutableRecords.addAll(0, newRecords)
         persist(context)
     }
 
     fun take(context: Context, id: String): InactiveTabRecord? {
-        val index = records.indexOfFirst { it.id == id }
+        Persistence.requireOwner()
+        val index = mutableRecords.indexOfFirst { it.id == id }
         if (index < 0) return null
-        return records.removeAt(index).also { persist(context) }
+        return mutableRecords.removeAt(index).also { persist(context) }
     }
 
     fun delete(context: Context, id: String) {
-        if (records.removeAll { it.id == id }) persist(context)
+        Persistence.requireOwner()
+        if (mutableRecords.removeAll { it.id == id }) persist(context)
     }
 
-    fun prune(context: Context, enabled: Boolean, now: Long = System.currentTimeMillis()) {
-        if (!enabled) return
-        if (records.removeAll { InactiveTabPolicy.isExpired(it.archivedAt, now) }) {
+    fun prune(context: Context, retention: InactiveTabRetention, now: Long = System.currentTimeMillis()) {
+        Persistence.requireOwner()
+        if (retention == InactiveTabRetention.NEVER) return
+        if (mutableRecords.removeAll { InactiveTabPolicy.isExpired(it.archivedAt, now, retention) }) {
             persist(context)
         }
     }
 
     private fun persist(context: Context) {
-        context.applicationContext.getSharedPreferences(INACTIVE_PREFS, Context.MODE_PRIVATE).edit()
-            .putString(INACTIVE_RECORDS, InactiveTabCodec.encode(records))
-            .commit()
+        Persistence.requireOwner()
+        val snapshot = mutableRecords.toList()
+        val appContext = context.applicationContext
+        Persistence.submitSnapshot("inactive-tabs") {
+            appContext.getSharedPreferences(INACTIVE_PREFS, Context.MODE_PRIVATE).edit()
+                .putString(INACTIVE_RECORDS, InactiveTabCodec.encode(snapshot)).commit()
+        }
     }
 }

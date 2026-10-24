@@ -1,6 +1,7 @@
 package com.miowser.app.library
 
 import android.content.Context
+import com.miowser.app.persistence.Persistence
 import com.miowser.app.grabber.MediaType
 
 private const val PREFS_NAME = "media_library"
@@ -8,7 +9,8 @@ private const val KEY_ENTRIES = "entries"
 private const val FIELD_DELIMITER = '\t'
 private const val RECORD_DELIMITER = '\n'
 private const val LEGACY_FIELD_COUNT = 11
-private const val FIELD_COUNT = 14
+private const val PREVIOUS_FIELD_COUNT = 14
+private const val FIELD_COUNT = 24
 
 enum class LibrarySourceKind { REMOTE_STREAM, LOCAL_FILE }
 
@@ -35,7 +37,13 @@ data class LibraryEntry(
     val durationMs: Long,
     val pageTitle: String? = null,
     val videoName: String? = null,
-    val folderId: String? = null
+    val folderId: String? = null,
+    val qualityHeight: Int? = null,
+    val requestReferer: String? = null,
+    val requestOrigin: String? = null,
+    val selectedSubtitle: LibrarySubtitle? = null,
+    val manualFolder: Boolean = false,
+    val explicitlySaved: Boolean = true
 ) {
     val identityKey: String get() = "${sourceKind.name}:$mediaUri"
 }
@@ -58,7 +66,17 @@ object LibraryCodec {
                 entry.durationMs.coerceAtLeast(0L).toString(),
                 entry.pageTitle?.let(::sanitize) ?: "",
                 entry.videoName?.let(::sanitize) ?: "",
-                entry.folderId?.let(::sanitize) ?: ""
+                entry.folderId?.let(::sanitize) ?: "",
+                entry.qualityHeight?.takeIf { it > 0 }?.toString() ?: "",
+                entry.requestReferer?.let(::sanitize) ?: "",
+                entry.requestOrigin?.let(::sanitize) ?: "",
+                entry.selectedSubtitle?.url?.let(::sanitize) ?: "",
+                entry.selectedSubtitle?.pageUrl?.let(::sanitize) ?: "",
+                entry.selectedSubtitle?.label?.let(::sanitize) ?: "",
+                entry.selectedSubtitle?.requestReferer?.let(::sanitize) ?: "",
+                entry.selectedSubtitle?.requestOrigin?.let(::sanitize) ?: "",
+                entry.manualFolder.toString(),
+                entry.explicitlySaved.toString()
             ).joinToString(FIELD_DELIMITER.toString())
         }
 
@@ -69,7 +87,7 @@ object LibraryCodec {
 
     private fun decodeLine(line: String): LibraryEntry? {
         val parts = line.split(FIELD_DELIMITER)
-        if (parts.size !in setOf(LEGACY_FIELD_COUNT, FIELD_COUNT) || parts[0].isBlank()) return null
+        if (parts.size !in setOf(LEGACY_FIELD_COUNT, PREVIOUS_FIELD_COUNT, 15, 17, 22, 23, FIELD_COUNT) || parts[0].isBlank()) return null
         return runCatching {
             LibraryEntry(
                 mediaUri = parts[0],
@@ -85,7 +103,24 @@ object LibraryCodec {
                 durationMs = parts[10].toLong().coerceAtLeast(0L),
                 pageTitle = parts.getOrNull(11)?.ifBlank { null },
                 videoName = parts.getOrNull(12)?.ifBlank { null },
-                folderId = parts.getOrNull(13)?.ifBlank { null }
+                folderId = parts.getOrNull(13)?.ifBlank { null },
+                qualityHeight = parts.getOrNull(14)?.toIntOrNull()?.takeIf { it > 0 },
+                requestReferer = parts.getOrNull(15)?.ifBlank { null },
+                requestOrigin = parts.getOrNull(16)?.ifBlank { null },
+                selectedSubtitle = parts.getOrNull(17)?.takeIf { it.isNotBlank() }?.let { url ->
+                    LibrarySubtitle(
+                        url = url,
+                        pageUrl = parts.getOrNull(18)?.ifBlank { null } ?: parts[1].ifBlank { null } ?: url,
+                        label = parts.getOrNull(19)?.ifBlank { null },
+                        requestReferer = parts.getOrNull(20)?.ifBlank { null },
+                        requestOrigin = parts.getOrNull(21)?.ifBlank { null }
+                    )
+                },
+                // Old records do not say whether a placement was manual. Keep existing filed
+                // videos pinned rather than unexpectedly moving them when rules are introduced.
+                manualFolder = parts.getOrNull(22)?.toBooleanStrictOrNull()
+                    ?: (parts.size < 23 && parts.getOrNull(13)?.isNotBlank() == true),
+                explicitlySaved = parts.getOrNull(23)?.toBooleanStrictOrNull() ?: true
             )
         }.getOrNull()
     }
@@ -95,12 +130,17 @@ object LibraryCodec {
 }
 
 object LibraryStore {
-    fun save(context: Context, entries: List<LibraryEntry>) {
-        // Playback progress updates frequently. Publish the new index immediately while Android
-        // writes it asynchronously, so a Library refresh never waits for a disk fsync on the UI thread.
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-            .putString(KEY_ENTRIES, LibraryCodec.encode(entries))
-            .apply()
+    fun save(context: Context, entries: List<LibraryEntry>): java.util.concurrent.CompletableFuture<Boolean> {
+        Persistence.requireOwner()
+        val appContext = context.applicationContext
+        val snapshot = entries.toList()
+        return Persistence.submitSnapshot("library") {
+            val encoded = LibraryCodec.encode(snapshot)
+            Persistence.recordEncoded(encoded)
+            val saved = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putString(KEY_ENTRIES, encoded).commit()
+            saved
+        }
     }
 
     fun load(context: Context): List<LibraryEntry> {

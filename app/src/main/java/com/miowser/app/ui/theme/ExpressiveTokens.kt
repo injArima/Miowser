@@ -12,7 +12,6 @@ object ExpressiveTokens {
     val compactIcon = 24.dp
     val featuredIcon = 28.dp
     val minimumTouchTarget = 48.dp
-    const val compactMotionMillis = 180
 }
 
 val ExpressiveShapes = Shapes(

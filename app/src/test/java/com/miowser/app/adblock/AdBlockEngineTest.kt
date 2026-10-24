@@ -1,10 +1,21 @@
 package com.miowser.app.adblock
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AdBlockEngineTest {
+
+    @Test
+    fun `blocked navigation reports the installed fallback source`() {
+        val engine = AdBlockEngine()
+        val info = engine.blockedNavigation("https://doubleclick.net/", emptyMap())!!
+        assertEquals(listOf("miowser-built-in"), info.sources.map { it.id })
+        assertEquals("||doubleclick.net^", info.rule)
+        assertNull(engine.blockedNavigation("https://example.org/", emptyMap()))
+    }
 
     private fun ruleFor(domain: String?, selector: String, excludedDomains: List<String> = emptyList()) =
         CosmeticRule(domain = domain, selector = selector, isException = false, source = FilterSource.SUBSCRIBED, excludedDomains = excludedDomains)

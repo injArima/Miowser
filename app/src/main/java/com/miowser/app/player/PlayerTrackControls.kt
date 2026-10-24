@@ -26,7 +26,8 @@ internal data class PlayerTrackSelection(
 internal data class PlayerTrackPreferences(
     val subtitles: PlayerTrackSelection = PlayerTrackSelection(),
     val audio: PlayerTrackSelection = PlayerTrackSelection(),
-    val video: PlayerTrackSelection = PlayerTrackSelection()
+    val video: PlayerTrackSelection = PlayerTrackSelection(),
+    val subtitleDelayMs: Long? = null
 ) {
     fun selection(kind: PlayerTrackKind): PlayerTrackSelection = when (kind) {
         PlayerTrackKind.SUBTITLE -> subtitles
@@ -47,7 +48,8 @@ internal data class PlayerTrackOption(
     val groupIndex: Int,
     val trackIndex: Int,
     val label: String,
-    val detail: String
+    val detail: String,
+    val externalSubtitleUrl: String? = null
 )
 
 internal data class PlayerTrackSnapshot(
@@ -61,6 +63,14 @@ internal data class PlayerTrackSnapshot(
         PlayerTrackKind.VIDEO -> video
     }
 }
+
+/** Stable before Media3 has prepared the external track, so a tap can be queued immediately. */
+internal fun externalSubtitleSelectionKey(url: String): String = DETECTED_VTT_TRACK_ID + url
+
+internal fun externalSubtitleUrlFromSelection(selection: PlayerTrackSelection): String? =
+    selection.optionKey?.takeIf {
+        selection.mode == PlayerTrackMode.SPECIFIC && it.startsWith(DETECTED_VTT_TRACK_ID)
+    }?.removePrefix(DETECTED_VTT_TRACK_ID)
 
 internal fun playerTrackButtonLabel(
     kind: PlayerTrackKind,
@@ -82,6 +92,8 @@ internal fun playerTrackButtonLabel(
     }
 }
 
+// Track-group identity and bitrate metadata require review when upgrading Media3.
+@androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 internal fun buildPlayerTrackSnapshot(tracks: Tracks): PlayerTrackSnapshot {
     val subtitles = mutableListOf<PlayerTrackOption>()
     val audio = mutableListOf<PlayerTrackOption>()
@@ -98,12 +110,17 @@ internal fun buildPlayerTrackSnapshot(tracks: Tracks): PlayerTrackSnapshot {
             val format = group.getTrackFormat(trackIndex)
             val (label, detail) = describeTrack(kind, format, trackIndex)
             val option = PlayerTrackOption(
-                key = stableTrackKey(kind, group.mediaTrackGroup.id, format, trackIndex),
+                key = format.id?.takeIf {
+                    kind == PlayerTrackKind.SUBTITLE && it.startsWith(DETECTED_VTT_TRACK_ID)
+                } ?: stableTrackKey(kind, group.mediaTrackGroup.id, format, trackIndex),
                 kind = kind,
                 groupIndex = groupIndex,
                 trackIndex = trackIndex,
                 label = label,
-                detail = detail
+                detail = detail,
+                externalSubtitleUrl = format.id?.takeIf {
+                    kind == PlayerTrackKind.SUBTITLE && it.startsWith(DETECTED_VTT_TRACK_ID)
+                }?.removePrefix(DETECTED_VTT_TRACK_ID)
             )
             when (kind) {
                 PlayerTrackKind.SUBTITLE -> subtitles += option
@@ -192,6 +209,7 @@ internal fun trackBitrateLabel(bitrate: Int): String? = when {
     else -> "${bitrate / 1_000} kbps"
 }
 
+@androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 private fun effectiveBitrate(format: Format): Int = when {
     format.averageBitrate > 0 -> format.averageBitrate
     format.peakBitrate > 0 -> format.peakBitrate
@@ -219,16 +237,19 @@ internal object PlayerTrackPreferenceCodec {
         preferences.audio.mode.name,
         encodeText(preferences.audio.optionKey),
         preferences.video.mode.name,
-        encodeText(preferences.video.optionKey)
+        encodeText(preferences.video.optionKey),
+        preferences.subtitleDelayMs?.coerceIn(-MAX_SUBTITLE_DELAY_MS, MAX_SUBTITLE_DELAY_MS)?.toString().orEmpty()
     ).joinToString("\t")
 
     fun decode(raw: String): PlayerTrackPreferences? = runCatching {
         val parts = raw.split('\t')
-        require(parts.size == 6)
+        require(parts.size == 6 || parts.size == 7)
         PlayerTrackPreferences(
             subtitles = PlayerTrackSelection(PlayerTrackMode.valueOf(parts[0]), decodeText(parts[1])),
             audio = PlayerTrackSelection(PlayerTrackMode.valueOf(parts[2]), decodeText(parts[3])),
-            video = PlayerTrackSelection(PlayerTrackMode.valueOf(parts[4]), decodeText(parts[5]))
+            video = PlayerTrackSelection(PlayerTrackMode.valueOf(parts[4]), decodeText(parts[5])),
+            subtitleDelayMs = parts.getOrNull(6)?.takeIf(String::isNotEmpty)?.toLong()
+                ?.coerceIn(-MAX_SUBTITLE_DELAY_MS, MAX_SUBTITLE_DELAY_MS)
         ).also { preferences ->
             preferences.let { listOf(it.subtitles, it.audio, it.video) }.forEach { selection ->
                 require(selection.mode != PlayerTrackMode.SPECIFIC || !selection.optionKey.isNullOrBlank())
@@ -261,12 +282,15 @@ internal object PlayerTrackPreferenceStore {
     }
 
     fun save(context: Context, identityKey: String, preferences: PlayerTrackPreferences) {
-        val editor = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+        val app = context.applicationContext
+        com.miowser.app.persistence.Persistence.submit("player-tracks") {
+        val editor = app.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putString(itemKey(identityKey), PlayerTrackPreferenceCodec.encode(preferences))
         if (preferences.subtitles.mode != PlayerTrackMode.SPECIFIC) {
             editor.putString(GLOBAL_SUBTITLE_MODE, preferences.subtitles.mode.name)
         }
-        editor.apply()
+        editor.commit()
+        }
     }
 
     private fun itemKey(identityKey: String): String = "item_${sha256(identityKey)}"

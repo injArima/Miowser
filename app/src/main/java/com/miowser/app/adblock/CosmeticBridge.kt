@@ -3,18 +3,11 @@ package com.miowser.app.adblock
 import android.webkit.JavascriptInterface
 import com.miowser.app.settings.AppSettings
 
-/**
- * Exposed to page JS as `window.MiowserAdBlock` (via WebView.addJavascriptInterface) so the
- * document-start script can fetch this page's domain-specific cosmetic CSS synchronously and
- * inject it before the page's own scripts run — true document-start cosmetic hiding, not a
- * post-load pass. Safe to expose to arbitrary (untrusted) page content despite the historical
- * addJavascriptInterface risks: the only method here returns non-sensitive CSS text and does
- * nothing dangerous with its input regardless of what a malicious page passes in.
- */
+/** Public CSS only. Called by the page's deferred cosmetic scheduler, never for network matching. */
 class CosmeticBridge(private val engine: AdBlockEngine) {
     @JavascriptInterface
     fun cssFor(hostname: String?): String {
-        if (!AppSettings.current.adBlockEnabled) return ""
+        if (!AppSettings.current.adBlockEnabled || hostname == null || hostname.length > 253) return ""
         return engine.cosmeticCssFor(hostname?.lowercase().orEmpty())
     }
 }

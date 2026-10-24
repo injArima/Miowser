@@ -1,6 +1,13 @@
 package com.miowser.app.ui
 
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.res.painterResource
+import com.miowser.app.R
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.ButtonDefaults
@@ -32,7 +39,9 @@ class MiowserSnackbarVisuals(
     override val actionLabel: String,
     override val withDismissAction: Boolean,
     override val duration: SnackbarDuration,
-    val onAction: () -> Unit
+    val onAction: () -> Unit,
+    val secondaryActionLabel: String? = null,
+    val onSecondaryAction: (() -> Unit)? = null
 ) : SnackbarVisuals
 
 /** Rounded Material You snackbars with manual dismissal in either horizontal direction. */
@@ -56,22 +65,33 @@ fun MiowserSnackbarHost(hostState: SnackbarHostState, modifier: Modifier = Modif
             Snackbar(
                 action = actionLabel?.let { label ->
                     {
-                        TextButton(
-                            onClick = {
-                                // Run navigation/Undo/Share synchronously from the actual click,
-                                // then resolve SnackbarHostState so it removes this snackbar.
-                                // finally guarantees dismissal even if an action itself fails.
-                                try {
-                                    (data.visuals as? MiowserSnackbarVisuals)?.onAction?.invoke()
-                                } finally {
-                                    data.performAction()
-                                }
-                            },
-                            colors = ButtonDefaults.textButtonColors(
-                                contentColor = MaterialTheme.colorScheme.primary
-                            )
-                        ) {
-                            Text(label)
+                        Row {
+                            val visuals = data.visuals as? MiowserSnackbarVisuals
+                            visuals?.secondaryActionLabel?.let { secondaryLabel ->
+                                TextButton(
+                                    onClick = {
+                                        try { visuals.onSecondaryAction?.invoke() }
+                                        finally { data.performAction() }
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 8.dp),
+                                    colors = ButtonDefaults.textButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.primary
+                                    )
+                                ) { Text(secondaryLabel) }
+                            }
+                            TextButton(
+                                onClick = {
+                                    // Run navigation synchronously, then resolve the snackbar.
+                                    try { visuals?.onAction?.invoke() }
+                                    finally { data.performAction() }
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp),
+                                colors = ButtonDefaults.textButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.primary
+                                )
+                            ) {
+                                Text(label)
+                            }
                         }
                     }
                 },
@@ -90,7 +110,18 @@ fun MiowserSnackbarHost(hostState: SnackbarHostState, modifier: Modifier = Modif
                 actionContentColor = MaterialTheme.colorScheme.primary,
                 dismissActionContentColor = MaterialTheme.colorScheme.onSurfaceVariant
             ) {
-                Text(data.visuals.message)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_miowser_mark),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Text(data.visuals.message)
+                }
             }
         }
     }

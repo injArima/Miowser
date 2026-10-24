@@ -4,12 +4,15 @@ import android.graphics.Bitmap
 import android.net.http.SslError
 import android.util.Log
 import android.webkit.SslErrorHandler
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.miowser.app.adblock.AdBlockEngine
+import com.miowser.app.adblock.BlockedPageInfo
+import com.miowser.app.adblock.StubResponses
 import com.miowser.app.grabber.MediaType
 import com.miowser.app.grabber.MediaUrlClassifier
 import com.miowser.app.settings.AppSettings
@@ -35,21 +38,46 @@ private const val TAG = "Miowser/Intercept"
  * callback already does this for the async path Tab actually uses).
  */
 class MiowserWebViewClient(
+    private val isPrivate: Boolean,
     private val adBlockEngine: AdBlockEngine,
     private val onNavigationStateChanged: (canGoBack: Boolean, canGoForward: Boolean) -> Unit,
     private val onUrlChanged: (String) -> Unit,
     private val onNewPageStarted: () -> Unit,
     private val onPageStarted: () -> Unit,
     private val onPageError: (String) -> Unit,
+    private val onRendererGone: (WebView, crashed: Boolean) -> Unit,
+    private val onCertificateError: (String, SslErrorHandler, SslError) -> Unit,
+    private val onInsecureNavigationRequested: (String) -> Unit,
+    private val shouldBlockCompanionNavigation: (String) -> Boolean,
     private val onExternalNavigation: (String) -> Unit,
-    private val onCandidateMediaUrl: (url: String, type: MediaType) -> Unit,
+    private val onCandidateMediaUrl: (url: String, type: MediaType, referer: String?, origin: String?) -> Unit,
     private val onLikelyDownloadNavigation: (url: String) -> Unit,
-    private val onPageLoadFinished: (url: String, title: String) -> Unit
+    private val onPageLoadFinished: (url: String, title: String) -> Unit,
+    private val onMainFrameBlocked: (BlockedPageInfo) -> Unit = {},
+    private val onRequestBlocked: (String) -> Unit = {},
+    private val onScaleChanged: (oldScale: Float, newScale: Float) -> Unit = { _, _ -> }
 ) : WebViewClient() {
 
     @Volatile private var currentPageUrl: String = "about:blank"
+    @Volatile private var retired = false
+    @Volatile private var blockedMainFrame: BlockedPageInfo? = null
+
+    fun retire() { retired = true }
+
+    override fun onScaleChanged(view: WebView, oldScale: Float, newScale: Float) {
+        if (!retired) onScaleChanged(oldScale, newScale)
+    }
+
+    override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+        retire()
+        // Android delivers this for each affected view, including views sharing a renderer.
+        // Only retire the supplied view; unrelated tabs must keep their engines.
+        onRendererGone(view, detail.didCrash())
+        return true
+    }
 
     override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+        if (retired) return
         if (url != null) {
             currentPageUrl = url
             onUrlChanged(url)
@@ -60,11 +88,20 @@ class MiowserWebViewClient(
     }
 
     override fun onPageFinished(view: WebView, url: String?) {
+        if (retired) return
         // Covers redirects: the URL at load-finish can differ from the one onPageStarted saw.
         if (url != null) {
             currentPageUrl = url
             onUrlChanged(url)
             refreshNavigationState(view)
+            val block = blockedMainFrame
+            if (block?.url == url) {
+                // Publish on the UI callback, never from Chromium's interception thread. The
+                // native error surface also stays visible if a cosmetic selector hides HTML.
+                onPageError("The ad blocker blocked this page. Open the shield or site settings to review protection, then reload.")
+                onMainFrameBlocked(block)
+                return
+            }
             // view.title is WebView's own synchronous getter — usually already populated by
             // load-finish for real pages, so this doesn't need to wait on the separate
             // WebChromeClient.onReceivedTitle callback (which can arrive slightly later, or not
@@ -87,18 +124,26 @@ class MiowserWebViewClient(
      * address bar's select-all-on-focus race (see BrowserScreen's matching LaunchedEffect).
      */
     private fun refreshNavigationState(view: WebView) {
-        view.post { onNavigationStateChanged(view.canGoBack(), view.canGoForward()) }
+        view.post {
+            if (!retired) onNavigationStateChanged(view.canGoBack(), view.canGoForward())
+        }
     }
 
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+        if (retired) return true
         val url = request.url.toString()
         if (request.isForMainFrame) {
+            if (shouldBlockCompanionNavigation(url)) return true
             if (ExternalNavigation.isExternal(url)) {
                 onExternalNavigation(url)
                 return true
             }
             if (!ExternalNavigation.canStayInWebView(url)) {
                 onPageError("This link uses an unsupported or unsafe address type.")
+                return true
+            }
+            if (HttpNavigationApproval.requiresWarning(url, isPrivate)) {
+                onInsecureNavigationRequested(url)
                 return true
             }
         }
@@ -112,13 +157,14 @@ class MiowserWebViewClient(
     }
 
     override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
-        handler.cancel()
+        if (retired) { handler.cancel(); return }
         if (error.url == currentPageUrl || error.url == view.url) {
-            onPageError("This site's security certificate could not be verified. The connection was blocked.")
-        }
+            onCertificateError(error.url, handler, error)
+        } else handler.cancel()
     }
 
     override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+        if (retired) return
         if (request.isForMainFrame) {
             onPageError(error.description?.toString() ?: "This page could not be loaded.")
         }
@@ -128,20 +174,35 @@ class MiowserWebViewClient(
         view: WebView,
         request: WebResourceRequest
     ): WebResourceResponse? {
+        if (retired) return null
         val requestUrl = request.url.toString()
         // For the main-frame navigation request itself, the request *is* the new page — the
         // tracked currentPageUrl still reflects the previous page until this commits.
         val pageUrl = if (request.isForMainFrame) requestUrl else currentPageUrl
+        if (request.isForMainFrame) blockedMainFrame = null
 
         if (AppSettings.current.adBlockEnabled) {
-            val response = adBlockEngine.decide(pageUrl, requestUrl, request.requestHeaders, request.isForMainFrame)
+            val response = if (request.isForMainFrame) {
+                adBlockEngine.blockedNavigation(requestUrl, request.requestHeaders)?.let { info ->
+                    blockedMainFrame = info
+                    StubResponses.blockedDocument(info.rule, info.sources)
+                }
+            } else adBlockEngine.decide(pageUrl, requestUrl, request.requestHeaders, false)
             if (response != null) {
-                Log.d(TAG, "blocked: $requestUrl")
+                onRequestBlocked(requestUrl)
                 return response
             }
         }
 
-        MediaUrlClassifier.classify(requestUrl)?.let { type -> onCandidateMediaUrl(requestUrl, type) }
+        MediaUrlClassifier.classify(requestUrl)?.let { type ->
+            val headers = request.requestHeaders
+            onCandidateMediaUrl(
+                requestUrl,
+                type,
+                headers.entries.firstOrNull { it.key.equals("Referer", ignoreCase = true) }?.value,
+                headers.entries.firstOrNull { it.key.equals("Origin", ignoreCase = true) }?.value
+            )
+        }
         return null
     }
 
@@ -152,6 +213,12 @@ class MiowserWebViewClient(
     // and the audit finding that motivated all this: navigating directly between two
     // media-manifest URLs skipped onPageStarted entirely).
     override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
+        if (retired) return
+        if (url != null && url.substringBefore('#') != currentPageUrl.substringBefore('#')) {
+            currentPageUrl = url
+            onUrlChanged(url)
+            onNewPageStarted()
+        }
         refreshNavigationState(view)
     }
 }

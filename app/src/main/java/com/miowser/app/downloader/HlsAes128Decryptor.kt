@@ -14,10 +14,16 @@ import javax.crypto.spec.SecretKeySpec
  */
 object HlsAes128Decryptor {
     fun decrypt(ciphertext: ByteArray, key: ByteArray, ivHex: String?, sequenceNumber: Long): ByteArray {
+        val cipher = cipher(key, ivHex, sequenceNumber)
+        return cipher.doFinal(ciphertext)
+    }
+
+    internal fun cipher(key: ByteArray, ivHex: String?, sequenceNumber: Long): Cipher {
+        require(key.size == 16) { "HLS AES-128 key must contain exactly 16 bytes" }
         val iv = ivHex?.let { hexToBytes(it) } ?: sequenceNumberToIv(sequenceNumber)
         val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
         cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(iv))
-        return cipher.doFinal(ciphertext)
+        return cipher
     }
 
     internal fun sequenceNumberToIv(sequenceNumber: Long): ByteArray {

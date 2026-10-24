@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Full-color artwork from Miowser App Icon.svg. Keep launcher and splash colors independent of system tint. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="280.21"
+    android:viewportHeight="280.21">
+    <path
+        android:fillColor="#05142D"
+        android:pathData="M140.89,235.75c-52.74,0 -95.65,-42.91 -95.65,-95.65s42.91,-95.65 95.65,-95.65c3.31,0 6,2.69 6,6s-2.69,6 -6,6c-46.12,0 -83.65,37.52 -83.65,83.65s37.52,83.65 83.65,83.65 83.65,-37.52 83.65,-83.65c0,-3.31 2.69,-6 6,-6s6,2.69 6,6c0,52.74 -42.91,95.65 -95.65,95.65Z" />
+    <path android:fillColor="#FC5753"
+        android:pathData="M180.15,56.26a7.53,7.53 0,1 1,-15.06 0a7.53,7.53 0,1 1,15.06 0Z" />
+    <path android:fillColor="#FDBC40"
+        android:pathData="M211.99,76.89a7.53,7.53 0,1 1,-15.06 0a7.53,7.53 0,1 1,15.06 0Z" />
+    <path android:fillColor="#33C748"
+        android:pathData="M232.43,108.8a7.53,7.53 0,1 1,-15.06 0a7.53,7.53 0,1 1,15.06 0Z" />
+    <path android:pathData="M184.46,131.72l-59.84,-34.55c-6.46,-3.73 -14.52,0.93 -14.52,8.39v69.1c0,7.45 8.07,12.11 14.52,8.39l59.84,-34.55c6.46,-3.73 6.46,-13.04 0,-16.77Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear"
+                android:startX="140.72" android:startY="97.7"
+                android:endX="155.43" android:endY="195.48">
+                <item android:offset="0" android:color="#0382FE" />
+                <item android:offset="0.19" android:color="#0376FC" />
+                <item android:offset="1" android:color="#034BF6" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

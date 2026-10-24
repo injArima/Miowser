@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Miowser"
 include(":app")
+include(":benchmark")

@@ -55,12 +55,14 @@ fun BrowsingDataPage(onClear: (BrowsingDataSelection) -> Unit, onBack: () -> Uni
         }
     }
     if (confirm) {
-        AlertDialog(
-            onDismissRequest = { confirm = false },
-            title = { Text("Clear selected data?") },
-            text = { Text("This removes the checked categories from Miowser. This cannot be undone.") },
-            confirmButton = { TextButton(onClick = { confirm = false; onClear(selected) }) { Text("Clear") } },
-            dismissButton = { TextButton(onClick = { confirm = false }) { Text("Cancel") } }
+        MiowserConfirmationDialog(
+            title = "Clear selected data?",
+            message = "This removes the checked categories from Miowser. This cannot be undone.",
+            onDismiss = { confirm = false },
+            actions = listOf(
+                ConfirmationAction("Cancel", { confirm = false }, ConfirmationTone.CAUTION),
+                ConfirmationAction("Clear", { confirm = false; onClear(selected) }, ConfirmationTone.CAUTION)
+            )
         )
     }
 }

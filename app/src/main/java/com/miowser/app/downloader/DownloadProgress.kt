@@ -45,3 +45,9 @@ fun Download.timeProgressLabel(elapsedSeconds: Long = elapsedActiveMillis() / 1_
         else -> null
     }
 }
+
+
+data class DownloadPresentation(val title: String, val status: DownloadStatus,
+    val checking: Boolean, val percent: Int?, val timing: String?)
+fun Download.presentation(elapsedSeconds: Long = elapsedActiveMillis() / 1000): DownloadPresentation =
+    DownloadPresentation(displayName, status, recoveryChecking, progressPercent(), timeProgressLabel(elapsedSeconds))

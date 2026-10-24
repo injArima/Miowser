@@ -3,9 +3,12 @@ package com.miowser.app.downloader
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicInteger
 
 enum class DownloadStatus { QUEUED, DOWNLOADING, PAUSED, MUXING, COMPLETED, FAILED, CANCELED }
 
@@ -20,7 +23,13 @@ enum class DownloadKind { DIRECT_FILE, HLS, DASH, WEBVIEW_RESOURCE }
  * separate per-thread status to track.
  */
 class DownloadThreadProgress(val startByte: Long, val endByte: Long) {
-    var downloadedBytes by mutableStateOf(0L)
+    private val exact = AtomicLong()
+    private var visible by mutableLongStateOf(0L)
+    var downloadedBytes: Long
+        get() = exact.get()
+        set(value) { exact.set(value) }
+    val publishedBytes: Long get() = visible
+    internal fun publish() { visible = exact.get() }
 }
 
 /**
@@ -57,17 +66,38 @@ class Download(
         get() = observableStatus
         set(value) {
             updateElapsedForStatusChange(observableStatus, value)
+            publishProgress(force = true)
             observableStatus = value
         }
-    private var observableBytesDownloaded by mutableStateOf(0L)
+    private var observableBytesDownloaded by mutableLongStateOf(0L)
     var bytesDownloaded: Long
         get() = observableBytesDownloaded
         set(value) {
-            updateProgressRate(value)
-            observableBytesDownloaded = value
+            exactBytes.set(value)
+            publishProgress()
         }
-    var totalBytes by mutableStateOf(-1L) // -1 = unknown
+    private val exactBytes = AtomicLong()
+    private val cadence = ProgressCadence()
+    @Synchronized fun publishProgress(force: Boolean = false) {
+        val now = System.nanoTime()
+        if (!cadence.shouldPublish(now, force)) return
+        val bytes = exactBytes.get()
+        updateProgressRate(bytes)
+        androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
+            observableBytesDownloaded = bytes
+            threadProgress.forEach { it.publish() }
+        }
+    }
+    internal fun addProgress(bytes: Long) { exactBytes.addAndGet(bytes); publishProgress() }
+    var totalBytes by mutableLongStateOf(-1L) // -1 = unknown
     var errorMessage by mutableStateOf<String?>(null)
+    /** Transient connection errors recovered automatically during this attempt. */
+    private val connectionRetryCounter = AtomicInteger(0)
+    var retryCount by mutableIntStateOf(0)
+        private set
+
+    fun recordConnectionRetry() { retryCount = connectionRetryCounter.incrementAndGet() }
+    fun resetConnectionRetries() { connectionRetryCounter.set(0); retryCount = 0 }
 
     // The finished file's real content:// (or, pre-Q, file://) Uri — set once, right alongside
     // MediaStoreOutput.finish() in each of the three downloaders, never touched again after that.
@@ -75,6 +105,10 @@ class Download(
     // file to point at). This is what lets the Hub actually play a completed download locally
     // instead of only ever re-fetching from the original remote URL.
     var savedUri by mutableStateOf<Uri?>(null)
+    /** Completion is not acknowledged until its presentation record reaches disk. */
+    var recordSaved by mutableStateOf(false)
+    var recoveryChecking by mutableStateOf(false)
+    internal var startupRecord: SavedDownload? = null
 
     // Empty for anything that isn't a multi-threaded direct-file download in progress — single-
     // threaded downloads (HLS/DASH always; a direct file whose server didn't support ranged
@@ -90,11 +124,59 @@ class Download(
      * would duplicate its entire payload (and potentially private page data) in SharedPreferences.
      */
     @Volatile var rendererTransfer: ((Download) -> Unit)? = null
+    @Volatile var rendererSourceUnavailable = false
+        private set
+
+    /** A dead page cannot reconnect. Wake paused work without disguising failure as Cancel. */
+    fun invalidateRendererSource(message: String) = synchronized(pauseMonitor) {
+        rendererSourceUnavailable = true
+        rendererTransfer = null // release the closure's originating WebView/tab references
+        if (status != DownloadStatus.COMPLETED && !isCanceled) {
+            isPaused = false
+            errorMessage = message
+            status = DownloadStatus.FAILED
+        }
+        pauseMonitor.notifyAll()
+    }
 
     // Checked from the download thread to stop early; not Compose state, and deliberately not
     // read by the UI (status transitioning to CANCELED is what the UI reacts to).
     @Volatile var isCanceled = false
+    /** A link refresh stops this worker without deleting its verified recovery artifacts. */
+    @Volatile var preserveRecoveryOnCancel = false
     @Volatile private var isPaused = false
+    @Volatile internal var yieldRequested = false
+        private set
+    private val connections = java.util.concurrent.ConcurrentHashMap.newKeySet<java.net.HttpURLConnection>()
+    internal fun beginAttempt() { yieldRequested = false }
+    internal fun openConnection(url: java.net.URL): java.net.HttpURLConnection =
+        com.miowser.app.network.NativeConnections.open(url,
+            com.miowser.app.network.ConnectionBudget.Priority.TRANSFER, ::checkTransferActive).also {
+                connections.add(it)
+                if (yieldRequested || isCanceled) { closeConnection(it); checkTransferActive() }
+            }
+    internal fun closeConnection(connection: java.net.HttpURLConnection) {
+        try { com.miowser.app.network.NativeConnections.close(connection) } finally { connections.remove(connection) }
+    }
+    private fun interruptConnections() {
+        val retired = connections.toList()
+        if (retired.isNotEmpty()) connectionCleanup.execute {
+            retired.forEach { runCatching { it.disconnect() } }
+        }
+    }
+    internal fun waitBeforeRetry(milliseconds: Long) {
+        var left = milliseconds
+        while (left > 0) {
+            checkTransferActive()
+            val slice = minOf(left, 100L)
+            Thread.sleep(slice)
+            left -= slice
+        }
+    }
+    internal fun checkTransferActive() {
+        awaitIfPaused()
+        if (isCanceled) throw java.util.concurrent.CancellationException("Download canceled")
+    }
     @Volatile private var statusBeforePause = DownloadStatus.DOWNLOADING
     private val pauseMonitor = Object()
     private val progressMonitor = Object()
@@ -125,9 +207,22 @@ class Download(
         if (status != DownloadStatus.QUEUED && status != DownloadStatus.DOWNLOADING) return@synchronized false
         statusBeforePause = status
         isPaused = true
+        yieldRequested = true
+        interruptConnections()
         status = DownloadStatus.PAUSED
         resetProgressClock(keepRate = true)
         true
+    }
+
+    internal fun requestServiceCheckpoint(owned: Boolean = false) = synchronized(pauseMonitor) {
+        if (status in listOf(DownloadStatus.QUEUED, DownloadStatus.DOWNLOADING, DownloadStatus.MUXING) ||
+            (owned && status == DownloadStatus.FAILED)) {
+            statusBeforePause = DownloadStatus.DOWNLOADING
+            isPaused = true
+            yieldRequested = true
+            interruptConnections()
+            status = DownloadStatus.PAUSED
+        }
     }
 
     fun requestResume(): Boolean = synchronized(pauseMonitor) {
@@ -148,6 +243,7 @@ class Download(
 
     fun requestCancel() = synchronized(pauseMonitor) {
         isCanceled = true
+        interruptConnections()
         isPaused = false
         pauseMonitor.notifyAll()
     }
@@ -157,11 +253,9 @@ class Download(
         if (!isPaused) status = stage
     }
 
-    /** Blocks only the downloader worker, never the main/UI thread. */
+    /** Releases the downloader's ownership at its next cooperative checkpoint. */
     fun awaitIfPaused() {
-        synchronized(pauseMonitor) {
-            while (isPaused && !isCanceled) pauseMonitor.wait()
-        }
+        if ((isPaused || yieldRequested) && !isCanceled) throw DownloadYieldException()
     }
 
     /**
@@ -224,6 +318,9 @@ class Download(
         }
 
     companion object {
+        private val connectionCleanup = java.util.concurrent.Executors.newSingleThreadExecutor {
+            Thread(it, "Miowser-transfer-close")
+        }
         private val idCounter = AtomicLong(0)
         fun nextId(): Long = idCounter.getAndIncrement()
 
@@ -236,3 +333,6 @@ class Download(
 
 private fun DownloadStatus.isTimedStage(): Boolean =
     this == DownloadStatus.DOWNLOADING || this == DownloadStatus.MUXING
+
+/** Signals safe ownership release, never a retryable network failure. */
+internal class DownloadYieldException : RuntimeException()

@@ -1,6 +1,8 @@
 package com.miowser.app.browser
 
 import android.content.Context
+import com.miowser.app.adblock.isSameRegistrableDomain
+import com.miowser.app.persistence.Persistence
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -19,7 +21,8 @@ data class SpeedDial(
     val id: Long,
     val title: String,
     val url: String,
-    val folderId: Long? = null
+    val folderId: Long? = null,
+    val autoTitle: Boolean = false
 )
 
 data class SpeedDialFolder(val id: Long, val name: String)
@@ -36,17 +39,20 @@ object SpeedDialCodec {
             entry.id.toString(),
             sanitize(entry.title),
             sanitize(entry.url),
-            entry.folderId?.toString().orEmpty()
+            entry.folderId?.toString().orEmpty(),
+            entry.autoTitle.toString()
         )
             .joinToString(FIELD_DELIMITER.toString())
     }
 
     fun decode(raw: String): List<SpeedDial> = raw.split(RECORD_DELIMITER).mapNotNull { line ->
-        val parts = line.split(FIELD_DELIMITER, limit = 4)
-        if (parts.size !in 3..4 || parts[1].isBlank() || parts[2].isBlank()) return@mapNotNull null
+        val parts = line.split(FIELD_DELIMITER, limit = 5)
+        if (parts.size !in 3..5 || parts[1].isBlank() || parts[2].isBlank()) return@mapNotNull null
         val id = parts[0].toLongOrNull() ?: return@mapNotNull null
         val folderId = parts.getOrNull(3)?.takeIf(String::isNotBlank)?.toLongOrNull()
-        SpeedDial(id = id, title = parts[1], url = parts[2], folderId = folderId)
+        val autoTitle = parts.getOrNull(4)?.toBooleanStrictOrNull()
+            ?: (parts[1] == defaultSpeedDialTitle(parts[2]))
+        SpeedDial(id = id, title = parts[1], url = parts[2], folderId = folderId, autoTitle = autoTitle)
     }
 
     private fun sanitize(value: String): String =
@@ -70,14 +76,39 @@ object SpeedDialFolderCodec {
 }
 
 object SpeedDials {
-    val entries = mutableStateListOf<SpeedDial>()
-    val folders = mutableStateListOf<SpeedDialFolder>()
+    private val mutableEntries = mutableStateListOf<SpeedDial>()
+    val entries: List<SpeedDial> get() = mutableEntries
+    private val mutableFolders = mutableStateListOf<SpeedDialFolder>()
+    val folders: List<SpeedDialFolder> get() = mutableFolders
     private val idCounter = AtomicLong(0L)
     private val folderIdCounter = AtomicLong(0L)
     var sort by mutableStateOf(SpeedDialSort.ADDED)
         private set
 
+    private var loaded = false
+
+    suspend fun restoreAsync(context: Context) {
+        Persistence.requireOwner()
+        if (loaded) return
+        val (entries, folders, savedSort) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val prefs = context.getSharedPreferences(SPEED_DIAL_PREFS, Context.MODE_PRIVATE)
+            Triple(SpeedDialCodec.decode(prefs.getString(SPEED_DIAL_KEY, "").orEmpty()),
+                SpeedDialFolderCodec.decode(prefs.getString(SPEED_DIAL_FOLDER_KEY, "").orEmpty()),
+                prefs.getString(SPEED_DIAL_SORT_KEY, null)?.let { runCatching { SpeedDialSort.valueOf(it) }.getOrNull() }
+                    ?: SpeedDialSort.ADDED)
+        }
+        if (loaded) return
+        mutableEntries.addAll(entries)
+        mutableFolders.addAll(folders)
+        sort = savedSort
+        entries.maxOfOrNull(SpeedDial::id)?.let(::ensureNextIdAbove)
+        folders.maxOfOrNull(SpeedDialFolder::id)?.let(::ensureNextFolderIdAbove)
+        loaded = true
+    }
+
     fun restore(context: Context) {
+        Persistence.requireOwner()
+        if (loaded) return
         val raw = context.getSharedPreferences(SPEED_DIAL_PREFS, Context.MODE_PRIVATE)
             .getString(SPEED_DIAL_KEY, null)
         val prefs = context.getSharedPreferences(SPEED_DIAL_PREFS, Context.MODE_PRIVATE)
@@ -88,150 +119,194 @@ object SpeedDials {
         sort = prefs.getString(SPEED_DIAL_SORT_KEY, null)
             ?.let { runCatching { SpeedDialSort.valueOf(it) }.getOrNull() }
             ?: SpeedDialSort.ADDED
-        entries.clear()
-        entries.addAll(restored)
-        folders.clear()
-        folders.addAll(restoredFolders)
+        mutableEntries.clear()
+        mutableEntries.addAll(restored)
+        mutableFolders.clear()
+        mutableFolders.addAll(restoredFolders)
         restored.maxOfOrNull(SpeedDial::id)?.let(::ensureNextIdAbove)
         restoredFolders.maxOfOrNull(SpeedDialFolder::id)?.let(::ensureNextFolderIdAbove)
+        loaded = true
     }
 
-    /** Adds or edits one entry. URLs stay unique; saving an existing URL updates that card. */
+    fun duplicateFor(address: String, excludingId: Long? = null): SpeedDial? =
+        findSpeedDialDomainDuplicate(mutableEntries, normalizeSpeedDialAddress(address), excludingId)
+
+    /** Adds or edits one entry. A domain match requires an explicit duplicate override. */
     fun save(
         context: Context,
         id: Long?,
         title: String,
         address: String,
-        folderId: Long? = null
+        folderId: Long? = null,
+        allowDuplicate: Boolean = false
     ): SpeedDial? {
+        Persistence.requireOwner()
         val url = normalizeSpeedDialAddress(address)
         if (url.isBlank()) return null
+        if (!allowDuplicate && findSpeedDialDomainDuplicate(mutableEntries, url, id) != null) return null
+        val targetIndex = id?.let { target -> mutableEntries.indexOfFirst { it.id == target } } ?: -1
         val finalTitle = title.trim().ifBlank { defaultSpeedDialTitle(url) }
-        val duplicateIndex = entries.indexOfFirst { it.url.equals(url, ignoreCase = true) && it.id != id }
-        val targetIndex = id?.let { target -> entries.indexOfFirst { it.id == target } } ?: -1
-        val targetId = when {
-            targetIndex >= 0 -> id!!
-            duplicateIndex >= 0 -> entries[duplicateIndex].id
-            else -> idCounter.getAndIncrement()
-        }
-        val validFolderId = folderId?.takeIf { folder -> folders.any { it.id == folder } }
-        val updated = SpeedDial(targetId, finalTitle, url, validFolderId)
-        when {
-            targetIndex >= 0 -> {
-                entries[targetIndex] = updated
-                if (duplicateIndex >= 0) entries.removeAt(
-                    if (duplicateIndex > targetIndex) duplicateIndex else duplicateIndex
-                )
-            }
-            duplicateIndex >= 0 -> entries[duplicateIndex] = updated
-            else -> entries.add(updated)
-        }
+        val autoTitle = title.isBlank()
+        val targetId = if (targetIndex >= 0) id!! else idCounter.getAndIncrement()
+        val validFolderId = folderId?.takeIf { folder -> mutableFolders.any { it.id == folder } }
+        val updated = SpeedDial(targetId, finalTitle, url, validFolderId, autoTitle = autoTitle)
+        if (targetIndex >= 0) mutableEntries[targetIndex] = updated else mutableEntries.add(updated)
         persist(context)
         return updated
     }
 
     fun move(context: Context, id: Long, folderId: Long?) {
-        val index = entries.indexOfFirst { it.id == id }
+        Persistence.requireOwner()
+        val index = mutableEntries.indexOfFirst { it.id == id }
         if (index < 0) return
-        val validFolderId = folderId?.takeIf { folder -> folders.any { it.id == folder } }
-        entries[index] = entries[index].copy(folderId = validFolderId)
+        val validFolderId = folderId?.takeIf { folder -> mutableFolders.any { it.id == folder } }
+        mutableEntries[index] = mutableEntries[index].copy(folderId = validFolderId)
         persist(context)
     }
 
+    /** Site titles update only entries whose names the user has not edited. */
+    fun updateAutoTitle(context: Context, url: String, title: String) {
+        Persistence.requireOwner()
+        val cleanTitle = title.trim().replace(Regex("\\s+"), " ").take(160)
+        if (cleanTitle.isBlank() || cleanTitle.equals(url, ignoreCase = true) ||
+            cleanTitle.equals(defaultSpeedDialTitle(url), ignoreCase = true) ||
+            cleanTitle.equals("New Tab", ignoreCase = true) ||
+            cleanTitle.equals("Just a moment...", ignoreCase = true) ||
+            cleanTitle.equals("Loading...", ignoreCase = true) ||
+            cleanTitle.equals("about:blank", ignoreCase = true)
+        ) return
+        var changed = false
+        mutableEntries.indices.forEach { index ->
+            val entry = mutableEntries[index]
+            if (entry.autoTitle && entry.title == defaultSpeedDialTitle(entry.url) &&
+                entry.url.trimEnd('/') == url.trimEnd('/') && entry.title != cleanTitle
+            ) {
+                mutableEntries[index] = entry.copy(title = cleanTitle)
+                changed = true
+            }
+        }
+        if (changed) persist(context)
+    }
+
     fun moveMany(context: Context, ids: Set<Long>, folderId: Long?) {
+        Persistence.requireOwner()
         if (ids.isEmpty()) return
-        val validFolderId = folderId?.takeIf { folder -> folders.any { it.id == folder } }
-        entries.indices.forEach { index ->
-            if (entries[index].id in ids) entries[index] = entries[index].copy(folderId = validFolderId)
+        val validFolderId = folderId?.takeIf { folder -> mutableFolders.any { it.id == folder } }
+        mutableEntries.indices.forEach { index ->
+            if (mutableEntries[index].id in ids) mutableEntries[index] = mutableEntries[index].copy(folderId = validFolderId)
         }
         persist(context)
     }
 
     fun setSort(context: Context, value: SpeedDialSort) {
+        Persistence.requireOwner()
         sort = value
         persist(context)
     }
 
     fun addFolder(context: Context, name: String): SpeedDialFolder? {
+        Persistence.requireOwner()
         val cleanName = name.trim()
         if (cleanName.isBlank()) return null
-        val existing = folders.firstOrNull { it.name.equals(cleanName, ignoreCase = true) }
+        val existing = mutableFolders.firstOrNull { it.name.equals(cleanName, ignoreCase = true) }
         if (existing != null) return existing
         val folder = SpeedDialFolder(folderIdCounter.getAndIncrement(), cleanName)
-        folders.add(folder)
+        mutableFolders.add(folder)
         persist(context)
         return folder
     }
 
     fun renameFolder(context: Context, id: Long, name: String) {
+        Persistence.requireOwner()
         val cleanName = name.trim()
-        val index = folders.indexOfFirst { it.id == id }
+        val index = mutableFolders.indexOfFirst { it.id == id }
         if (index < 0 || cleanName.isBlank()) return
-        folders[index] = folders[index].copy(name = cleanName)
+        mutableFolders[index] = mutableFolders[index].copy(name = cleanName)
         persist(context)
     }
 
     /** Removes only the folder. Its speed dials return safely to the homepage root. */
     fun removeFolder(context: Context, id: Long): SpeedDialFolder? {
-        val index = folders.indexOfFirst { it.id == id }
+        Persistence.requireOwner()
+        val index = mutableFolders.indexOfFirst { it.id == id }
         if (index < 0) return null
-        entries.indices.forEach { entryIndex ->
-            if (entries[entryIndex].folderId == id) {
-                entries[entryIndex] = entries[entryIndex].copy(folderId = null)
+        mutableEntries.indices.forEach { entryIndex ->
+            if (mutableEntries[entryIndex].folderId == id) {
+                mutableEntries[entryIndex] = mutableEntries[entryIndex].copy(folderId = null)
             }
         }
-        return folders.removeAt(index).also { persist(context) }
+        return mutableFolders.removeAt(index).also { persist(context) }
     }
 
     fun remove(context: Context, id: Long): SpeedDial? {
-        val index = entries.indexOfFirst { it.id == id }
+        Persistence.requireOwner()
+        val index = mutableEntries.indexOfFirst { it.id == id }
         if (index < 0) return null
-        return entries.removeAt(index).also { persist(context) }
+        return mutableEntries.removeAt(index).also { persist(context) }
     }
 
     fun removeMany(context: Context, ids: Set<Long>): List<SpeedDial> {
+        Persistence.requireOwner()
         if (ids.isEmpty()) return emptyList()
-        val removed = entries.filter { it.id in ids }
-        entries.removeAll { it.id in ids }
+        val removed = mutableEntries.filter { it.id in ids }
+        mutableEntries.removeAll { it.id in ids }
         persist(context)
         return removed
     }
 
     fun restoreRemoved(context: Context, entry: SpeedDial) {
-        if (entries.none { it.id == entry.id }) entries.add(entry)
+        Persistence.requireOwner()
+        if (mutableEntries.none { it.id == entry.id }) mutableEntries.add(entry)
         ensureNextIdAbove(entry.id)
         persist(context)
     }
 
     fun restoreRemoved(context: Context, removed: List<SpeedDial>) {
+        Persistence.requireOwner()
         removed.forEach { entry ->
-            if (entries.none { it.id == entry.id }) entries.add(entry)
+            if (mutableEntries.none { it.id == entry.id }) mutableEntries.add(entry)
             ensureNextIdAbove(entry.id)
         }
         persist(context)
     }
 
     private fun persist(context: Context) {
-        context.getSharedPreferences(SPEED_DIAL_PREFS, Context.MODE_PRIVATE).edit()
-            .putString(SPEED_DIAL_KEY, SpeedDialCodec.encode(entries))
-            .putString(SPEED_DIAL_FOLDER_KEY, SpeedDialFolderCodec.encode(folders))
-            .putString(SPEED_DIAL_SORT_KEY, sort.name)
-            .commit()
+        Persistence.requireOwner()
+        val savedEntries = mutableEntries.toList()
+        val savedFolders = mutableFolders.toList()
+        val savedSort = sort
+        val appContext = context.applicationContext
+        Persistence.submitSnapshot("speed-dials") {
+            appContext.getSharedPreferences(SPEED_DIAL_PREFS, Context.MODE_PRIVATE).edit()
+                .putString(SPEED_DIAL_KEY, SpeedDialCodec.encode(savedEntries))
+                .putString(SPEED_DIAL_FOLDER_KEY, SpeedDialFolderCodec.encode(savedFolders))
+                .putString(SPEED_DIAL_SORT_KEY, savedSort.name).commit()
+        }
     }
 
     private fun ensureNextIdAbove(id: Long) {
+        Persistence.requireOwner()
         idCounter.updateAndGet { current -> maxOf(current, id + 1L) }
     }
 
     private fun ensureNextFolderIdAbove(id: Long) {
+        Persistence.requireOwner()
         folderIdCounter.updateAndGet { current -> maxOf(current, id + 1L) }
+    }
+}
+
+internal fun findSpeedDialDomainDuplicate(entries: List<SpeedDial>, url: String, excludingId: Long? = null): SpeedDial? {
+    val host = runCatching { URI(url).host }.getOrNull() ?: return null
+    return entries.firstOrNull { entry ->
+        entry.id != excludingId && runCatching { URI(entry.url).host }.getOrNull()
+            ?.let { isSameRegistrableDomain(host, it) } == true
     }
 }
 
 internal fun sortSpeedDials(entries: List<SpeedDial>, sort: SpeedDialSort): List<SpeedDial> = when (sort) {
     SpeedDialSort.ADDED -> entries
-    SpeedDialSort.NAME_ASCENDING -> entries.sortedBy { defaultSpeedDialTitle(it.url).lowercase() }
-    SpeedDialSort.NAME_DESCENDING -> entries.sortedByDescending { defaultSpeedDialTitle(it.url).lowercase() }
+    SpeedDialSort.NAME_ASCENDING -> entries.sortedBy { it.title.lowercase() }
+    SpeedDialSort.NAME_DESCENDING -> entries.sortedByDescending { it.title.lowercase() }
 }
 
 internal fun normalizeSpeedDialAddress(address: String): String {

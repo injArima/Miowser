@@ -1,6 +1,7 @@
 package com.miowser.app.ui
 
 import android.content.Context
+import com.miowser.app.persistence.Persistence
 
 private const val PREFS_NAME = "browser_overflow_menu"
 private const val KEY_ORDER = "tile_order"
@@ -13,6 +14,7 @@ enum class OverflowMenuAction {
     HISTORY,
     DETECTED,
     SETTINGS,
+    ZOOM,
     SHARE
 }
 
@@ -23,6 +25,7 @@ val DEFAULT_OVERFLOW_MENU_ORDER: List<OverflowMenuAction> = listOf(
     OverflowMenuAction.HISTORY,
     OverflowMenuAction.DETECTED,
     OverflowMenuAction.SETTINGS,
+    OverflowMenuAction.ZOOM,
     OverflowMenuAction.SHARE
 )
 
@@ -49,8 +52,11 @@ object OverflowMenuOrderStore {
 
     fun save(context: Context, order: List<OverflowMenuAction>) {
         val normalized = normalizeOverflowMenuOrder(order.map(OverflowMenuAction::name))
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-            .putString(KEY_ORDER, normalized.joinToString(",", transform = OverflowMenuAction::name))
-            .commit()
+        val appContext = context.applicationContext
+        Persistence.submitSnapshot("menu-order") {
+            appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putString(KEY_ORDER, normalized.joinToString(",", transform = OverflowMenuAction::name))
+                .commit()
+        }
     }
 }

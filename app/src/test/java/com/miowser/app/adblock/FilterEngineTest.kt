@@ -129,4 +129,30 @@ class FilterEngineTest {
         )
         assertTrue(decision is FilterDecision.Block)
     }
+
+    @Test
+    fun `short literal index retains wildcard matching and exception priority`() {
+        val engine = engineWith(
+            "abc*def" to FilterSource.SUBSCRIBED,
+            "@@abc*safe" to FilterSource.SUBSCRIBED
+        )
+        fun decision(url: String) = engine.classify(url, "example.com", "example.com", ResourceType.OTHER)
+
+        assertTrue(decision("https://example.com/abc-long-def") is FilterDecision.Block)
+        assertTrue(decision("https://example.com/abc-long-safe-def") is FilterDecision.Allow)
+        assertTrue(decision("https://example.com/def-long-abc") is FilterDecision.Allow)
+        // Non-ASCII URLs use the full matcher rather than the packed ASCII index.
+        assertTrue(decision("https://example.com/café/abc-long-def") is FilterDecision.Block)
+    }
+
+    @Test
+    fun `many short unindexed rules do not prevent a list from loading`() {
+        val engine = FilterEngine()
+        repeat(2_100) { index ->
+            engine.addRule(FilterListParser.parseNetworkRule("xy\$domain=unrelated$index.example", FilterSource.SUBSCRIBED))
+        }
+        engine.addRule(FilterListParser.parseNetworkRule("xy\$domain=site.example", FilterSource.SUBSCRIBED))
+
+        assertTrue(engine.classify("https://site.example/xy", "site.example", "site.example", ResourceType.OTHER) is FilterDecision.Block)
+    }
 }

@@ -103,16 +103,14 @@ fun HistoryPage(
                 action = onClear
             }
         }
-        AlertDialog(
-            onDismissRequest = { pendingDelete = null },
-            title = { Text("Delete history") },
-            text = { Text(message) },
-            confirmButton = {
-                TextButton(onClick = { action(); pendingDelete = null }) { Text("Delete") }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingDelete = null }) { Text("Cancel") }
-            }
+        MiowserConfirmationDialog(
+            title = "Delete history",
+            message = message,
+            onDismiss = { pendingDelete = null },
+            actions = listOf(
+                ConfirmationAction("Cancel", { pendingDelete = null }, ConfirmationTone.CAUTION),
+                ConfirmationAction("Delete", { action(); pendingDelete = null }, ConfirmationTone.CAUTION)
+            )
         )
     }
 }

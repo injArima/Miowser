@@ -66,6 +66,17 @@ class RendererResourceTest {
     }
 
     @Test
+    fun `blob ledger bounds a streamed blob with unknown length`() {
+        val ledger = BlobTransferLedger(maxTotalBytes = 8, maxChunkBytes = 4)
+        assertTrue(ledger.begin(-1))
+        assertTrue(!ledger.begin(-1))
+        assertTrue(ledger.acceptChunk(0, 4))
+        assertTrue(ledger.acceptChunk(1, 4))
+        assertTrue(!ledger.acceptChunk(2, 1))
+        assertTrue(ledger.isComplete())
+    }
+
+    @Test
     fun `renamed queue copies keep their renderer transfer handoff`() {
         val download = Download(
             id = 1L,

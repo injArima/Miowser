@@ -3,7 +3,6 @@ package com.miowser.app.downloader
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import java.io.File
@@ -13,9 +12,7 @@ enum class FileOpenResult { STARTED, INSTALL_PERMISSION_REQUIRED, FILE_UNAVAILAB
 object DownloadedFileOpener {
     fun installApk(context: Context, download: Download): FileOpenResult {
         val uri = download.savedUri ?: return FileOpenResult.FILE_UNAVAILABLE
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-            !context.packageManager.canRequestPackageInstalls()
-        ) {
+        if (!context.packageManager.canRequestPackageInstalls()) {
             return runCatching {
                 context.startActivity(
                     Intent(

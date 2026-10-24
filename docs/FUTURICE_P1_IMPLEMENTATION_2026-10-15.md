@@ -1,0 +1,25 @@
+# Futurice P1 implementation and verification
+
+The scope is F4–F9 in `FUTURICE_BEST_PRACTICES_AUDIT_2026-10-12.md`. This work does not alter player audio focus, playback commands, Library folder rules or downloaded-file identity.
+
+## Included
+
+- **Android regression harness (F4):** app-side `androidTest` dependencies and device-side file-chooser, local-server-address and indexed-store tests. The chooser test asserts that a closed tab gets exactly one null result and cannot receive a later picker result, while a subsequent tab can still choose a file. The tests compile locally; device execution remains necessary.
+- **Development diagnostics (F5):** the separately installable development build enables VM leak checks and logs WebView engine, playback session, player listener and active native-request counts under `MiowserResources`. These counters contain no URLs or media titles. On a device, repeat browser tab creation/closure, player and subtitle opening/closing, private mode exit, rotation, and renderer recovery. Counts should return to the relevant baseline after resources close. Chromium renderer memory is separate from these app counters.
+- **Browser coordination (F6):** the WebView file chooser callback now has a tab-owned holder with serialized Android picker results. Download permission actions are serialized at the browser handoff and no longer run at Activity startup. Existing player track, session and overlay owners already provide the needed lifecycle seams; no broad player UI move was made because it would add risk to immediate controls without measured gain.
+- **Permission timing and backup (F8):** notification access is requested on the first download action on API 33+, without blocking that download. Denial shows a Settings route. API 26–28 storage permission gates enqueue, resume and retry, with a retry instruction on denial. Debug/development local-network access is requested only for an explicitly opened local server address. Explicit cloud/device-transfer exclusions remain in the main manifest's backup rules.
+- **Build identity (F9):** `assembleDevelopment` builds `com.miowser.app.dev` with the `Miowser Dev` label and a purple icon background. Ordinary debug keeps `com.miowser.app`, preserving its existing install/data. FileProvider authority uses `${applicationId}.fileprovider` in each variant.
+
+## Storage measurement gate (F7)
+
+`LibraryCodecScaleMeasurementTest` reports whole-collection serialization costs on this workstation. With 500 records the encoded payload was 76,809 bytes, median encode 1.04 ms, median decode 1.79 ms, and 100 repeated whole-list updates 57 ms. With 5,000 records the payload was 788,059 bytes, median encode 4.62 ms, median decode 4.20 ms, and 100 repeated updates 433 ms. These are warmed JVM codec measurements, **not** SharedPreferences commit, on-device UI, allocation, or Room timings. The current save path already queues/coalesces snapshots off the UI thread. An in-memory indexed SQLite row-update prototype is included as an Android test for device-side comparison. A Room migration is deferred until matched device measurements show material gain; changing durable storage without that evidence risks Library identities, folder hierarchy, subtitle references, backups and recovery.
+
+## Release signing
+
+Unsigned release builds remain available for CI validation. To sign a distribution artifact, set all four environment variables locally or in a trusted CI secret store: `MIOWSER_RELEASE_KEYSTORE` (absolute keystore path), `MIOWSER_RELEASE_STORE_PASSWORD`, `MIOWSER_RELEASE_KEY_ALIAS`, and `MIOWSER_RELEASE_KEY_PASSWORD`. Keep the signing key and passwords outside this repository. Partial configuration intentionally leaves the release unsigned; confirm signing before distribution.
+
+The current production package is `com.miowser.app`, version code 1 (`0.1.0`). Increment version code for every published update, retain the permanent signing key, and record SHA-256 for each published artifact (for example `Get-FileHash -Algorithm SHA256 <artifact>` in PowerShell). To allow direct APKs to update the same Play-installed app, Play's app signing key must be the same key used for those APKs; an unrelated Play-generated app signing key would prevent cross-channel updates. Verify the Play enrollment/key arrangement before the first public release.
+
+## Device acceptance still required
+
+Run `:app:connectedDebugAndroidTest` on a chosen device; no device test was run by Codex. Also check: saved external SRT/VTT still plays after styling and delay changes; subtitle sheet blocks taps behind it; folders/counts survive restart; API 26–28 storage grant/deny/retry; API 33+ notification grant/deny and paused-notification dismissal; tab closure while the system picker is open; local development URL permission; downloaded public files remain visible; and benchmark/release variants retain immediate player controls. The compiled tests cover the late-picker callback but do not establish these end-to-end journeys.

@@ -50,4 +50,18 @@ class FilterSubscriptionCodecTest {
     fun `decode of empty string is empty`() {
         assertTrue(FilterSubscriptionCodec.decode("").isEmpty())
     }
+
+    @Test
+    fun `renamed built in list keeps its required source and enabled state`() {
+        val renamed = FilterSubscription(EASYLIST_ID, "My ads list", EASYLIST_URL,
+            isBuiltIn = true, enabled = true, lastUpdatedAt = 1234L)
+        val loaded = FilterSubscriptionStore.defaultSubscriptions(
+            FilterSubscriptionCodec.decode(FilterSubscriptionCodec.encode(listOf(renamed))))
+        val easyList = loaded.first { it.id == EASYLIST_ID }
+
+        assertEquals("My ads list", easyList.name)
+        assertEquals(EASYLIST_URL, easyList.url)
+        assertTrue(easyList.enabled)
+        assertEquals(1234L, easyList.lastUpdatedAt)
+    }
 }

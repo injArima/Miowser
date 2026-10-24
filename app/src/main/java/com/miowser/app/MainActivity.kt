@@ -1,94 +1,140 @@
 package com.miowser.app
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
+import android.content.Intent
+import android.os.Build
+import android.app.PictureInPictureParams
+import android.util.Rational
+import android.content.res.Configuration
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
+import com.miowser.app.persistence.PersistenceNotice
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.core.content.ContextCompat
-import com.miowser.app.browser.BrowserScreen
-import com.miowser.app.downloader.DownloadQueue
-import com.miowser.app.library.MediaLibrary
-import com.miowser.app.library.LibraryFolders
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.semantics
+import androidx.core.view.WindowCompat
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import com.miowser.app.ui.theme.MiowserTheme
-
-private const val LOCAL_NETWORK_PERMISSION = "android.permission.ACCESS_LOCAL_NETWORK"
+import com.miowser.app.ui.theme.AppThemeMode
+import com.miowser.app.ui.theme.AppThemePreference
 
 /**
  * App entry point. Edge-to-edge and the Compose theme are wired here from day one
  * (see project memory: retro flagged screen-by-screen inset handling as a real bug source).
  */
 class MainActivity : ComponentActivity() {
-
-    private val requestLocalNetworkPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
-    private val requestNotificationPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
-    private val requestLegacyStoragePermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    private var shortcutSequence = 0L
+    private var shortcutRequest by mutableStateOf<LauncherShortcutRequest?>(null)
+    internal var playerInPictureInPicture by mutableStateOf(false)
+        private set
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        LauncherShortcuts.retireLeaks(this)
+        receiveShortcut(intent)
         enableEdgeToEdge()
-
-        // Debug-build-only permission (see app/src/debug/AndroidManifest.xml) for reaching a
-        // local dev/test server; requesting it is a harmless no-op in release builds since the
-        // permission isn't declared there at all. Real Miowser browsing never needs this.
-        if (Build.VERSION.SDK_INT >= 37 &&
-            ContextCompat.checkSelfPermission(this, LOCAL_NETWORK_PERMISSION) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestLocalNetworkPermission.launch(LOCAL_NETWORK_PERMISSION)
+        if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+            android.os.StrictMode.setThreadPolicy(android.os.StrictMode.ThreadPolicy.Builder()
+                .detectDiskReads().detectDiskWrites().penaltyLog().build())
+        }
+        if (BuildConfig.BUILD_TYPE == "development") {
+            android.os.StrictMode.setVmPolicy(android.os.StrictMode.VmPolicy.Builder()
+                .detectActivityLeaks().detectLeakedClosableObjects()
+                .detectLeakedRegistrationObjects().penaltyLog().build())
         }
 
-        // Needed for DownloadForegroundService's progress notification on API 33+; without it
-        // the service still runs (starting a foreground service doesn't require the permission),
-        // it just can't show anything, so this is best-effort rather than gating downloads on it.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
-
-        // Only needed below API 29 — MediaStoreOutput's Q+ path writes through ContentResolver,
-        // which needs no storage permission at all. Below that, a download's very first write
-        // would otherwise hit a SecurityException the first time this permission's missing,
-        // since declaring it in the manifest (maxSdkVersion 28) alone doesn't grant it — see
-        // MediaStoreOutput's own doc comment for the on-device consequence this was found from.
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestLegacyStoragePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-        }
-
-        // Prehydrate the small persisted Hub indexes before Compose's first frame. The later
-        // BrowserScreen restore remains idempotent, but the Library/Downloads no longer flash an
-        // empty state while their records are read after the first composition.
-        MediaLibrary.restore(applicationContext)
-        LibraryFolders.restore(applicationContext)
-        DownloadQueue.restore(applicationContext)
+        AppThemePreference.load(this)
 
         setContent {
-            MiowserApp()
+            MiowserApp(shortcutRequest) {
+                shortcutRequest = null
+                // A later activity recreation must not repeat an already handled shortcut.
+                setIntent(Intent(this, MainActivity::class.java).apply { action = Intent.ACTION_MAIN })
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        receiveShortcut(intent)
+    }
+
+    internal fun enterPlayerPictureInPicture(width: Int = 16, height: Int = 9): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+            val aspect = (width.toFloat() / height.coerceAtLeast(1)).coerceIn(0.5f, 2f)
+            val ratio = Rational((aspect * 1000).toInt(), 1000)
+            return enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(ratio).build())
+        }
+        return false
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean,
+        newConfig: Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        playerInPictureInPicture = isInPictureInPictureMode
+    }
+
+    private fun receiveShortcut(intent: Intent?) {
+        val action = intent?.action
+        if (LauncherShortcuts.isSupported(action)) {
+            shortcutRequest = LauncherShortcutRequest(++shortcutSequence, requireNotNull(action))
+        } else if (action == Intent.ACTION_VIEW) {
+            val url = intent.data?.takeIf { uri ->
+                (uri.scheme.equals("http", true) || uri.scheme.equals("https", true)) &&
+                    !uri.host.isNullOrBlank()
+            }?.toString() ?: return
+            shortcutRequest = LauncherShortcutRequest(++shortcutSequence, Intent.ACTION_VIEW, url)
         }
     }
 }
 
 @Composable
-private fun MiowserApp() {
-    MiowserTheme {
+private fun MiowserApp(
+    shortcutRequest: LauncherShortcutRequest?,
+    onShortcutHandled: () -> Unit
+) {
+    val activity = LocalContext.current as? ComponentActivity
+    val systemDark = isSystemInDarkTheme()
+    val dark = when (AppThemePreference.mode) {
+        AppThemeMode.SYSTEM -> systemDark
+        AppThemeMode.LIGHT -> false
+        AppThemeMode.DARK -> true
+        AppThemeMode.AMOLED -> true
+    }
+    SideEffect {
+        activity?.window?.let { window ->
+            WindowCompat.getInsetsController(window, window.decorView).apply {
+                isAppearanceLightStatusBars = !dark
+                isAppearanceLightNavigationBars = !dark
+            }
+        }
+    }
+    MiowserTheme(darkTheme = dark, amoled = AppThemePreference.mode == AppThemeMode.AMOLED) {
         Surface(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().semantics { testTagsAsResourceId = true },
             color = MaterialTheme.colorScheme.background
         ) {
-            BrowserScreen()
+            Box(Modifier.fillMaxSize()) {
+                com.miowser.app.startup.StartupHost(shortcutRequest, onShortcutHandled)
+                PersistenceNotice(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(12.dp))
+            }
         }
     }
 }

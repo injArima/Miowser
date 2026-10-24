@@ -1,25 +1,31 @@
 package com.miowser.app.ui
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Tab
+import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
@@ -34,6 +40,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun LinkContextMenu(
     url: String,
+    linkText: String?,
     onOpenInNewTab: () -> Unit,
     onOpenInBackgroundTab: () -> Unit,
     onCopyLink: () -> Unit,
@@ -41,7 +48,31 @@ fun LinkContextMenu(
     onAddToSpeedDial: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    var selectingText by remember(url, linkText) { mutableStateOf(false) }
+    ModalBottomSheet(onDismissRequest = onDismiss,
+        dragHandle = { CompactSheetDragHandle() },
+        shape = MiowserBottomSheetShape) {
+        if (selectingText && !linkText.isNullOrBlank()) {
+            Text("Select text", style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+            Text("Touch and hold to select part of the link text.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp))
+            SelectionContainer {
+                Text(
+                    text = linkText,
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                )
+            }
+            TextButton(onClick = onDismiss, modifier = Modifier.padding(horizontal = 12.dp)) {
+                Text("Done")
+            }
+            androidx.compose.foundation.layout.Spacer(Modifier.height(4.dp))
+            return@ModalBottomSheet
+        }
         Text(
             text = url,
             maxLines = 1,
@@ -52,40 +83,55 @@ fun LinkContextMenu(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         )
-        LinkMenuRow(Icons.AutoMirrored.Rounded.OpenInNew, "Open in new tab") {
+        MiowserMenuItem(
+            text = { Text("Open in new tab") },
+            leadingIcon = { Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null) },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+        ) {
             onDismiss()
             onOpenInNewTab()
         }
-        LinkMenuRow(Icons.Rounded.Tab, "Open in background tab") {
+        MiowserMenuItem(
+            text = { Text("Open in background tab") },
+            leadingIcon = { Icon(Icons.Rounded.Tab, contentDescription = null) },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+        ) {
             onDismiss()
             onOpenInBackgroundTab()
         }
-        LinkMenuRow(Icons.Rounded.ContentCopy, "Copy link") {
+        MiowserMenuDivider()
+        if (!linkText.isNullOrBlank()) {
+            MiowserMenuItem(
+                text = { Text("Select text") },
+                leadingIcon = { Icon(Icons.Rounded.TextFields, contentDescription = null) },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+            ) { selectingText = true }
+        }
+        MiowserMenuItem(
+            text = { Text("Copy link") },
+            leadingIcon = { Icon(Icons.Rounded.ContentCopy, contentDescription = null) },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+        ) {
             onDismiss()
             onCopyLink()
         }
-        LinkMenuRow(Icons.Rounded.Share, "Share link") {
+        MiowserMenuItem(
+            text = { Text("Share link") },
+            leadingIcon = { Icon(Icons.Rounded.Share, contentDescription = null) },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+        ) {
             onDismiss()
             onShareLink()
         }
-        LinkMenuRow(Icons.Rounded.GridView, "Add to speed dial") {
+        MiowserMenuDivider()
+        MiowserMenuItem(
+            text = { Text("Add to speed dial") },
+            leadingIcon = { Icon(Icons.Rounded.GridView, contentDescription = null) },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+        ) {
             onDismiss()
             onAddToSpeedDial()
         }
-    }
-}
-
-@Composable
-private fun LinkMenuRow(icon: ImageVector, label: String, enabled: Boolean = true, onClick: () -> Unit) {
-    val contentColor = if (enabled) LocalContentColor.current else LocalContentColor.current.copy(alpha = 0.38f)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(icon, contentDescription = null, tint = contentColor)
-        Text(label, color = contentColor, modifier = Modifier.padding(start = 24.dp))
+        androidx.compose.foundation.layout.Spacer(Modifier.height(4.dp))
     }
 }

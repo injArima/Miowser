@@ -16,7 +16,7 @@ object StubResponses {
         "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBTAA7",
         Base64.DEFAULT
     )
-    private val CORS_HEADERS = mapOf("Access-Control-Allow-Origin" to "*")
+    private val CORS_HEADERS = mapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "no-store")
     private const val EMPTY_HTML = "<!DOCTYPE html><html><head></head><body></body></html>"
 
     fun forType(type: ResourceType): WebResourceResponse = when (type) {
@@ -29,6 +29,9 @@ object StubResponses {
         ResourceType.SUBDOCUMENT, ResourceType.DOCUMENT -> textStub("text/html", EMPTY_HTML)
         else -> textStub("text/plain", "")
     }
+
+    fun blockedDocument(rule: String, sources: List<FilterRuleSource> = emptyList()): WebResourceResponse =
+        textStub("text/html", blockedDocumentHtml(rule, sources))
 
     private fun textStub(mime: String, body: String): WebResourceResponse =
         WebResourceResponse(mime, "utf-8", 200, "OK", CORS_HEADERS, ByteArrayInputStream(body.toByteArray()))

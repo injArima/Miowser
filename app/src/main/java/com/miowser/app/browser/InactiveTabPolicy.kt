@@ -1,5 +1,6 @@
 package com.miowser.app.browser
 
+import com.miowser.app.settings.InactiveTabRetention
 import java.net.URI
 
 const val INACTIVE_TAB_AGE_MILLIS = 14L * 24L * 60L * 60L * 1_000L
@@ -42,8 +43,10 @@ object InactiveTabPolicy {
         return decisions.map { (id, reason) -> InactiveTabDecision(id, reason) }
     }
 
-    fun isExpired(archivedAt: Long, now: Long): Boolean =
-        archivedAt > 0L && now - archivedAt >= INACTIVE_TAB_RETENTION_MILLIS
+    fun isExpired(archivedAt: Long, now: Long, retention: InactiveTabRetention = InactiveTabRetention.DAYS_30): Boolean =
+        archivedAt > 0L && retention.days?.let { days ->
+            now - archivedAt >= days * 24L * 60L * 60L * 1_000L
+        } == true
 }
 
 /** Makes harmless URL spelling differences compare as the same page without changing queries. */

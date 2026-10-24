@@ -45,7 +45,6 @@ private const val DIRECT_SAMPLE_RANGE = "bytes=0-${DIRECT_SAMPLE_BYTES - 1}"
  * exact — 1DM shows the equivalent number with a literal "~" prefix for the same reason.
  */
 object MediaProbe {
-    private val executor = Executors.newFixedThreadPool(4)
     private val mainHandler = Handler(Looper.getMainLooper())
 
     fun probe(
@@ -53,15 +52,16 @@ object MediaProbe {
         pageUrl: String,
         userAgent: String,
         guessedType: MediaType,
+        detailed: Boolean = false,
+        urgent: Boolean = false,
         onResult: (DetectedMedia?) -> Unit
-    ) {
-        executor.execute {
-            val result = runCatching { doProbe(url, pageUrl, userAgent, guessedType) }
-                .onFailure { Log.d(TAG, "probe failed for $url: ${it.message}") }
-                .getOrNull()
-            mainHandler.post { onResult(result) }
-        }
-    }
+    ): MediaProbeHandle = ProbeScheduler.submit(detailed, urgent, work = {
+        val handle = ProbeScheduler.current.get()!!
+        val result = runCatching { doProbe(url, pageUrl, userAgent, guessedType) }.getOrNull()
+        if (!handle.stopped.get()) mainHandler.post { if (!handle.stopped.get()) onResult(result) }
+    }, rejected = { mainHandler.post { onResult(null) } })
+
+    private fun detailed(): Boolean = ProbeScheduler.current.get()?.detailed == true
 
     private fun doProbe(url: String, pageUrl: String, userAgent: String, guessedType: MediaType): DetectedMedia? {
         val isManifest = MediaUrlClassifier.isManifestType(guessedType)
@@ -74,7 +74,7 @@ object MediaProbe {
 
             return probeManifest(connection, url, pageUrl, userAgent)
         } finally {
-            connection.disconnect()
+            closeConnection(connection)
         }
     }
 
@@ -88,12 +88,13 @@ object MediaProbe {
         // same one already chosen for `resolution`) to its leaf playlist, one more GET, exactly
         // as 1DM resolves a specific quality before estimating that quality's size rather than a
         // mythical "whole stream" size. A leaf playlist already has everything it needs.
-        val leafInfo = if (info.isMasterOrMultiVariant) {
+        val leafInfo = if (detailed() && info.isMasterOrMultiVariant) {
             info.bestVariantUrl?.let { fetchLeafPlaylist(it, userAgent, pageUrl) }
         } else {
             info
         }
-        val size = resolveManifestSize(info, leafInfo, userAgent, pageUrl)
+        val size = if (detailed()) resolveManifestSize(info, leafInfo, userAgent, pageUrl)
+            else ManifestSize(info.declaredSizeBytes, false)
         val duration = info.durationSeconds ?: leafInfo?.durationSeconds
         val bitrate = info.bitrateBitsPerSecond ?: leafInfo?.bitrateBitsPerSecond
 
@@ -117,23 +118,16 @@ object MediaProbe {
 
     /** One extra GET for a master playlist's chosen variant, sniffed the same way as any other manifest. */
     private fun fetchLeafPlaylist(variantUrl: String, userAgent: String, pageUrl: String): ManifestInfo? {
-        val connection = (URL(variantUrl).openConnection() as HttpURLConnection).apply {
-            connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = READ_TIMEOUT_MS
-            requestMethod = "GET"
-            setRequestProperty("User-Agent", userAgent)
-            setRequestProperty("Referer", pageUrl)
-            CookieManager.getInstance().getCookie(variantUrl)?.let { setRequestProperty("Cookie", it) }
-        }
+        val connection = openAuthenticatedConnection(variantUrl, pageUrl, userAgent, "GET")
         return try {
             if (connection.responseCode !in 200..299) return null
             val body = connection.inputStream.bufferedReader().readTextUpTo(MANIFEST_MAX_CHARS)
             ManifestSniffer.sniff(body, variantUrl)
         } catch (e: Exception) {
-            Log.d(TAG, "variant leaf fetch failed for $variantUrl: ${e.message}")
+            com.miowser.app.diagnostics.SafeLog.debug(TAG, "variant leaf fetch failed for $variantUrl: ${e.message}")
             null
         } finally {
-            connection.disconnect()
+            closeConnection(connection)
         }
     }
 
@@ -160,24 +154,16 @@ object MediaProbe {
 
     /** A ranged probe against exactly one real segment — headers only, same spirit as probeDirectFile. */
     private fun probeSegmentSize(segmentUrl: String, userAgent: String, pageUrl: String): Long? {
-        val connection = (URL(segmentUrl).openConnection() as HttpURLConnection).apply {
-            connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = READ_TIMEOUT_MS
-            requestMethod = "GET"
-            setRequestProperty("User-Agent", userAgent)
-            setRequestProperty("Referer", pageUrl)
-            setRequestProperty("Range", HEADER_ONLY_PROBE_RANGE)
-            CookieManager.getInstance().getCookie(segmentUrl)?.let { setRequestProperty("Cookie", it) }
-        }
+        val connection = openAuthenticatedConnection(segmentUrl, pageUrl, userAgent, "GET", HEADER_ONLY_PROBE_RANGE)
         return try {
             if (connection.responseCode !in 200..299) return null
             parseContentRangeTotal(connection.getHeaderField("Content-Range"))
                 ?: connection.getHeaderField("Content-Length")?.toLongOrNull()
         } catch (e: Exception) {
-            Log.d(TAG, "segment size probe failed for $segmentUrl: ${e.message}")
+            com.miowser.app.diagnostics.SafeLog.debug(TAG, "segment size probe failed for $segmentUrl: ${e.message}")
             null
         } finally {
-            connection.disconnect()
+            closeConnection(connection)
         }
     }
 
@@ -227,36 +213,47 @@ object MediaProbe {
                     )
                     // Subtitles have no duration/dimensions to enrich. Video/audio continue into
                     // the bounded GET so MP4 metadata and a real body signature can be collected.
-                    if (confirmedType == MediaType.SUBTITLE) return headResult
+                    if (confirmedType == MediaType.SUBTITLE || !detailed()) return headResult
                 }
                 HeadProbeAction.SAMPLE_WITH_GET -> Unit
             }
         } catch (e: Exception) {
-            Log.d(TAG, "HEAD probe failed for $url; trying bounded GET: ${e.message}")
+            com.miowser.app.diagnostics.SafeLog.debug(TAG, "HEAD probe failed for $url; trying bounded GET: ${e.message}")
         } finally {
-            head.disconnect()
+            closeConnection(head)
         }
 
-        val get = openAuthenticatedConnection(url, pageUrl, userAgent, "GET", DIRECT_SAMPLE_RANGE)
+        val sampleLimit = if (detailed()) DIRECT_SAMPLE_BYTES else 128 * 1024
+        val get = openAuthenticatedConnection(url, pageUrl, userAgent, "GET", "bytes=0-${sampleLimit - 1}")
         try {
             val statusCode = get.responseCode
             if (statusCode !in 200..299) return headResult
             val contentType = get.getHeaderField("Content-Type")
+            val mimeType = MediaUrlClassifier.classifyByMimeType(contentType)
+            if (mimeType != null && MediaUrlClassifier.isManifestType(mimeType)) {
+                return probeManifest(get, url, pageUrl, userAgent)
+            }
             val contentDisposition = get.getHeaderField("Content-Disposition") ?: headDisposition
             val finalUrl = get.url.toString()
             val contentRange = get.getHeaderField("Content-Range")
             val contentLength = get.contentLengthLong
             val input = get.inputStream
             val sample = try {
-                input.readAtMost(DIRECT_SAMPLE_BYTES)
+                input.readAtMost(sampleLimit)
             } finally {
                 // Disconnect before close. Some HTTP stacks try to drain a response on close so
                 // the socket can be reused; disconnecting first makes the 2 MiB cap a transfer
                 // boundary even when a server ignored Range and replied 200 with the whole file.
-                get.disconnect()
+                closeConnection(get)
                 runCatching { input.close() }
             }
             if (sample.isEmpty()) return null
+            val prefix = sample.take(512).toByteArray().toString(Charsets.UTF_8).trimStart()
+            if (prefix.startsWith("#EXTM3U") || prefix.startsWith("<MPD") ||
+                (prefix.startsWith("<?xml") && prefix.contains("<MPD"))) {
+                val manifest = openAuthenticatedConnection(url, pageUrl, userAgent, "GET")
+                try { return probeManifest(manifest, url, pageUrl, userAgent) } finally { closeConnection(manifest) }
+            }
             val signatureExtension = DownloadIdentityResolver.sniffExtension(sample)
             // The shared Step 2 resolver gets the same real response metadata and sampled bytes as
             // a later download. Its result is useful only alongside body/MIME evidence here: a URL
@@ -289,14 +286,14 @@ object MediaProbe {
                 contentLength = contentLength
             ) ?: headSize
             var metadata = if (confirmedType in isoBmffTypes) IsoBmffMetadataParser.parse(sample) else null
-            if (metadata == null && confirmedType in isoBmffTypes && sizeBytes != null && sizeBytes > sample.size) {
+            if (detailed() && metadata == null && confirmedType in isoBmffTypes && sizeBytes != null && sizeBytes > sample.size) {
                 val tail = fetchTailSample(url, pageUrl, userAgent, sizeBytes)
                 if (tail != null) metadata = IsoBmffMetadataParser.parse(tail)
             }
             var duration = metadata?.durationSeconds
             if (duration == null && confirmedType in matroskaTypes) {
                 duration = MatroskaMetadataParser.durationSeconds(sample)
-                if (duration == null && sizeBytes != null && sizeBytes > sample.size) {
+                if (detailed() && duration == null && sizeBytes != null && sizeBytes > sample.size) {
                     fetchTailSample(url, pageUrl, userAgent, sizeBytes)?.let {
                         duration = MatroskaMetadataParser.durationSeconds(it)
                     }
@@ -314,12 +311,12 @@ object MediaProbe {
                 resolution = metadata?.resolution
             )
         } catch (e: Exception) {
-            Log.d(TAG, "bounded GET probe failed for $url: ${e.message}")
+            com.miowser.app.diagnostics.SafeLog.debug(TAG, "bounded GET probe failed for $url: ${e.message}")
             return headResult
         } finally {
             // Explicit disconnect after the capped read is what prevents a Range-ignoring HTTP
             // 200 server from continuing to transfer the rest of a large file.
-            get.disconnect()
+            closeConnection(get)
         }
     }
 
@@ -368,32 +365,61 @@ object MediaProbe {
             try {
                 input.readAtMost(DIRECT_SAMPLE_BYTES)
             } finally {
-                connection.disconnect()
+                closeConnection(connection)
                 runCatching { input.close() }
             }
         } catch (e: Exception) {
-            Log.d(TAG, "tail metadata probe failed for $url: ${e.message}")
+            com.miowser.app.diagnostics.SafeLog.debug(TAG, "tail metadata probe failed for $url: ${e.message}")
             null
         } finally {
-            connection.disconnect()
+            closeConnection(connection)
         }
     }
 
     private fun openAuthenticatedConnection(
-        url: String,
-        pageUrl: String,
-        userAgent: String,
-        method: String,
-        range: String? = null
-    ): HttpURLConnection = (URL(url).openConnection() as HttpURLConnection).apply {
-        connectTimeout = CONNECT_TIMEOUT_MS
-        readTimeout = READ_TIMEOUT_MS
-        requestMethod = method
-        instanceFollowRedirects = true
-        setRequestProperty("User-Agent", userAgent)
-        setRequestProperty("Referer", pageUrl)
-        CookieManager.getInstance().getCookie(url)?.let { setRequestProperty("Cookie", it) }
-        range?.let { setRequestProperty("Range", it) }
+        url: String, pageUrl: String, userAgent: String, method: String, range: String? = null
+    ): HttpURLConnection {
+        var target = URL(url)
+        repeat(6) {
+            ProbeScheduler.current.get()?.checkActive()
+            require(target.protocol in setOf("http", "https") && target.userInfo == null) { "Unsupported probe URL" }
+            val connection = com.miowser.app.network.NativeConnections.open(target,
+                com.miowser.app.network.ConnectionBudget.Priority.DISCOVERY) {
+                    ProbeScheduler.current.get()?.checkActive()
+                }.apply {
+                connectTimeout = CONNECT_TIMEOUT_MS
+                readTimeout = READ_TIMEOUT_MS
+                requestMethod = method
+                instanceFollowRedirects = false
+                setRequestProperty("User-Agent", userAgent)
+                val page = runCatching { URL(pageUrl) }.getOrNull()
+                if (page != null && !(page.protocol == "https" && target.protocol == "http")) {
+                    val sameOrigin = page.protocol == target.protocol && page.host == target.host && page.port == target.port
+                    setRequestProperty("Referer", if (sameOrigin) pageUrl.substringBefore('#') else "${page.protocol}://${page.authority}/")
+                }
+                CookieManager.getInstance().getCookie(target.toString())?.let { setRequestProperty("Cookie", it) }
+                range?.let { setRequestProperty("Range", it) }
+            }
+            try {
+                ProbeScheduler.current.get()?.track(connection)
+                val status = connection.responseCode
+                if (status !in setOf(301, 302, 303, 307, 308)) return connection
+                val location = connection.getHeaderField("Location") ?: error("Redirect without location")
+                val next = URL(target, location)
+                require(!(target.protocol == "https" && next.protocol == "http")) { "Insecure probe redirect" }
+                target = next
+            } catch (failure: Exception) {
+                closeConnection(connection)
+                throw failure
+            }
+            closeConnection(connection)
+        }
+        error("Too many probe redirects")
+    }
+
+    private fun closeConnection(connection: HttpURLConnection) {
+        ProbeScheduler.current.get()?.untrack(connection)
+        com.miowser.app.network.NativeConnections.close(connection)
     }
 
     private fun parseContentRangeTotal(headerValue: String?): Long? =
@@ -405,8 +431,15 @@ object MediaProbe {
     private val matroskaTypes = setOf(MediaType.WEBM, MediaType.MATROSKA)
 
     private fun BufferedReader.readTextUpTo(maxChars: Int): String {
-        val buffer = CharArray(maxChars)
-        val charsRead = read(buffer, 0, maxChars)
-        return if (charsRead > 0) String(buffer, 0, charsRead) else ""
+        val output = StringBuilder()
+        val buffer = CharArray(8_192)
+        while (output.length < maxChars) {
+            ProbeScheduler.current.get()?.checkActive()
+            val count = read(buffer, 0, minOf(buffer.size, maxChars - output.length))
+            if (count < 0) return output.toString()
+            output.append(buffer, 0, count)
+        }
+        require(read() == -1) { "Manifest exceeds probe limit" }
+        return output.toString()
     }
 }

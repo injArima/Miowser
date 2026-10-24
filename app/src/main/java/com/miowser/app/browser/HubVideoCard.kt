@@ -2,6 +2,8 @@ package com.miowser.app.browser
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,16 +13,24 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -43,55 +53,174 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.miowser.app.library.LibraryThumbnailStore
-import kotlinx.coroutines.Dispatchers
+import com.miowser.app.library.LibraryFolders
+import com.miowser.app.ui.MiowserMenuDivider
+import com.miowser.app.ui.MiowserMenuItem
+import com.miowser.app.ui.MiowserDropdownMenu
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
+import androidx.compose.runtime.LaunchedEffect
 
 /** Reusable 16:9 media card for the Library and future downloaded-media surfaces. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HubVideoCard(
     title: String,
     sourceLabel: String,
     positionMs: Long,
     durationMs: Long,
+    listMode: Boolean = false,
     modifier: Modifier = Modifier,
     thumbnailUrl: String? = null,
     centerArtwork: ImageBitmap? = null,
     actionIcon: ImageVector = Icons.Rounded.PlayCircle,
     actionContentDescription: String? = null,
     statusLabel: String? = null,
+    qualityLabel: String? = null,
     onClick: (() -> Unit)? = null,
+    menuOnLongPress: Boolean = false,
     menuContentDescription: String = "Video options",
     menuActionLabel: String? = null,
     onMenuAction: (() -> Unit)? = null,
     secondaryMenuActionLabel: String? = null,
-    onSecondaryMenuAction: (() -> Unit)? = null
+    onSecondaryMenuAction: (() -> Unit)? = null,
+    folderMenuOnSelect: ((String?) -> Unit)? = null,
+    currentFolderId: String? = null,
+    tertiaryMenuActionLabel: String? = null,
+    onTertiaryMenuAction: (() -> Unit)? = null,
+    deferArtwork: () -> Boolean = { false }
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+    var folderMenuOpen by remember { mutableStateOf(false) }
+    var folderMenuFolderId by remember { mutableStateOf<String?>(null) }
+    fun dismissMenu() {
+        menuExpanded = false
+        folderMenuOpen = false
+        folderMenuFolderId = null
+    }
     val progress = mediaWatchProgress(positionMs, durationMs)
     val context = LocalContext.current
-    val thumbnail by androidx.compose.runtime.produceState<android.graphics.Bitmap?>(
-        initialValue = LibraryThumbnailStore.peek(thumbnailUrl),
-        thumbnailUrl
-    ) {
-        value = thumbnailUrl?.let { uri ->
-            withContext(Dispatchers.IO) { LibraryThumbnailStore.load(context.applicationContext, uri) }
+    var thumbnail by remember(thumbnailUrl) { mutableStateOf(LibraryThumbnailStore.peek(thumbnailUrl)) }
+    val scrolling = deferArtwork()
+    LaunchedEffect(thumbnailUrl, scrolling) {
+        val uri = thumbnailUrl
+        if (!scrolling && thumbnail == null && uri != null) {
+            delay(120) // Cancel cards that only pass through the viewport during a fling.
+            thumbnail = LibraryThumbnailStore.loadVisible(context.applicationContext, uri)
         }
     }
-    val cardContent: @Composable () -> Unit = {
-        Column {
+    val placeholderStart = MaterialTheme.colorScheme.primaryContainer
+    val placeholderEnd = MaterialTheme.colorScheme.tertiaryContainer
+    val placeholderBrush = remember(placeholderStart, placeholderEnd) {
+        Brush.linearGradient(listOf(placeholderStart, placeholderEnd))
+    }
+    val menuContent: @Composable () -> Unit = {
+                if ((menuActionLabel != null && onMenuAction != null) || folderMenuOnSelect != null ||
+                    (secondaryMenuActionLabel != null && onSecondaryMenuAction != null) ||
+                    (tertiaryMenuActionLabel != null && onTertiaryMenuAction != null)) {
+                    Box {
+                        if (!menuOnLongPress && !listMode) {
+                            IconButton(onClick = { menuExpanded = true }) {
+                                Icon(Icons.Rounded.MoreVert, contentDescription = menuContentDescription)
+                            }
+                        }
+                        MiowserDropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { dismissMenu() }
+                        ) {
+                            if (folderMenuOpen && folderMenuOnSelect != null) {
+                                val parent = LibraryFolders.entries.firstOrNull { it.id == folderMenuFolderId }
+                                MiowserMenuItem(
+                                    text = { Text(parent?.name ?: "Move to folder", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                    leadingIcon = { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null) },
+                                    onClick = {
+                                        if (parent == null) folderMenuOpen = false
+                                        else folderMenuFolderId = parent.parentId
+                                    }
+                                )
+                                MiowserMenuDivider()
+                                if (parent == null) {
+                                    MiowserMenuItem(
+                                        text = { Text("Unfiled") },
+                                        selected = currentFolderId == null,
+                                        leadingIcon = { Icon(Icons.Rounded.FolderOpen, contentDescription = null) },
+                                        onClick = { dismissMenu(); folderMenuOnSelect(null) }
+                                    )
+                                } else {
+                                    MiowserMenuItem(
+                                        text = { Text("Move here") },
+                                        selected = currentFolderId == parent.id,
+                                        leadingIcon = { Icon(Icons.AutoMirrored.Rounded.DriveFileMove, contentDescription = null) },
+                                        onClick = { dismissMenu(); folderMenuOnSelect(parent.id) }
+                                    )
+                                }
+                                LibraryFolders.entries.filter { it.parentId == folderMenuFolderId }.forEach { folder ->
+                                    val hasChildren = LibraryFolders.entries.any { it.parentId == folder.id }
+                                    MiowserMenuItem(
+                                        text = { Text(folder.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                        modifier = Modifier.widthIn(min = 220.dp, max = 320.dp),
+                                        selected = currentFolderId == folder.id,
+                                        leadingIcon = { Icon(Icons.Rounded.Folder, contentDescription = null) },
+                                        trailingIcon = if (hasChildren) ({ Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null) }) else null,
+                                        onClick = {
+                                            if (hasChildren) folderMenuFolderId = folder.id
+                                            else { dismissMenu(); folderMenuOnSelect(folder.id) }
+                                        }
+                                    )
+                                }
+                            } else {
+                                if (tertiaryMenuActionLabel != null && onTertiaryMenuAction != null) {
+                                    MiowserMenuItem(
+                                        text = { Text(tertiaryMenuActionLabel) },
+                                        leadingIcon = { Icon(Icons.Rounded.Save, contentDescription = null) },
+                                        onClick = {
+                                            dismissMenu()
+                                            onTertiaryMenuAction()
+                                        }
+                                    )
+                                }
+                                if (folderMenuOnSelect != null) {
+                                    MiowserMenuItem(
+                                        text = { Text("Move to folder") },
+                                        leadingIcon = { Icon(Icons.AutoMirrored.Rounded.DriveFileMove, contentDescription = null) },
+                                        trailingIcon = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null) },
+                                        onClick = { folderMenuFolderId = null; folderMenuOpen = true }
+                                    )
+                                }
+                                if (secondaryMenuActionLabel != null && onSecondaryMenuAction != null) {
+                                    MiowserMenuItem(
+                                        text = { Text(secondaryMenuActionLabel) },
+                                        leadingIcon = { Icon(Icons.AutoMirrored.Rounded.DriveFileMove, contentDescription = null) },
+                                        onClick = {
+                                            dismissMenu()
+                                            onSecondaryMenuAction()
+                                        }
+                                    )
+                                }
+                                if (menuActionLabel != null && onMenuAction != null) {
+                                    if (folderMenuOnSelect != null || secondaryMenuActionLabel != null || tertiaryMenuActionLabel != null) {
+                                        MiowserMenuDivider()
+                                    }
+                                    MiowserMenuItem(
+                                        text = { Text(menuActionLabel) },
+                                        leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null) },
+                                        onClick = {
+                                            dismissMenu()
+                                            onMenuAction()
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+    }
+    val artwork: @Composable () -> Unit = {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(16f / 9f)
-                    .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                    .background(
-                        Brush.linearGradient(
-                            listOf(
-                                MaterialTheme.colorScheme.primaryContainer,
-                                MaterialTheme.colorScheme.tertiaryContainer
-                            )
-                        )
-                    ),
+                    .then(if (listMode) Modifier.width(136.dp).height(84.dp) else Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+                    .clip(if (listMode) RoundedCornerShape(14.dp) else RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                    .then(if (thumbnail == null) Modifier.background(placeholderBrush) else Modifier),
                 contentAlignment = Alignment.Center
             ) {
                 thumbnail?.let { bitmap ->
@@ -150,6 +279,17 @@ fun HubVideoCard(
                         )
                     }
                 }
+                qualityLabel?.let { label ->
+                    Surface(
+                        color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.86f),
+                        contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.align(Alignment.BottomStart).padding(8.dp)
+                    ) {
+                        Text(label, style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp))
+                    }
+                }
                 statusLabel?.let { label ->
                     Surface(
                         color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.94f),
@@ -164,39 +304,11 @@ fun HubVideoCard(
                         )
                     }
                 }
-                if ((menuActionLabel != null && onMenuAction != null) ||
-                    (secondaryMenuActionLabel != null && onSecondaryMenuAction != null)) {
-                    Box(modifier = Modifier.align(Alignment.TopEnd)) {
-                        IconButton(onClick = { menuExpanded = true }) {
-                            Icon(Icons.Rounded.MoreVert, contentDescription = menuContentDescription)
-                        }
-                        DropdownMenu(
-                            expanded = menuExpanded,
-                            onDismissRequest = { menuExpanded = false }
-                        ) {
-                            if (secondaryMenuActionLabel != null && onSecondaryMenuAction != null) {
-                                DropdownMenuItem(
-                                    text = { Text(secondaryMenuActionLabel) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onSecondaryMenuAction()
-                                    }
-                                )
-                            }
-                            if (menuActionLabel != null && onMenuAction != null) {
-                                DropdownMenuItem(
-                                    text = { Text(menuActionLabel) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onMenuAction()
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
+                if (!listMode) Box(modifier = Modifier.align(Alignment.TopEnd)) { menuContent() }
             }
+    }
 
+    val details: @Composable () -> Unit = {
             if (durationMs > 0L) {
                 LinearProgressIndicator(
                     progress = { progress },
@@ -223,10 +335,10 @@ fun HubVideoCard(
                     Text(
                         sourceLabel,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
                     )
                     if (progress > 0f) {
                         Text(
@@ -238,10 +350,39 @@ fun HubVideoCard(
                     }
                 }
             }
+    }
+
+    val cardContent: @Composable () -> Unit = {
+        if (listMode) {
+            Row(modifier = Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                artwork()
+                Box(Modifier.weight(1f)) { details() }
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(Icons.Rounded.MoreVert, contentDescription = menuContentDescription)
+                    }
+                    menuContent()
+                }
+            }
+        } else {
+            Column { artwork(); details() }
         }
     }
 
-    if (onClick != null) {
+    if (menuOnLongPress) {
+        Card(
+            modifier = modifier
+                .clip(MaterialTheme.shapes.large)
+                .combinedClickable(
+                    onClick = { onClick?.invoke() },
+                    onLongClick = { menuExpanded = true },
+                    onLongClickLabel = menuContentDescription
+                ),
+            shape = MaterialTheme.shapes.large,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+        ) { cardContent() }
+    } else if (onClick != null) {
         Card(
             onClick = onClick,
             modifier = modifier,

@@ -124,9 +124,50 @@ class LibraryCodecTest {
         val entry = remote().copy(
             pageTitle = "Watch page",
             videoName = "clip.mp4",
-            folderId = "folder-1"
+            folderId = "folder-1",
+            qualityHeight = 1080
         )
         assertEquals(entry, LibraryCodec.decode(LibraryCodec.encode(listOf(entry))).single())
+    }
+
+    @Test
+    fun `embedded stream request context survives restart and older records remain readable`() {
+        val entry = remote().copy(
+            requestReferer = "https://player.example.org/embed/episode",
+            requestOrigin = "https://player.example.org"
+        )
+        assertEquals(entry, LibraryCodec.decode(LibraryCodec.encode(listOf(entry))).single())
+
+        val old = LibraryCodec.encode(listOf(entry)).split('\t').take(15).joinToString("\t")
+        val restored = LibraryCodec.decode(old).single()
+        assertNull(restored.requestReferer)
+        assertNull(restored.requestOrigin)
+    }
+
+    @Test
+    fun `previous fourteen field records still load without quality`() {
+        val old = LibraryCodec.encode(listOf(remote().copy(folderId = "folder-1")))
+            .split('\t').take(14).joinToString("\t")
+        val decoded = LibraryCodec.decode(old).single()
+        assertEquals("folder-1", decoded.folderId)
+        assertNull(decoded.qualityHeight)
+        assertTrue(decoded.manualFolder)
+    }
+
+    @Test fun `old filed entries stay pinned while new records preserve manual moves`() {
+        val filed = remote().copy(folderId = "chosen", manualFolder = true)
+        assertEquals(filed, LibraryCodec.decode(LibraryCodec.encode(listOf(filed))).single())
+        val old = LibraryCodec.encode(listOf(filed)).split('\t').take(22).joinToString("\t")
+        assertTrue(LibraryCodec.decode(old).single().manualFolder)
+        assertTrue(mergeOpened(filed, remote()).manualFolder)
+    }
+
+    @Test
+    fun `quality survives reopening and portrait videos use short edge`() {
+        val existing = remote().copy(qualityHeight = 720)
+        assertEquals(720, mergeOpened(existing, remote()).qualityHeight)
+        assertEquals(1080, videoQualityHeight(1080, 1920))
+        assertEquals("1080p", videoQualityLabel(1080))
     }
 
     @Test
@@ -137,5 +178,28 @@ class LibraryCodecTest {
         assertEquals("manual-1", merged.folderId)
         assertEquals("Episode page", merged.pageTitle)
         assertEquals("episode.mp4", merged.videoName)
+    }
+
+    @Test
+    fun `selected subtitle survives restart and reopening`() {
+        val subtitle = LibrarySubtitle(
+            url = "https://cdn.example.com/eng.vtt",
+            pageUrl = "https://example.com/watch/1",
+            label = "English",
+            requestReferer = "https://player.example.com/embed/1",
+            requestOrigin = "https://player.example.com"
+        )
+        val saved = remote().copy(selectedSubtitle = subtitle)
+        assertEquals(saved, LibraryCodec.decode(LibraryCodec.encode(listOf(saved))).single())
+        assertEquals(subtitle, mergeOpened(saved, remote()).selectedSubtitle)
+    }
+
+    @Test
+    fun `previous seventeen field records remain readable`() {
+        val saved = remote().copy(requestOrigin = "https://example.com")
+        val old = LibraryCodec.encode(listOf(saved)).split('\t').take(17).joinToString("\t")
+        val restored = LibraryCodec.decode(old).single()
+        assertEquals(saved.requestOrigin, restored.requestOrigin)
+        assertNull(restored.selectedSubtitle)
     }
 }

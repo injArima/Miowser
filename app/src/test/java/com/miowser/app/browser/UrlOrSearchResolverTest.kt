@@ -75,4 +75,12 @@ class UrlOrSearchResolverTest {
             UrlOrSearchResolver.resolve("example.com", searchUrlPrefix = "https://www.google.com/search?q=")
         )
     }
+
+    @Test
+    fun `custom search URL inserts encoded terms at its placeholder`() {
+        assertEquals(
+            "https://example.com/search?source=miowser&q=steel+ball&lang=en",
+            UrlOrSearchResolver.resolve("steel ball", "https://example.com/search?source=miowser&q=%s&lang=en")
+        )
+    }
 }

@@ -1,5 +1,6 @@
 package com.miowser.app.browser
 
+import com.miowser.app.settings.InactiveTabRetention
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -60,6 +61,14 @@ class InactiveTabPolicyTest {
         val archived = now - INACTIVE_TAB_RETENTION_MILLIS
         assertTrue(InactiveTabPolicy.isExpired(archived, now))
         assertFalse(InactiveTabPolicy.isExpired(archived + 1, now))
+    }
+
+    @Test
+    fun `retention choices respect seven ninety and never`() {
+        val archived = now - 8L * 24L * 60L * 60L * 1_000L
+        assertTrue(InactiveTabPolicy.isExpired(archived, now, InactiveTabRetention.DAYS_7))
+        assertFalse(InactiveTabPolicy.isExpired(archived, now, InactiveTabRetention.DAYS_90))
+        assertFalse(InactiveTabPolicy.isExpired(archived, now, InactiveTabRetention.NEVER))
     }
 
     private fun tab(

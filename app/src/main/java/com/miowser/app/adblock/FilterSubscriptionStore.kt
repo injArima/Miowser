@@ -13,6 +13,10 @@ private const val RECORD_DELIMITER = '\n'
 
 const val EASYLIST_ID = "easylist"
 const val EASYLIST_URL = "https://easylist.to/easylist/easylist.txt"
+const val EASYPRIVACY_ID = "easyprivacy"
+const val EASYPRIVACY_URL = "https://easylist.to/easylist/easyprivacy.txt"
+const val PETER_LOWE_ID = "peter-lowe"
+const val PETER_LOWE_URL = "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&mimetype=plaintext&showintro=0"
 
 data class FilterSubscription(
     val id: String,
@@ -71,10 +75,12 @@ object FilterSubscriptionCodec {
 
 /**
  * Persists lightweight subscription metadata in SharedPreferences and the potentially large
- * filter-list bodies as private files. Keeping EasyList's ~70k rules out of preferences avoids
- * repeatedly serializing a multi-megabyte value every time one row's enabled state changes.
+ * filter-list bodies as streamed private ZIP files (with legacy text support). Keeping large
+ * rule sets out of preferences avoids repeatedly serializing a multi-megabyte value every
+ * time one row's enabled state changes.
  */
 object FilterSubscriptionStore {
+    internal val inputRevision = FilterInputRevision()
     private const val DIRECTORY_NAME = "adblock"
     private const val MANUAL_RULES_FILE = "manual-rules.txt"
 
@@ -82,36 +88,110 @@ object FilterSubscriptionStore {
         val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getString(KEY_SUBSCRIPTIONS, null)
         val saved = raw?.let(FilterSubscriptionCodec::decode).orEmpty()
-        val savedEasyList = saved.firstOrNull { it.id == EASYLIST_ID }
-        val builtIn = FilterSubscription(
-            id = EASYLIST_ID,
-            name = "EasyList",
-            url = EASYLIST_URL,
-            isBuiltIn = true,
-            enabled = true,
-            lastUpdatedAt = savedEasyList?.lastUpdatedAt ?: 0L,
-            lastError = savedEasyList?.lastError,
-            networkRuleCount = savedEasyList?.networkRuleCount ?: 0,
-            cosmeticRuleCount = savedEasyList?.cosmeticRuleCount ?: 0
-        )
-        return listOf(builtIn) + saved.filterNot { it.id == EASYLIST_ID || it.isBuiltIn }
+        val defaults = defaultSubscriptions(saved)
+        val defaultIds = defaults.mapTo(HashSet()) { it.id }
+        return defaults + saved.filterNot { it.id in defaultIds || it.isBuiltIn }
     }
 
+    internal fun defaultSubscriptions(saved: List<FilterSubscription>): List<FilterSubscription> =
+        listOf(
+            Triple(PETER_LOWE_ID, "Peter Lowe's ad and tracking servers", PETER_LOWE_URL),
+            Triple(EASYLIST_ID, "EasyList", EASYLIST_URL),
+            Triple(EASYPRIVACY_ID, "EasyPrivacy", EASYPRIVACY_URL)
+        ).map { (id, name, url) ->
+            // A changed built-in source must refresh even if its old URL updated recently.
+            val previous = saved.firstOrNull { it.id == id && it.url == url }
+            FilterSubscription(id, previous?.name ?: name, url, isBuiltIn = true, enabled = true,
+                lastUpdatedAt = previous?.lastUpdatedAt ?: 0L,
+                lastError = previous?.lastError,
+                networkRuleCount = previous?.networkRuleCount ?: 0,
+                cosmeticRuleCount = previous?.cosmeticRuleCount ?: 0)
+        }
+
     fun saveSubscriptions(context: Context, subscriptions: List<FilterSubscription>) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+        com.miowser.app.persistence.RestoreWriteFence.write {
+            inputRevision.write { saveSubscriptionsUnfenced(context, subscriptions) }
+        }
+    }
+    private fun saveSubscriptionsUnfenced(context: Context, subscriptions: List<FilterSubscription>) {
+        check(context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putString(KEY_SUBSCRIPTIONS, FilterSubscriptionCodec.encode(subscriptions))
-            .commit()
+            .commit()) { "Could not save filter subscriptions" }
     }
 
     fun readCachedList(context: Context, id: String): String? =
-        cacheFile(context, id).takeIf(File::isFile)?.readText()
+        cachedListFile(context, id)?.let { FilterListFiles.reader(it).use { reader -> reader.readText() } }
+
+    internal fun cachedListFile(context: Context, id: String): File? =
+        lists(context).existing(id)
+
+    internal fun openCachedList(file: File): java.io.BufferedReader = FilterListFiles.reader(file)
+
+    internal fun manualRulesFile(context: Context): File? =
+        File(directory(context), MANUAL_RULES_FILE).takeIf(File::isFile)?.also {
+            check(it.length() <= FilterLimits.LIST_BYTES) { "Saved custom rules exceed the 32 MB read limit" }
+        }
+
+    /** Compare a downloaded body without loading the old multi-megabyte copy into the heap. */
+    internal fun cachedContentEquals(context: Context, id: String, content: String): Boolean {
+        val file = cachedListFile(context, id) ?: return false
+        return runCatching {
+            openCachedList(file).use { reader ->
+                val buffer = CharArray(8 * 1024)
+                var offset = 0
+                while (true) {
+                    val count = reader.read(buffer)
+                    if (count < 0) break
+                    if (offset + count > content.length) return@use false
+                    for (index in 0 until count) {
+                        if (content[offset + index] != buffer[index]) return@use false
+                    }
+                    offset += count
+                }
+                offset == content.length
+            }
+        }.getOrDefault(false)
+    }
+
+    /** An unchanged ZIP is retained; a legacy source migrates on its next successful refresh. */
+    internal fun cachedFileEquals(context: Context, id: String, candidate: File): Boolean =
+        cachedListFile(context, id)?.extension == "zip" && lists(context).contentEquals(id, candidate)
 
     fun writeCachedList(context: Context, id: String, content: String) {
-        val target = cacheFile(context, id)
-        target.parentFile?.mkdirs()
-        val temporary = File(target.parentFile, "${target.name}.tmp")
-        temporary.writeText(content)
+        com.miowser.app.persistence.RestoreWriteFence.write {
+            inputRevision.write { writeCachedListUnfenced(context, id, content) }
+        }
+    }
+    /** Atomically install a validated staged download without creating a full String copy. */
+    internal fun writeCachedListFromFile(context: Context, id: String, source: File, checkActive: () -> Unit = {}) {
+        require(source.isFile && source.length() <= FilterLimits.LIST_BYTES) { "List exceeds the 32 MB safety limit" }
+        com.miowser.app.persistence.RestoreWriteFence.write {
+            inputRevision.write { lists(context).install(id, { source.inputStream().buffered() }, checkActive) }
+        }
+    }
+    private fun writeCachedListUnfenced(context: Context, id: String, content: String) {
+        val parent = directory(context)
+        check(parent.isDirectory || parent.mkdirs()) { "Could not create filter directory" }
+        val staged = File.createTempFile("source-", ".tmp", parent)
         try {
+            staged.bufferedWriter(Charsets.UTF_8).use { it.write(content) }
+            lists(context).install(id, { staged.inputStream().buffered() })
+        } finally { staged.delete() }
+    }
+
+    private fun writeAtomically(target: File, content: String) {
+        val parent = requireNotNull(target.parentFile)
+        check(parent.isDirectory || parent.mkdirs()) { "Could not create filter directory" }
+        val previousModified = target.lastModified()
+        val temporary = File.createTempFile(target.name, ".tmp", parent)
+        try {
+            java.io.FileOutputStream(temporary).use { output ->
+                java.io.OutputStreamWriter(output, Charsets.UTF_8).buffered().apply {
+                    write(content)
+                    flush()
+                }
+                output.fd.sync()
+            }
             try {
                 Files.move(
                     temporary.toPath(),
@@ -122,6 +202,7 @@ object FilterSubscriptionStore {
             } catch (_: AtomicMoveNotSupportedException) {
                 Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
             }
+            target.setLastModified(maxOf(System.currentTimeMillis(), previousModified + 1))
         } catch (error: Exception) {
             temporary.delete()
             throw error
@@ -129,22 +210,49 @@ object FilterSubscriptionStore {
     }
 
     fun deleteCachedList(context: Context, id: String) {
-        cacheFile(context, id).delete()
+        com.miowser.app.persistence.RestoreWriteFence.write {
+            inputRevision.write { deleteCachedListUnfenced(context, id) }
+        }
+    }
+    private fun deleteCachedListUnfenced(context: Context, id: String) {
+        lists(context).delete(id)
     }
 
     fun loadManualRules(context: Context): String =
-        File(directory(context), MANUAL_RULES_FILE).takeIf(File::isFile)?.readText().orEmpty()
+        File(directory(context), MANUAL_RULES_FILE).takeIf(File::isFile)?.let {
+            // Preserve previously accepted imports; the smaller budget applies to new saves.
+            check(it.length() <= FilterLimits.LIST_BYTES) { "Saved custom rules exceed the 32 MB read limit" }
+            it.readText()
+        }.orEmpty()
 
     fun saveManualRules(context: Context, rules: String) {
-        val directory = directory(context).apply { mkdirs() }
-        File(directory, MANUAL_RULES_FILE).writeText(rules)
+        com.miowser.app.persistence.RestoreWriteFence.write {
+            inputRevision.write { saveManualRulesUnfenced(context, rules) }
+        }
+    }
+    private fun saveManualRulesUnfenced(context: Context, rules: String) {
+        writeAtomically(File(directory(context), MANUAL_RULES_FILE), rules)
     }
 
-    private fun cacheFile(context: Context, id: String): File {
-        val safeId = id.filter { it.isLetterOrDigit() || it == '-' || it == '_' }
-        require(safeId.isNotBlank()) { "Invalid subscription id" }
-        return File(directory(context), "list-$safeId.txt")
+    internal fun cachedBytes(context: Context, id: String): Long = cachedListFile(context, id)?.length() ?: 0L
+
+    internal fun fingerprint(context: Context, rows: List<FilterSubscription>): String {
+        val manual = File(directory(context), MANUAL_RULES_FILE)
+        @Suppress("DEPRECATION")
+        val installed = context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime
+        val data = buildString {
+            append("engine-schema-3|").append(installed)
+            rows.filter { it.enabled }.forEach {
+                val file = cachedListFile(context, it.id)
+                append('|').append(it.id).append(':').append(file?.length() ?: 0L).append(':').append(file?.lastModified() ?: 0L)
+            }
+            append("|manual:").append(manual.length()).append(':').append(manual.lastModified())
+        }
+        return java.security.MessageDigest.getInstance("SHA-256").digest(data.toByteArray())
+            .joinToString("") { "%02x".format(it) }
     }
+
+    private fun lists(context: Context) = FilterListFiles(directory(context))
 
     private fun directory(context: Context): File = File(context.filesDir, DIRECTORY_NAME)
 }

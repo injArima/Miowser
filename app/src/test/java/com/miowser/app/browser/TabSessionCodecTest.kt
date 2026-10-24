@@ -39,6 +39,20 @@ class TabSessionCodecTest {
     }
 
     @Test
+    fun `desktop preference survives session restore`() {
+        val original = listOf(SavedTab("https://example.com", -1, isDesktopMode = true))
+        assertEquals(original, TabSessionCodec.decode(TabSessionCodec.encode(original)))
+    }
+
+    @Test
+    fun `decodes previous five-field records as mobile`() {
+        assertEquals(
+            SavedTab("https://example.com", -1, "preview", "Example", 123L),
+            TabSessionCodec.decode("-1\t123\tpreview\tExample\thttps://example.com").single()
+        )
+    }
+
+    @Test
     fun `decodes previous three-field records`() {
         assertEquals(
             SavedTab("https://example.com", -1, "preview_key"),

@@ -5,6 +5,18 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class PlayerTrackControlsTest {
+
+    @Test fun detectedVttSelectionHasAStableKeyBeforeTracksLoad() {
+        val url = "https://cdn.example/subs/en.vtt?token=one"
+        val selection = PlayerTrackSelection(PlayerTrackMode.SPECIFIC,
+            externalSubtitleSelectionKey(url))
+        assertEquals(url, externalSubtitleUrlFromSelection(selection))
+        val restored = PlayerTrackPreferenceCodec.decode(
+            PlayerTrackPreferenceCodec.encode(PlayerTrackPreferences(subtitles = selection)))
+        assertEquals(selection, restored?.subtitles)
+        assertNull(externalSubtitleUrlFromSelection(PlayerTrackSelection(PlayerTrackMode.AUTO,
+            externalSubtitleSelectionKey(url))))
+    }
     @Test
     fun `preference codec round trips explicit choices and rejects broken specific choices`() {
         val preferences = PlayerTrackPreferences(
@@ -14,6 +26,13 @@ class PlayerTrackControlsTest {
         )
         assertEquals(preferences, PlayerTrackPreferenceCodec.decode(PlayerTrackPreferenceCodec.encode(preferences)))
         assertNull(PlayerTrackPreferenceCodec.decode("AUTO\t\tSPECIFIC\t\tAUTO\t"))
+    }
+
+    @Test fun subtitleDelayIsPerVideoAndOlderPreferencesStillLoad() {
+        val adjusted = PlayerTrackPreferences(subtitleDelayMs = -2_350L)
+        assertEquals(adjusted, PlayerTrackPreferenceCodec.decode(PlayerTrackPreferenceCodec.encode(adjusted)))
+        assertEquals(PlayerTrackPreferences(),
+            PlayerTrackPreferenceCodec.decode("AUTO\t\tAUTO\t\tAUTO\t"))
     }
 
     @Test

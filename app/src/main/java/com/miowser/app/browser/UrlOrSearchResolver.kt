@@ -26,6 +26,8 @@ object UrlOrSearchResolver {
             (DOMAIN_LIKE.matches(trimmed) || LOCALHOST_LIKE.matches(trimmed) || IP_LIKE.matches(trimmed))
         if (looksLikeUrl) return "https://$trimmed"
 
-        return searchUrlPrefix + URLEncoder.encode(trimmed, "UTF-8")
+        val encoded = URLEncoder.encode(trimmed, "UTF-8")
+        return if ("%s" in searchUrlPrefix) searchUrlPrefix.replace("%s", encoded)
+            else searchUrlPrefix + encoded
     }
 }

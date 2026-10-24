@@ -1,0 +1,23 @@
+Subtitle font assets (SIL Open Font License 1.1)
+
+Roboto: subtitle_roboto.ttf
+  https://github.com/google/fonts/blob/main/ofl/roboto/Roboto%5Bwdth%2Cwght%5D.ttf
+  License: Roboto-OFL.txt
+
+Helvetica-like (Arimo): subtitle_arimo.ttf
+  https://github.com/google/fonts/blob/main/ofl/arimo/Arimo%5Bwght%5D.ttf
+  License: Arimo-OFL.txt
+
+Avenir-like (Nunito Sans): subtitle_nunito_sans.ttf
+  https://github.com/google/fonts/blob/main/ofl/nunitosans/NunitoSans%5BYTLC%2Copsz%2Cwdth%2Cwght%5D.ttf
+  License: NunitoSans-OFL.txt
+
+Fredoka One: subtitle_fredoka_one.ttf
+  https://github.com/google/fonts/blob/bbd715dfa/ofl/fredokaone/FredokaOne-Regular.ttf
+  License: FredokaOne-OFL.txt from the same revision
+
+Lobster: subtitle_lobster.ttf
+  https://github.com/google/fonts/blob/main/ofl/lobster/Lobster-Regular.ttf
+  License: Lobster-OFL.txt
+
+System uses the device's default font and has no bundled asset.

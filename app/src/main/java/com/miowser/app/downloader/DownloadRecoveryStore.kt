@@ -221,6 +221,7 @@ class DownloadRecoverySession(
     initialPlan: DownloadRecoveryPlan
 ) {
     private var current = initialPlan
+    private var lastElapsedSave = System.nanoTime()
 
     init {
         check(DownloadRecoveryStore.save(context, initialPlan)) { "Could not persist recovery plan" }
@@ -238,7 +239,11 @@ class DownloadRecoverySession(
     @Synchronized
     fun updateElapsed(elapsedActiveMillis: Long) {
         current = current.copy(elapsedActiveMillis = elapsedActiveMillis.coerceAtLeast(0L))
-        check(DownloadRecoveryStore.save(context, current)) { "Could not persist download elapsed time" }
+        val now = System.nanoTime()
+        if (now - lastElapsedSave >= 1_000_000_000L) {
+            check(DownloadRecoveryStore.save(context, current)) { "Could not persist download elapsed time" }
+            lastElapsedSave = now
+        }
     }
 
     @Synchronized

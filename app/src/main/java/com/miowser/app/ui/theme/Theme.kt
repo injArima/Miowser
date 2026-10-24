@@ -77,6 +77,20 @@ private val PlayerLightColorScheme = lightColorScheme(
     primary = Color(0xFF6650A4), secondary = Color(0xFF625B71), tertiary = Color(0xFF7D5260)
 )
 
+/** Keep wallpaper accents, while making the non-player canvas genuinely black. */
+private fun androidx.compose.material3.ColorScheme.amoled() = copy(
+    background = Color.Black,
+    surface = Color.Black,
+    surfaceDim = Color.Black,
+    surfaceContainerLowest = Color.Black,
+    surfaceContainerLow = Color(0xFF080808),
+    surfaceContainer = Color(0xFF101010),
+    surfaceContainerHigh = Color(0xFF181818),
+    surfaceContainerHighest = Color(0xFF222222),
+    surfaceBright = Color(0xFF242424),
+    surfaceVariant = Color(0xFF242424)
+)
+
 /**
  * Dynamic wallpaper color remains the first choice; these fallbacks cover older devices.
  */
@@ -84,9 +98,10 @@ private val PlayerLightColorScheme = lightColorScheme(
 fun MiowserTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = true,
+    amoled: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
+    val baseColorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
@@ -94,13 +109,16 @@ fun MiowserTheme(
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
     }
+    val colorScheme = if (amoled) baseColorScheme.amoled() else baseColorScheme
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = ExpressiveTypography,
-        shapes = ExpressiveShapes,
-        content = content
-    )
+    ProvideMotionPolicy {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = ExpressiveTypography,
+            shapes = ExpressiveShapes,
+            content = content
+        )
+    }
 }
 
 /** Restores the player's pre-migration typography, shapes, and fallback palette. */
@@ -118,10 +136,12 @@ fun MiowserPlayerTheme(
         darkTheme -> PlayerDarkColorScheme
         else -> PlayerLightColorScheme
     }
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = PlayerTypography,
-        shapes = Shapes(),
-        content = content
-    )
+    ProvideMotionPolicy {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = PlayerTypography,
+            shapes = Shapes(),
+            content = content
+        )
+    }
 }

@@ -35,6 +35,14 @@ class PlayerScreenTest {
     }
 
     @Test
+    fun `timer switches from total duration to remaining time without going negative`() {
+        assertEquals("06:15 / 12:23", formatPlayerTimer(375_000, 743_000, false))
+        assertEquals("06:15 / −06:08", formatPlayerTimer(375_000, 743_000, true))
+        assertEquals("12:24 / −00:00", formatPlayerTimer(744_000, 743_000, true))
+        assertEquals("00:15 / --:--", formatPlayerTimer(15_000, 0, true))
+    }
+
+    @Test
     fun `seek swipe sensitivity scales with duration but stays within useful bounds`() {
         assertEquals(60_000L, gestureSeekSpanMs(0L))
         assertEquals(60_000L, gestureSeekSpanMs(5 * 60_000L))

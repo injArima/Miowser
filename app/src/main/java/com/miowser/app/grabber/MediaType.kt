@@ -25,6 +25,8 @@ data class DetectedMedia(
     val mimeType: String? = null,
     val bitrateBitsPerSecond: Long? = null,
     val finalUrl: String? = null,
+    val requestReferer: String? = null,
+    val requestOrigin: String? = null,
     val detectedAt: Long = System.currentTimeMillis()
 ) {
     val sizeKind: MediaSizeKind
@@ -70,6 +72,8 @@ internal fun mergeDetectedMedia(current: DetectedMedia, update: DetectedMedia): 
         mimeType = usefulText(update.mimeType) ?: usefulText(current.mimeType),
         bitrateBitsPerSecond = listOfNotNull(current.bitrateBitsPerSecond, update.bitrateBitsPerSecond).maxOrNull(),
         finalUrl = usefulText(update.finalUrl) ?: usefulText(current.finalUrl),
+        requestReferer = usefulText(update.requestReferer) ?: usefulText(current.requestReferer),
+        requestOrigin = usefulText(update.requestOrigin) ?: usefulText(current.requestOrigin),
         detectedAt = minOf(current.detectedAt, update.detectedAt)
     )
 }

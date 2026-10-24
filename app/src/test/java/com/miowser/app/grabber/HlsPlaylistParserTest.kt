@@ -7,6 +7,40 @@ import org.junit.Test
 class HlsPlaylistParserTest {
 
     @Test
+    fun `keeps fmp4 initialization and byte ranges with each media segment`() {
+        val body = """
+            #EXTM3U
+            #EXT-X-MAP:URI="media.mp4",BYTERANGE="120@0"
+            #EXTINF:4.0,
+            #EXT-X-BYTERANGE:80@120
+            media.mp4
+            #EXTINF:4.0,
+            #EXT-X-BYTERANGE:90
+            media.mp4
+        """.trimIndent()
+        val playlist = HlsPlaylistParser.parseLeaf(body, "https://example.com/hls/index.m3u8")
+
+        assertNull(playlist.unsupportedReason)
+        assertEquals(HlsByteRange(0, 120), playlist.segments[0].initialization?.byteRange)
+        assertEquals("https://example.com/hls/media.mp4", playlist.segments[0].initialization?.url)
+        assertEquals(HlsByteRange(120, 80), playlist.segments[0].byteRange)
+        assertEquals(HlsByteRange(200, 90), playlist.segments[1].byteRange)
+        assertEquals(playlist.segments[0].initialization, playlist.segments[1].initialization)
+    }
+
+    @Test
+    fun `rejects sample encryption instead of treating it as whole segment AES`() {
+        val body = """
+            #EXTM3U
+            #EXT-X-KEY:METHOD=SAMPLE-AES,URI="key"
+            #EXTINF:4.0,
+            media.ts
+        """.trimIndent()
+        assertEquals("HLS encryption method SAMPLE-AES is not supported",
+            HlsPlaylistParser.parseLeaf(body, "https://example.com/hls/index.m3u8").unsupportedReason)
+    }
+
+    @Test
     fun `enumerates every segment with resolved URLs and durations`() {
         val body = """
             #EXTM3U

@@ -17,6 +17,25 @@ class HlsAes128DecryptorTest {
         return cipher.doFinal(plaintext)
     }
 
+    @Test fun streamingDecryptionHandlesPartialBlocksAndLargeSegments() {
+        val plain = ByteArray(1024 * 1024 + 29) { (it * 31).toByte() }
+        val sequence = 456L
+        val encrypted = encrypt(plain, HlsAes128Decryptor.sequenceNumberToIv(sequence))
+        val cipher = HlsAes128Decryptor.cipher(key, null, sequence)
+        val output = java.io.ByteArrayOutputStream()
+        encrypted.asList().chunked(8191).forEach { chunk ->
+            cipher.update(chunk.toByteArray())?.let(output::write)
+        }
+        output.write(cipher.doFinal())
+        assertArrayEquals(plain, output.toByteArray())
+    }
+
+    @Test fun invalidAesKeyIsRejectedBeforeStreaming() {
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            HlsAes128Decryptor.cipher(ByteArray(17), null, 0L)
+        }
+    }
+
     @Test
     fun `round-trips with an explicit IV`() {
         val plaintext = "the quick brown fox jumps over the lazy dog".toByteArray()

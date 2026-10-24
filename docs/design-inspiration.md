@@ -42,3 +42,13 @@ Useful patterns observed in its guides:
 Proposed adoption order: Hub bottom navigation; Downloads sub-tabs; shared
 sheets/settings rows; subtle press/haptic/transition polish; optional
 visual effects only after performance review. Keep the rich player visually separate.
+
+## Optional effects review — 2026-09-25
+
+The available CPU trace predates the current Hub navigation and sheets, so it cannot
+validate their frame timing. The Hub now uses a static tonal highlight on the small
+selected navigation pill. Video cards draw their placeholder gradient only until a
+thumbnail is available, avoiding that hidden work in populated grids. Blur, shaders,
+and animated effects across scrolling cards remain deferred until representative
+on-device frame measurements are available. The browser WebView and player are outside
+this Hub visual pass.

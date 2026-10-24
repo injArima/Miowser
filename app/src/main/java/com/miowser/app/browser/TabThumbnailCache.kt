@@ -69,7 +69,7 @@ object TabThumbnailCache {
 
     fun remove(context: Context, key: String) {
         removedKeys.add(key)
-        file(context, key)?.delete()
+        executor.execute { file(context.applicationContext, key)?.delete() }
     }
 
     fun retainOnly(context: Context, keys: Set<String>) {
@@ -86,7 +86,7 @@ object TabThumbnailCache {
             ?.sortedByDescending(File::lastModified)?.toMutableList() ?: return
         var total = files.sumOf(File::length)
         while (files.size > MAX_CACHE_FILES || total > MAX_CACHE_BYTES) {
-            val oldest = files.removeLast()
+            val oldest = files.removeAt(files.lastIndex)
             total -= oldest.length()
             oldest.delete()
         }
