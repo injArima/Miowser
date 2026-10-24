@@ -2,6 +2,8 @@
 
 Follow-up: duplicate WebView controls and their underlying input are addressed
 in [the native-control suppression fix](browser-native-controls-2026-10-25.md).
+Hold-speed feedback and viewport clipping affecting YouTube-style layouts are
+addressed in [the hold/visibility follow-up](hold-feedback-youtube-2026-10-25.md).
 
 The browser-backed player now uses the original player's actual control
 components and panel layouts. The existing native player retains Media3;
