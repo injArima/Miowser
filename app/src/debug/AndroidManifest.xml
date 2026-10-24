@@ -4,15 +4,6 @@
          access; this exists purely so debug builds can be pointed at a local dev/test server. -->
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <application android:networkSecurityConfig="@xml/network_security_config_debug">
-        <activity android:name="com.miowser.app.browser.video.BrowserVideoLabActivity"
-            android:label="Miowser Video Lab"
-            android:configChanges="keyboardHidden|orientation|screenSize|smallestScreenSize|screenLayout"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
         <activity android:name="com.miowser.app.player.PlayerTouchFixtureActivity"
             android:exported="false" />
     </application>

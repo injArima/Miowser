@@ -75,18 +75,6 @@ android {
         compose = true
     }
 
-    // Step-one Video Assistant lab is an additive prototype, never part of release builds.
-    sourceSets {
-        getByName("debug") {
-            kotlin.directories.add("src/videoPrototype/java")
-            assets.directories.add("src/videoPrototype/assets")
-        }
-        getByName("development") {
-            kotlin.directories.add("src/videoPrototype/java")
-            assets.directories.add("src/videoPrototype/assets")
-        }
-    }
-
     externalNativeBuild {
         ndkBuild {
             path = file("src/main/jni/Android.mk")

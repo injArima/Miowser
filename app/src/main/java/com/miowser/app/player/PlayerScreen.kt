@@ -1956,7 +1956,7 @@ private fun PlaybackSpeedIndicator(speed: Float) {
 }
 
 @Composable
-internal fun PlayerCenterControls(
+private fun PlayerCenterControls(
     isPlaying: Boolean,
     isBuffering: Boolean,
     playlistActive: Boolean,
@@ -2216,7 +2216,7 @@ private fun PlayerTimerContent(timeline: PlayerTimelineState, modifier: Modifier
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun PlayerBufferedTimeline(
+private fun PlayerBufferedTimeline(
     positionMs: Long,
     bufferedPositionMs: Long,
     durationMs: Long,
