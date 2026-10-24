@@ -4,8 +4,8 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
-import android.content.res.Configuration
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.media.AudioManager
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -13,120 +13,87 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
-import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Speed
-import androidx.compose.material.icons.rounded.AspectRatio
-import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.material.icons.rounded.LockOpen
-import androidx.compose.material.icons.rounded.PictureInPictureAlt
-import androidx.compose.material.icons.rounded.Subtitles
-import androidx.compose.material.icons.rounded.Audiotrack
-import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.miowser.app.player.PlayerBufferedTimeline
 import com.miowser.app.MainActivity
-import com.miowser.app.player.PlayerAdjustmentsSheet
-import com.miowser.app.player.PlayerGestureSurface
-import com.miowser.app.player.PlayerGestureFeedback
-import com.miowser.app.player.PlayerGestureFeedbackOverlay
-import com.miowser.app.player.PlayerGestureKind
-import com.miowser.app.player.LocalPlayerControlsActive
-import com.miowser.app.player.PlayerCenterControls
-import com.miowser.app.player.RotationPlayerButton
-import com.miowser.app.player.RoundPlayerButton
-import com.miowser.app.player.formatPlayerTimer
-import com.miowser.app.ui.MiowserDropdownMenu
+import com.miowser.app.player.*
 import com.miowser.app.ui.MiowserMenuItem
 import com.miowser.app.ui.theme.LocalMotionPolicy
 import com.miowser.app.ui.theme.MiowserPlayerTheme
 import com.miowser.app.ui.theme.MotionTokens
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
-/** A sibling of the retained custom video View. Ordinary website fullscreen has no owner here. */
+/** Original player UI backed by the retained HTML video. This route never creates ExoPlayer. */
 @Composable
-internal fun BrowserVideoPlayerOverlay(controller: BrowserPlaybackControls, title: String, onExit: () -> Unit) {
-    val state by controller.state.collectAsState()
-    if (state.phase == BrowserVideoPhase.UNAVAILABLE) {
-        MiowserPlayerTheme(darkTheme = true) {
+internal fun BrowserVideoPlayerOverlay(controller: BrowserPlaybackControls, title: String,
+    onExit: () -> Unit, sourceLabel: String = "") {
+    val presentation = remember(controller) { controller.state.map(::browserVideoPresentation).distinctUntilChanged() }
+    val state by presentation.collectAsState(browserVideoPresentation(controller.state.value))
+    MiowserPlayerTheme(darkTheme = true) {
+        if (state.phase == BrowserVideoPhase.UNAVAILABLE) {
             val host = LocalContext.current.videoActivity() as? MainActivity
             if (host?.playerInPictureInPicture != true) BrowserVideoRecoveryBanner(
                 state.message ?: "The video connection is unavailable.", onExit)
-        }
-        return
-    }
-    val session = state.session ?: return
-    key(session.id, state.attempt) {
-        MiowserPlayerTheme(darkTheme = true) {
-            BrowserVideoControlsContent(controller, state, title, onExit)
+        } else state.owner?.let { owner ->
+            key(owner) { BrowserVideoControlsContent(controller, state, title, sourceLabel, onExit) }
         }
     }
 }
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
-private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, state: BrowserVideoPlaybackState,
-    title: String, onExit: () -> Unit) {
-    val session = state.session ?: return
-    val video = session.state
+private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, state: BrowserVideoPresentation,
+    title: String, sourceLabel: String, onExit: () -> Unit) {
+    val video = state.video ?: return
+    val owner = state.owner ?: return
     val activity = LocalContext.current.videoActivity()
     val host = activity as? MainActivity
-    val owner = remember(session.id, state.attempt) { BrowserVideoPipOwner(session.id, state.attempt) }
     val inPip = host?.playerInPictureInPicture == true && host.browserVideoPipOwner == owner
     val supportsPip = remember(activity) { host?.packageManager?.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE) == true }
     val audio = remember(activity) { activity?.getSystemService(AudioManager::class.java) }
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val motion = LocalMotionPolicy.current
     var visible by remember { mutableStateOf(true) }
-    var menu by remember { mutableStateOf<String?>(null) }
+    var speedMenu by remember { mutableStateOf(false) }
+    var scaleMenu by remember { mutableStateOf(false) }
     var adjustments by remember { mutableStateOf(false) }
+    var audioPanel by remember { mutableStateOf(false) }
+    val overlays = remember { PlayerOverlayState() }
+    val subtitleFocus = remember { FocusRequester() }
+    val playlistFocus = remember { FocusRequester() }
+    val focusScope = rememberCoroutineScope()
     var locked by remember { mutableStateOf(false) }
     var feedback by remember { mutableStateOf<PlayerGestureFeedback?>(null) }
     var feedbackSequence by remember { mutableIntStateOf(0) }
-    var holdingSpeed by remember { mutableStateOf(false) }
     val speedHold = remember { BrowserVideoSpeedHold() }
-    var scrub by remember { mutableStateOf<Long?>(null) }
+    val timeline = remember { BrowserVideoTimelineInteraction() }
+    var scrubbing by remember { mutableStateOf(false) }
     var interaction by remember { mutableIntStateOf(0) }
     var rotationLocked by remember { mutableStateOf(false) }
+    var pendingRotation by remember { mutableStateOf<Boolean?>(null) }
     val orientationOwner = remember { booleanArrayOf(false) }
+    val modal = overlays.isPresent || adjustments || audioPanel
+
     DisposableEffect(controller, activity) {
         val original = activity?.requestedOrientation
         val originalBrightness = activity?.window?.attributes?.screenBrightness
@@ -138,171 +105,183 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
             if (originalBrightness != null) activity.window.attributes = activity.window.attributes.apply { screenBrightness = originalBrightness }
         }
     }
-    BackHandler(enabled = locked && !inPip && state.controlsEnabled) { locked = false; visible = true }
-    LaunchedEffect(state.phase, video.sourceRevision) {
-        menu = null; adjustments = false; scrub = null; feedback = null
-        speedHold.stop(controller); holdingSpeed = false
+    LaunchedEffect(landscape, pendingRotation) {
+        if (pendingRotation == landscape) {
+            pendingRotation = null
+            if (rotationLocked) activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LOCKED
+        }
+    }
+    BackHandler(enabled = locked && !inPip && state.controlsEnabled && !modal) { locked = false; visible = true }
+    LaunchedEffect(state.phase, video.sourceRevision, inPip) {
+        speedMenu = false; scaleMenu = false; adjustments = false; audioPanel = false
+        overlays.clear(); scrubbing = false; feedback = null; speedHold.stop(controller)
         if (!state.controlsEnabled) locked = false
     }
-    LaunchedEffect(feedbackSequence) { if (feedback != null) { delay(1_000); feedback = null } }
-    LaunchedEffect(inPip) {
-        if (inPip) { menu = null; adjustments = false; feedback = null; speedHold.stop(controller); holdingSpeed = false }
+    LaunchedEffect(video.captions.isEmpty(), video.audioTracks.size > 1) {
+        if (video.captions.isEmpty()) overlays.clear()
+        if (video.audioTracks.size <= 1) audioPanel = false
     }
-    LaunchedEffect(visible, video.playing, menu, adjustments, locked, scrub, state.pendingSeekMs, state.message, interaction) {
+    LaunchedEffect(feedbackSequence) { if (feedback != null) { delay(1_000); feedback = null } }
+    LaunchedEffect(visible, video.playing, video.buffering, speedMenu, scaleMenu, modal, scrubbing,
+        state.seeking, state.message, interaction, state.phase) {
         if (!locked && (!video.playing || state.message != null)) visible = true
-        if (visible && video.playing && menu == null && !adjustments && scrub == null && state.pendingSeekMs == null && state.message == null) {
-            delay(3_500)
-            visible = false
+        if (visible && video.playing && !video.buffering && !speedMenu && !scaleMenu && !modal &&
+            !scrubbing && !state.seeking && state.message == null && state.controlsEnabled) {
+            delay(4_000); visible = false
         }
     }
-    fun act(action: () -> Unit) { interaction++; controller.clearMessage(); action() }
+    fun act(action: () -> Unit) { visible = true; interaction++; controller.clearMessage(); action() }
+    fun closeMenus() { speedMenu = false; scaleMenu = false }
+    fun skip(deltaMs: Long) {
+        val origin = controller.state.value.session?.state?.positionMs ?: return
+        act { controller.skip(deltaMs) }
+        val target = controller.state.value.pendingSeekMs ?: origin
+        feedback = PlayerGestureFeedback(if (deltaMs < 0) PlayerGestureKind.SEEK_BACKWARD else PlayerGestureKind.SEEK_FORWARD,
+            formatPlayerTime(target), seekDeltaMs = target - origin)
+        feedbackSequence++
+    }
 
-    Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-        // Gesture surface and controls remain siblings: sheets/buttons own their input.
-        if (!inPip && state.controlsEnabled) PlayerGestureSurface(locked, visible, landscape,
-            positionMs = { controller.state.value.let { s ->
-                val v = s.session?.state
-                ((s.pendingSeekMs ?: v?.positionMs ?: 0L) - (v?.browserSeekWindow()?.startMs ?: 0L)).coerceAtLeast(0)
-            } }, durationMs = { controller.state.value.session?.state?.browserSeekWindow()?.durationMs ?: 0L },
-            onSingleTap = { interaction++; visible = !visible },
-            onTogglePlayPause = {
-                val playing = controller.state.value.session?.state?.playing == true
-                act(controller::playPause); !playing
-            }, onStartHoldToSpeed = { speedHold.start(controller).also { holdingSpeed = it } },
-            onStopHoldToSpeed = { speedHold.stop(controller); holdingSpeed = false },
-            onSeekTo = { target -> controller.state.value.session?.state?.browserSeekWindow()?.let { window ->
-                act { controller.seekTo(window.startMs + target) }
-            } }, onFeedback = { feedback = it; feedbackSequence++ }, onBrightnessCommitted = {},
-            canSeek = state.canSeek, volumeEnabled = audio?.isVolumeFixed != true,
-            onVolumeInteraction = { if (controller.state.value.session?.state?.muted == true) controller.setMuted(false) })
-        if (locked && !inPip && state.controlsEnabled) RoundPlayerButton(Icons.Rounded.LockOpen, "Unlock controls", { locked = false; visible = true },
-            modifier = Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top)))
-        CompositionLocalProvider(LocalPlayerControlsActive provides (visible && !locked && !inPip && state.controlsEnabled)) {
-        AnimatedVisibility(visible = visible && !locked && !inPip && state.controlsEnabled, enter = fadeIn(motion.spec(MotionTokens.controlsEnter)),
-            exit = fadeOut(motion.spec(MotionTokens.controlsExit))) {
-            Box(Modifier.fillMaxSize()) {
-                Row(Modifier.align(Alignment.TopCenter).fillMaxWidth()
-                    .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top))
-                    .background(Color.Black.copy(alpha = 0.55f)).padding(horizontal = 12.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(title.ifBlank { "Video" }, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.titleMedium)
-                        if (video.videoWidth > 0 && video.videoHeight > 0) Text("${video.videoWidth} × ${video.videoHeight}",
-                            color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
+    if (!inPip) PlayerInteractionLayers(
+        blockPlayerInput = modal,
+        playerContent = {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val viewportHeight = maxHeight
+                if (state.controlsEnabled) PlayerGestureSurface(locked, visible, landscape,
+                    positionMs = { controller.state.value.let { s ->
+                        val v = s.session?.state
+                        ((s.pendingSeekMs ?: v?.positionMs ?: 0L) - (v?.browserSeekWindow()?.startMs ?: 0L)).coerceAtLeast(0)
+                    } }, durationMs = { controller.state.value.session?.state?.browserSeekWindow()?.durationMs ?: 0L },
+                    onSingleTap = { interaction++; visible = !visible },
+                    onTogglePlayPause = {
+                        val playing = controller.state.value.session?.state?.playing == true
+                        act(controller::playPause); !playing
+                    }, onStartHoldToSpeed = { speedHold.start(controller) }, onStopHoldToSpeed = { speedHold.stop(controller) },
+                    onSeekTo = { target -> controller.state.value.session?.state?.browserSeekWindow()?.let { window ->
+                        act { controller.seekTo(window.startMs + target) }
+                    } }, onFeedback = { feedback = it; feedbackSequence++ }, onBrightnessCommitted = {},
+                    canSeek = state.canSeek, volumeEnabled = audio?.isVolumeFixed != true,
+                    onVolumeInteraction = { if (controller.state.value.session?.state?.muted == true) controller.setMuted(false) })
+                AnimatedVisibility(visible && state.controlsEnabled,
+                    enter = fadeIn(motion.spec(MotionTokens.controlsEnter)),
+                    exit = fadeOut(motion.spec(MotionTokens.controlsExit)), modifier = Modifier.fillMaxSize()) {
+                    CompositionLocalProvider(LocalPlayerControlsActive provides (visible && state.controlsEnabled && !modal)) {
+                        Box(Modifier.fillMaxSize().playerFocusGate(!visible || !state.controlsEnabled || modal)) {
+                            PlayerChromeScrims(viewportHeight, locked)
+                            if (locked) RoundPlayerButton(Icons.Rounded.LockOpen, "Unlock controls", { locked = false },
+                                Modifier.align(Alignment.TopEnd)
+                                    .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top))
+                                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.End)).padding(20.dp))
+                            else {
+                                PlayerTopBar(landscape, rotationLocked, video.speed.toFloat(),
+                                    onRotate = {
+                                        interaction++; orientationOwner[0] = true; pendingRotation = !landscape
+                                        activity?.requestedOrientation = if (landscape) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                                    }, onToggleRotationLock = {
+                                        interaction++; orientationOwner[0] = true; pendingRotation = null; rotationLocked = !rotationLocked
+                                        activity?.requestedOrientation = if (rotationLocked) ActivityInfo.SCREEN_ORIENTATION_LOCKED else ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+                                    }, onDownload = null,
+                                    onPip = if (supportsPip) ({
+                                        closeMenus(); speedHold.stop(controller)
+                                        if (host?.enterBrowserVideoPictureInPicture(owner, video.width, video.height) != true)
+                                            Toast.makeText(activity, "Picture in picture is unavailable. Check the app's PiP permission.", Toast.LENGTH_SHORT).show()
+                                    }) else null,
+                                    onOpenPlaylist = null, playlistFocus = playlistFocus, playlistPosition = 0, playlistSize = 0,
+                                    onLock = { locked = true; closeMenus() }, onDismiss = onExit, modifier = Modifier.align(Alignment.TopCenter))
+                                PlayerCenterControls(video.playing, video.buffering, false, null, null,
+                                    onReplay = { skip(-10_000) }, onPlayPause = { act(controller::playPause) },
+                                    onForward = { skip(10_000) }, modifier = Modifier.align(Alignment.Center), seekEnabled = state.canSeek,
+                                    showSeekControls = state.canSeek)
+                                PlayerBottomChrome(title.ifBlank { "Video" }, sourceLabel, video.height.takeIf { it > 0 }?.let { "${it}p" },
+                                    landscape, PlayerScaleMode.valueOf(video.scale.name), video.speed.toFloat(), owner,
+                                    scaleMenu, { scaleMenu = it; interaction++ }, { mode -> scaleMenu = false; act { controller.setScale(BrowserVideoScale.valueOf(mode.name)) } },
+                                    speedMenu, { speedMenu = it; interaction++ }, { rate -> speedMenu = false; act { controller.setSpeed(rate.toDouble()) } },
+                                    subtitleFocus, "Subtitles", true, if (video.captions.isNotEmpty()) ({ closeMenus(); overlays.open(PlayerOverlay.SUBTITLES); interaction++ }) else null,
+                                    "Audio tracks", true, if (video.audioTracks.size > 1) ({ closeMenus(); audioPanel = true; interaction++ }) else null,
+                                    "Quality", false, null,
+                                    onAdjustmentsRequested = { closeMenus(); adjustments = true; interaction++ },
+                                    timelineContent = { BrowserVideoTimeline(controller, timeline) { if (scrubbing != it) { scrubbing = it; interaction++ } } },
+                                    timerContent = { BrowserVideoTimer(controller, timeline, it) }, modifier = Modifier.align(Alignment.BottomCenter),
+                                    extraSpeedOptions = {
+                                        MiowserMenuItem(text = { Text(if (video.muted) "Unmute" else "Mute") },
+                                            leadingIcon = { Icon(if (video.muted) Icons.AutoMirrored.Rounded.VolumeOff else Icons.AutoMirrored.Rounded.VolumeUp, null) },
+                                            onClick = { speedMenu = false; act { controller.setMuted(!video.muted) } })
+                                    }, message = state.message)
+                            }
+                        }
                     }
-                    RotationPlayerButton(landscape, rotationLocked,
-                        onRotate = {
-                            interaction++; orientationOwner[0] = true; rotationLocked = true
-                            activity?.requestedOrientation = if (landscape) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                                else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                        }, onToggleLock = {
-                            interaction++; orientationOwner[0] = true; rotationLocked = !rotationLocked
-                            activity?.requestedOrientation = if (rotationLocked) ActivityInfo.SCREEN_ORIENTATION_LOCKED
-                                else ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
-                        })
-                    RoundPlayerButton(Icons.Rounded.Lock, "Lock controls", { locked = true; menu = null; adjustments = false })
-                    RoundPlayerButton(Icons.AutoMirrored.Rounded.ArrowBack, "Return to website", onExit)
                 }
-                PlayerCenterControls(video.playing, video.buffering, false, null, null,
-                    onReplay = { act { controller.skip(-10_000) } }, onPlayPause = { act(controller::playPause) },
-                    onForward = { act { controller.skip(10_000) } },
-                    modifier = Modifier.align(Alignment.Center).background(Color.Black.copy(alpha = 0.25f)),
-                    seekEnabled = state.canSeek)
-                Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.65f)).padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    val window = video.browserSeekWindow()
-                    if (window != null && window.durationMs > 0) {
-                        PlayerBufferedTimeline(
-                            (scrub ?: state.pendingSeekMs ?: video.positionMs) - window.startMs,
-                            (video.buffered.firstOrNull { video.positionMs in it.startMs..it.endMs }?.endMs ?: video.positionMs) - window.startMs,
-                            window.durationMs,
-                            onScrub = { scrub = window.startMs + it; interaction++ },
-                            onScrubFinished = { scrub?.let { target -> act { controller.seekTo(target) } }; scrub = null })
+                if (!locked && !modal) feedback?.let {
+                    PlayerGestureFeedbackOverlay(it, when (it.kind) {
+                        PlayerGestureKind.BRIGHTNESS -> Modifier.align(Alignment.CenterStart).padding(start = 28.dp)
+                        PlayerGestureKind.VOLUME -> Modifier.align(Alignment.CenterEnd).padding(end = 28.dp)
+                        else -> Modifier.align(Alignment.Center)
+                    })
+                }
+                if (state.phase == BrowserVideoPhase.RECONNECTING) BrowserVideoRecoveryBanner("Reconnecting player controls…", onExit)
+            }
+        }, overlayContent = {
+            if (adjustments && state.controlsEnabled) PlayerAdjustmentsSheet(activity, { adjustments = false },
+                onBrightnessCommitted = {}, volumeEnabled = audio?.isVolumeFixed != true,
+                onVolumeInteraction = { if (controller.state.value.session?.state?.muted == true) controller.setMuted(false) })
+            if (audioPanel && state.controlsEnabled) PlayerTrackSheet("Audio", { audioPanel = false }) { listModifier ->
+                LazyColumn(listModifier) {
+                    state.message?.let { item("error") { Text(it, color = MaterialTheme.colorScheme.error) } }
+                    itemsIndexed(video.audioTracks, key = { _, track -> track.id }) { index, track ->
+                        PlayerTrackChoiceRow(track.displayLabel("Audio", index), track.language, track.selected,
+                            { act { controller.selectAudio(track.id) } })
                     }
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(if (video.durationMs == null) "Live" else formatPlayerTimer(
-                            scrub ?: state.pendingSeekMs ?: video.positionMs, video.durationMs, false),
-                            color = Color.White, style = MaterialTheme.typography.labelLarge)
-                        Spacer(Modifier.weight(1f))
-                        if (state.pendingSeekMs != null) Text("Seeking…", color = Color.White,
-                            style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 8.dp))
-                        Box {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("${video.speed}×", color = Color.White, style = MaterialTheme.typography.labelLarge)
-                                RoundPlayerButton(Icons.Rounded.Speed, "Playback speed", { interaction++; menu = "speed" })
-                            }
-                            MiowserDropdownMenu(menu == "speed", onDismissRequest = { menu = null }) {
-                                listOf(0.5, 0.75, 1.0, 1.25, 1.5, 2.0).forEach { speed ->
-                                    MiowserMenuItem(text = { Text("${speed}×") }, selected = speed == video.speed,
-                                        leadingIcon = { Icon(Icons.Rounded.Speed, null) }, onClick = {
-                                            menu = null; act { controller.setSpeed(speed) }
-                                        })
-                                }
-                            }
-                        }
-                    }
-                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        RoundPlayerButton(if (video.muted) Icons.AutoMirrored.Rounded.VolumeOff else Icons.AutoMirrored.Rounded.VolumeUp,
-                            if (video.muted) "Unmute" else "Mute", { act { controller.setMuted(!video.muted) } })
-                        RoundPlayerButton(Icons.Rounded.Tune, "Brightness and volume", { interaction++; adjustments = true })
-                        Box {
-                            RoundPlayerButton(Icons.Rounded.AspectRatio, "Video size: ${video.scale.label}", { interaction++; menu = "scale" })
-                            MiowserDropdownMenu(menu == "scale", { menu = null }) {
-                                BrowserVideoScale.entries.forEach { scale ->
-                                    MiowserMenuItem(text = { Text(scale.label) }, selected = video.scale == scale,
-                                        onClick = { menu = null; act { controller.setScale(scale) } })
-                                }
-                            }
-                        }
-                        if (video.captions.isNotEmpty()) Box {
-                            RoundPlayerButton(Icons.Rounded.Subtitles, "Subtitles", { interaction++; menu = "captions" })
-                            MiowserDropdownMenu(menu == "captions", { menu = null }) {
-                                MiowserMenuItem(text = { Text("Off") }, selected = video.captions.none { it.selected },
-                                    onClick = { menu = null; act { controller.selectCaption(null) } })
-                                video.captions.forEachIndexed { index, track ->
-                                    MiowserMenuItem(text = { Text(track.displayLabel("Subtitle", index), maxLines = 2) }, selected = track.selected,
-                                        onClick = { menu = null; act { controller.selectCaption(track.id) } })
-                                }
-                            }
-                        }
-                        if (video.audioTracks.size > 1) Box {
-                            RoundPlayerButton(Icons.Rounded.Audiotrack, "Audio tracks", { interaction++; menu = "audio" })
-                            MiowserDropdownMenu(menu == "audio", { menu = null }) {
-                                video.audioTracks.forEachIndexed { index, track ->
-                                    MiowserMenuItem(text = { Text(track.displayLabel("Audio", index), maxLines = 2) }, selected = track.selected,
-                                        onClick = { menu = null; act { controller.selectAudio(track.id) } })
-                                }
-                            }
-                        }
-                        if (supportsPip) RoundPlayerButton(Icons.Rounded.PictureInPictureAlt, "Picture in picture", {
-                            menu = null; adjustments = false; speedHold.stop(controller); holdingSpeed = false
-                            if (host?.enterBrowserVideoPictureInPicture(owner, video.videoWidth, video.videoHeight) != true) {
-                                Toast.makeText(activity, "Picture in picture is unavailable. Check the app's PiP permission.", Toast.LENGTH_SHORT).show()
-                            }
-                        })
-                    }
-                    state.message?.let { Text(it, color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall, maxLines = 2) }
                 }
             }
-        }
-        }
-        if (!inPip && !locked) feedback?.let {
-            PlayerGestureFeedbackOverlay(it, when (it.kind) {
-                PlayerGestureKind.BRIGHTNESS -> Modifier.align(Alignment.CenterStart).padding(start = 28.dp)
-                PlayerGestureKind.VOLUME -> Modifier.align(Alignment.CenterEnd).padding(end = 28.dp)
-                else -> Modifier.align(Alignment.Center)
-            })
-        }
-        if (holdingSpeed && !inPip && !locked) Text("2× playback", color = Color.White,
-            modifier = Modifier.align(Alignment.TopCenter).padding(top = 72.dp).background(Color.Black.copy(alpha = 0.65f)).padding(8.dp))
-    }
-    if (state.phase == BrowserVideoPhase.RECONNECTING && !inPip) BrowserVideoRecoveryBanner("Reconnecting player controls…", onExit)
-    if (adjustments && !inPip && !locked && state.controlsEnabled) PlayerAdjustmentsSheet(activity, { adjustments = false },
-        onBrightnessCommitted = {}, volumeEnabled = audio?.isVolumeFixed != true,
-        onVolumeInteraction = { if (controller.state.value.session?.state?.muted == true) controller.setMuted(false) })
+            PlayerOverlayHost(overlays, onClosed = {
+                visible = true
+                val revision = overlays.revision
+                focusScope.launch {
+                    withFrameNanos { }
+                    val current = controller.state.value
+                    if (overlays.revision == revision && !overlays.isPresent && owner.matches(current) &&
+                        current.controlsEnabled && current.session?.state?.captions?.isNotEmpty() == true) {
+                        runCatching { subtitleFocus.requestFocus() }
+                    }
+                }
+            }) { _, panelModifier, initialFocus ->
+                PlayerSubtitleWorkspace({ overlays.dismiss() }, panelModifier, initialFocus,
+                    tracks = { contentModifier, _ ->
+                        LazyColumn(contentModifier) {
+                            state.message?.let { item("error") { Text(it, color = MaterialTheme.colorScheme.error) } }
+                            item("off") { PlayerSubtitleChoiceRow("Off", video.captions.none { it.selected }, { act { controller.selectCaption(null) } }) }
+                            itemsIndexed(video.captions, key = { _, track -> track.id }) { index, track ->
+                                PlayerSubtitleChoiceRow(track.displayLabel("Subtitle", index), track.selected, { act { controller.selectCaption(track.id) } })
+                            }
+                        }
+                    })
+            }
+        })
+}
+
+@Composable
+private fun BrowserVideoTimeline(controller: BrowserPlaybackControls, timeline: BrowserVideoTimelineInteraction,
+    onScrubbing: (Boolean) -> Unit) {
+    val state by controller.state.collectAsState()
+    val video = state.session?.state ?: return
+    val window = video.browserSeekWindow() ?: return
+    val notify by rememberUpdatedState(onScrubbing)
+    DisposableEffect(controller) { onDispose { timeline.clear(); notify(false) } }
+    LaunchedEffect(video.sourceRevision, state.controlsEnabled) { timeline.clear(); notify(false) }
+    PlayerBufferedTimeline((timeline.scrubPositionMs ?: state.pendingSeekMs ?: video.positionMs) - window.startMs,
+        (video.buffered.firstOrNull { video.positionMs in it.startMs..it.endMs }?.endMs ?: video.positionMs) - window.startMs,
+        window.durationMs,
+        onScrub = { timeline.update(state, window.startMs + it); notify(true) },
+        onScrubFinished = {
+            timeline.targetFor(controller.state.value)?.let(controller::seekTo)
+            timeline.clear(); notify(false)
+        })
+}
+
+@Composable
+private fun BrowserVideoTimer(controller: BrowserPlaybackControls, timeline: BrowserVideoTimelineInteraction, modifier: Modifier) {
+    val state by controller.state.collectAsState()
+    val video = state.session?.state ?: return
+    PlayerTimer(timeline.scrubPositionMs ?: state.pendingSeekMs ?: video.positionMs, video.durationMs ?: 0, modifier, live = video.durationMs == null)
 }
 
 @Composable
@@ -310,15 +289,13 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
 private fun BrowserVideoRecoveryBanner(message: String, onExit: () -> Unit) {
     Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing)
         .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top))
-        .background(Color.Black.copy(alpha = 0.85f)).padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically) {
+        .background(Color.Black.copy(alpha = 0.85f)).padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(message, color = Color.White, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
         RoundPlayerButton(Icons.AutoMirrored.Rounded.ArrowBack, "Return to website", onExit)
     }
 }
 
-private fun BrowserMediaTrack.displayLabel(kind: String, index: Int): String =
-    label.ifBlank { language.ifBlank { "$kind ${index + 1}" } }
+private fun BrowserMediaTrack.displayLabel(kind: String, index: Int): String = label.ifBlank { language.ifBlank { "$kind ${index + 1}" } }
 
 private tailrec fun Context.videoActivity(): Activity? = when (this) {
     is Activity -> this

@@ -2987,7 +2987,8 @@ fun BrowserScreen(
                         onRelease = { host -> host.removeAllViews() }
                     )
                     tabs.firstOrNull { it.id == fullscreen.tabId }?.let { owner ->
-                        BrowserVideoPlayerOverlay(owner.browserVideoPlayer, owner.title, ::exitWebFullscreen)
+                        BrowserVideoPlayerOverlay(owner.browserVideoPlayer, owner.title, ::exitWebFullscreen,
+                            sourceLabel = SiteProtection.host(owner.url).orEmpty())
                     }
                 }
             }

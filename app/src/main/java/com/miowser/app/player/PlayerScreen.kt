@@ -248,10 +248,10 @@ sealed class PlaybackRequest {
 }
 
 @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
-private enum class PlayerScaleMode(val label: String, val resizeMode: Int) {
-    FIT("Fit", AspectRatioFrameLayout.RESIZE_MODE_FIT),
-    ZOOM("Zoom", AspectRatioFrameLayout.RESIZE_MODE_ZOOM),
-    FILL("Fill", AspectRatioFrameLayout.RESIZE_MODE_FILL)
+private val PlayerScaleMode.resizeMode: Int get() = when (this) {
+    PlayerScaleMode.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+    PlayerScaleMode.ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+    PlayerScaleMode.FILL -> AspectRatioFrameLayout.RESIZE_MODE_FILL
 }
 
 internal enum class PlayerGestureKind { SEEK_BACKWARD, SEEK_FORWARD, PLAY, PAUSE, BRIGHTNESS, VOLUME }
@@ -503,8 +503,6 @@ private fun PlayerContent(
     var externalSubtitleLoadAttempt by remember(request) { mutableIntStateOf(0) }
 
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-    val topScrimHeight = minOf(144.dp, viewportHeight * 0.32f)
-    val bottomScrimHeight = minOf(256.dp, viewportHeight * 0.53f)
     val systemBarsController = remember(activity) {
         activity?.window?.let { window ->
             WindowCompat.getInsetsController(window, window.decorView).apply {
@@ -1050,31 +1048,7 @@ private fun PlayerContent(
         ) {
             CompositionLocalProvider(LocalPlayerControlsActive provides controlsVisible) {
             Box(modifier = Modifier.fillMaxSize().playerFocusGate(!controlsVisible)) {
-                // Separate, bounded fades keep the center of the video clear in both orientations.
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .fillMaxWidth()
-                        .height(topScrimHeight)
-                        .background(Brush.verticalGradient(
-                            0f to Color.Black.copy(alpha = 0.60f),
-                            0.55f to Color.Black.copy(alpha = 0.30f),
-                            1f to Color.Transparent
-                        ))
-                )
-                if (!controlsLocked) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .height(bottomScrimHeight)
-                            .background(Brush.verticalGradient(
-                                0f to Color.Transparent,
-                                0.35f to Color.Black.copy(alpha = 0.34f),
-                                1f to Color.Black.copy(alpha = 0.72f)
-                            ))
-                    )
-                }
+                PlayerChromeScrims(viewportHeight, controlsLocked)
                 if (controlsLocked) {
                     RoundPlayerButton(
                         icon = Icons.Rounded.LockOpen,
@@ -1860,17 +1834,6 @@ internal fun PlayerGestureFeedbackOverlay(
 }
 
 @Composable
-private fun PlayerLoadingSpinner(modifier: Modifier = Modifier) {
-    Box(modifier = modifier.size(64.dp), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator(
-            modifier = Modifier.size(40.dp),
-            color = Color.White,
-            strokeWidth = 3.5.dp
-        )
-    }
-}
-
-@Composable
 private fun PlayerErrorCard(
     error: PlayerErrorPresentation,
     onOpenSourcePage: (() -> Unit)?,
@@ -1906,161 +1869,6 @@ private fun PlayerErrorCard(
                     Button(onClick = onRetry) { Text("Try again") }
                 }
             }
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun PlayerTopBar(
-    isLandscape: Boolean,
-    rotationLocked: Boolean,
-    playbackSpeed: Float,
-    onRotate: () -> Unit,
-    onToggleRotationLock: () -> Unit,
-    onDownload: (() -> Unit)?,
-    onPip: (() -> Unit)?,
-    onOpenPlaylist: (() -> Unit)?,
-    playlistFocus: FocusRequester,
-    playlistPosition: Int,
-    playlistSize: Int,
-    onLock: () -> Unit,
-    onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxWidth()
-            .windowInsetsPadding(
-                WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top)
-            )
-            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-            .padding(horizontal = 12.dp, vertical = 8.dp)
-    ) {
-        val compact = maxWidth < 340.dp
-        val gap = if (compact) 0.dp else 4.dp
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Spacer(Modifier.weight(1f))
-            if (onDownload != null) {
-                RoundPlayerButton(Icons.Rounded.Download, "Download video", onDownload)
-                Spacer(Modifier.width(gap))
-            }
-            if (onPip != null) {
-                RoundPlayerButton(Icons.Rounded.PictureInPictureAlt, "Picture in picture", onPip)
-                Spacer(Modifier.width(gap))
-            }
-            RotationPlayerButton(
-                isLandscape = isLandscape,
-                locked = rotationLocked,
-                onRotate = onRotate,
-                onToggleLock = onToggleRotationLock
-            )
-            Spacer(Modifier.width(gap))
-            if (playbackSpeed != 1f && !compact) {
-                PlaybackSpeedIndicator(playbackSpeed)
-                Spacer(Modifier.width(gap))
-            }
-            RoundPlayerButton(Icons.Rounded.Lock, "Lock controls", onLock)
-            Spacer(Modifier.width(gap))
-            if (onOpenPlaylist != null) {
-                RoundPlayerButton(Icons.AutoMirrored.Rounded.PlaylistPlay,
-                    "Playlist: $playlistPosition of $playlistSize", onOpenPlaylist,
-                    Modifier.focusRequester(playlistFocus))
-                Spacer(Modifier.width(gap))
-            }
-            RoundPlayerButton(Icons.AutoMirrored.Rounded.ArrowBack, "Close player", onDismiss)
-        }
-    }
-}
-
-@Composable
-private fun PlaybackSpeedIndicator(speed: Float) {
-    Box(modifier = Modifier.size(44.dp), contentAlignment = Alignment.Center) {
-        Text(
-            text = formatSpeed(speed),
-            color = Color.White,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold
-        )
-    }
-}
-
-@Composable
-internal fun PlayerCenterControls(
-    isPlaying: Boolean,
-    isBuffering: Boolean,
-    playlistActive: Boolean,
-    onPreviousVideo: (() -> Unit)?,
-    onNextVideo: (() -> Unit)?,
-    onReplay: () -> Unit,
-    onPlayPause: () -> Unit,
-    onForward: () -> Unit,
-    modifier: Modifier = Modifier,
-    seekEnabled: Boolean = true
-) {
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(if (playlistActive) 8.dp else 40.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        PlayerTransportButton(Icons.Rounded.Replay10, "Rewind 10 seconds", onReplay,
-            enabled = seekEnabled,
-            size = if (playlistActive) 48.dp else 56.dp,
-            iconSize = if (playlistActive) 31.dp else 36.dp)
-        if (playlistActive) PlayerTransportButton(
-            Icons.Rounded.SkipPrevious, "Previous video", { onPreviousVideo?.invoke() },
-            enabled = onPreviousVideo != null, size = 40.dp, iconSize = 27.dp)
-        Surface(
-            shape = CircleShape,
-            color = Color.Transparent,
-            contentColor = Color.White,
-            modifier = Modifier
-                .size(64.dp)
-                .testTag("player_play_pause")
-                .clip(CircleShape)
-                .clickable(enabled = LocalPlayerControlsActive.current, onClick = onPlayPause)
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                if (isBuffering) {
-                    PlayerLoadingSpinner()
-                } else {
-                    Icon(
-                        if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        contentDescription = if (isPlaying) "Pause" else "Play",
-                        modifier = Modifier.size(48.dp)
-                    )
-                }
-            }
-        }
-        if (playlistActive) PlayerTransportButton(
-            Icons.Rounded.SkipNext, "Next video", { onNextVideo?.invoke() },
-            enabled = onNextVideo != null, size = 40.dp, iconSize = 27.dp)
-        PlayerTransportButton(Icons.Rounded.Forward10, "Forward 10 seconds", onForward,
-            enabled = seekEnabled,
-            size = if (playlistActive) 48.dp else 56.dp,
-            iconSize = if (playlistActive) 31.dp else 36.dp)
-    }
-}
-
-@Composable
-private fun PlayerTransportButton(
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit,
-    enabled: Boolean = true,
-    size: Dp = 56.dp,
-    iconSize: Dp = 36.dp
-) {
-    Surface(
-        onClick = onClick,
-        enabled = enabled && LocalPlayerControlsActive.current,
-        shape = CircleShape,
-        color = Color.Transparent,
-        contentColor = if (enabled) Color.White else Color.White.copy(alpha = 0.35f),
-        modifier = Modifier.size(size)
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription = label, modifier = Modifier.size(iconSize))
         }
     }
 }
@@ -2106,120 +1914,15 @@ private fun PlayerBottomControls(
         timeline.refresh(player)
         onScrubbingChanged(false)
     }
-    var timerWidthPx by remember(player) { mutableIntStateOf(0) }
-    val timerWidth = maxOf(with(LocalDensity.current) { timerWidthPx.toDp() }, 110.dp)
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .windowInsetsPadding(
-                WindowInsets.navigationBarsIgnoringVisibility.only(WindowInsetsSides.Bottom)
-            )
-            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-            .padding(horizontal = 24.dp, vertical = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = request.title,
-            color = Color.White,
-            style = if (isLandscape) MaterialTheme.typography.titleLarge
-                else MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth()
-        )
-        Text(
-            text = listOfNotNull(request.sourceLabel.takeIf { it.isNotBlank() }, qualityLabel)
-                .joinToString("  ·  "),
-            color = Color.White.copy(alpha = 0.78f),
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth().padding(top = 1.dp, bottom = 1.dp)
-        )
-        PlayerTimelineContent(timeline, onScrub, onScrubFinished)
-        Box(modifier = Modifier.fillMaxWidth().height(48.dp)) {
-            Row(
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .fillMaxWidth()
-                    .padding(end = timerWidth + 8.dp)
-                    .horizontalScroll(rememberScrollState()),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                PlayerOptionButton(
-                    Icons.Rounded.Subtitles,
-                    subtitleLabel,
-                    testId = "player_subtitles",
-                    modifier = Modifier.focusRequester(subtitleFocus),
-                    enabled = subtitlesEnabled,
-                    onClick = onOpenSubtitles
-                )
-                PlayerOptionButton(
-                    Icons.Rounded.Audiotrack,
-                    audioLabel,
-                    enabled = audioEnabled,
-                    onClick = onOpenAudio
-                )
-                PlayerOptionButton(
-                    Icons.Rounded.Tune,
-                    sourceLabel,
-                    enabled = sourcesEnabled,
-                    onClick = onOpenSources
-                )
-                Box {
-                    PlayerOptionButton(Icons.Rounded.Speed, formatSpeed(playbackSpeed)) {
-                        onSpeedMenuChange(true)
-                    }
-                    MiowserDropdownMenu(
-                        expanded = speedMenuExpanded,
-                        onDismissRequest = { onSpeedMenuChange(false) }
-                    ) {
-                        MiowserMenuItem(text = { Text("Brightness & volume") },
-                            leadingIcon = { Icon(Icons.Rounded.Tune, contentDescription = null) },
-                            onClick = onAdjustmentsRequested)
-                        listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { speed ->
-                            MiowserMenuItem(
-                                text = { Text(formatSpeed(speed)) },
-                                selected = speed == playbackSpeed,
-                                leadingIcon = { Icon(Icons.Rounded.Speed, contentDescription = null) },
-                                onClick = { onSpeedSelected(speed) }
-                            )
-                        }
-                    }
-                }
-                Box {
-                    PlayerOptionButton(
-                        icon = Icons.Rounded.FitScreen,
-                        label = "Aspect ratio: ${scaleMode.label}",
-                        onLongClickLabel = "Show aspect ratio options",
-                        onLongClick = { onScaleMenuChange(true) },
-                        onClick = {
-                            onScaleSelected(PlayerScaleMode.entries[(scaleMode.ordinal + 1) % PlayerScaleMode.entries.size])
-                        }
-                    )
-                    MiowserDropdownMenu(
-                        expanded = scaleMenuExpanded,
-                        onDismissRequest = { onScaleMenuChange(false) }
-                    ) {
-                        PlayerScaleMode.entries.forEach { mode ->
-                            MiowserMenuItem(
-                                text = { Text(mode.label) },
-                                selected = mode == scaleMode,
-                                leadingIcon = { Icon(Icons.Rounded.FitScreen, contentDescription = null) },
-                                onClick = { onScaleSelected(mode) }
-                            )
-                        }
-                    }
-                }
-            }
-            PlayerTimerContent(
-                timeline = timeline,
-                modifier = Modifier.align(Alignment.CenterEnd).onSizeChanged { if (it.width > timerWidthPx) timerWidthPx = it.width }
-            )
-        }
-    }
+    PlayerBottomChrome(request.title, request.sourceLabel, qualityLabel, isLandscape,
+        scaleMode, playbackSpeed, player,
+        scaleMenuExpanded, onScaleMenuChange, onScaleSelected,
+        speedMenuExpanded, onSpeedMenuChange, onSpeedSelected,
+        subtitleFocus, subtitleLabel, subtitlesEnabled, onOpenSubtitles,
+        audioLabel, audioEnabled, onOpenAudio, sourceLabel, sourcesEnabled, onOpenSources,
+        onAdjustmentsRequested,
+        timelineContent = { PlayerTimelineContent(timeline, onScrub, onScrubFinished) },
+        timerContent = { PlayerTimerContent(timeline, it) }, modifier = modifier)
 }
 
 @Composable
@@ -2232,76 +1935,8 @@ private fun PlayerTimelineContent(timeline: PlayerTimelineState, onScrub: (Long)
 
 @Composable
 private fun PlayerTimerContent(timeline: PlayerTimelineState, modifier: Modifier) {
-    var showRemaining by remember { mutableStateOf(false) }
     val sample = timeline.sample
-    Box(
-        modifier = modifier.height(48.dp).clip(RoundedCornerShape(10.dp))
-            .clickable(enabled = LocalPlayerControlsActive.current, onClickLabel = if (showRemaining) "Show total duration" else "Show time remaining") {
-                showRemaining = !showRemaining
-            }.padding(horizontal = 6.dp),
-        contentAlignment = Alignment.CenterEnd
-    ) {
-        Text(text = formatPlayerTimer(timeline.scrubPositionMs ?: sample.positionMs,
-            sample.durationMs, showRemaining), color = Color.White,
-            style = MaterialTheme.typography.labelLarge, maxLines = 1)
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-internal fun PlayerBufferedTimeline(
-    positionMs: Long,
-    bufferedPositionMs: Long,
-    durationMs: Long,
-    onScrub: (Long) -> Unit,
-    onScrubFinished: () -> Unit
-) {
-    val accent = MaterialTheme.colorScheme.primary
-    Slider(
-        value = positionMs.coerceIn(0L, durationMs.coerceAtLeast(0L)).toFloat(),
-        onValueChange = { onScrub(it.roundToLong()) },
-        onValueChangeFinished = onScrubFinished,
-        valueRange = 0f..durationMs.coerceAtLeast(1L).toFloat(),
-        enabled = durationMs > 0 && LocalPlayerControlsActive.current,
-        modifier = Modifier.fillMaxWidth().height(38.dp),
-        thumb = {
-            // Keep Slider's gestures and accessibility; paint the visible thumb with the track
-            // so both always share the same vertical center and progress calculation.
-            Spacer(Modifier.size(1.dp))
-        },
-        track = { state ->
-            Canvas(Modifier.fillMaxWidth().height(12.dp)) {
-                val duration = durationMs.takeIf { it > 0L } ?: 1L
-                val played = (state.value / duration).coerceIn(0f, 1f)
-                // Media3 reports the contiguous playable buffer. Disk cache may contain disjoint
-                // ranges, so the timeline must not imply that the entire cache is seekable at once.
-                val buffered = (bufferedPositionMs.toFloat() / duration).coerceIn(played, 1f)
-                val lineHeight = 6.dp.toPx()
-                val lineTop = (size.height - lineHeight) / 2f
-                val lineRadius = CornerRadius(lineHeight / 2f)
-                val thumbRadius = 5.dp.toPx()
-                val lineLeft = thumbRadius
-                val lineWidth = (size.width - thumbRadius * 2f).coerceAtLeast(0f)
-                val lineStart = Offset(lineLeft, lineTop)
-                drawRoundRect(Color.White.copy(alpha = 0.42f), topLeft = lineStart,
-                    size = Size(lineWidth, lineHeight), cornerRadius = lineRadius)
-                if (buffered > 0f) drawRoundRect(
-                    accent.copy(alpha = 0.5f),
-                    topLeft = lineStart,
-                    size = Size(lineWidth * buffered, lineHeight),
-                    cornerRadius = lineRadius
-                )
-                if (played > 0f) drawRoundRect(
-                    accent,
-                    topLeft = lineStart,
-                    size = Size(lineWidth * played, lineHeight),
-                    cornerRadius = lineRadius
-                )
-                drawCircle(accent, radius = thumbRadius,
-                    center = Offset(lineLeft + lineWidth * played, size.height / 2f))
-            }
-        }
-    )
+    PlayerTimer(timeline.scrubPositionMs ?: sample.positionMs, sample.durationMs, modifier)
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -2328,78 +1963,18 @@ private fun PlayerSubtitleWorkspaceSheet(
     initialFocus: FocusRequester? = null
 ) {
     val chosen = detectedSubtitles.firstOrNull { it.url == attachedUrl }
-    var portraitSection by remember { mutableIntStateOf(0) }
-    BoxWithConstraints(Modifier.fillMaxSize().then(modifier)) {
-    val landscape = maxWidth > maxHeight
-    CompositionLocalProvider(LocalContentColor provides Color.White) {
-    Column(Modifier.fillMaxSize().testTag("subtitle_workspace")
-        .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top))
-        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
-        .playerPanelPointerShield().padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Subtitles", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f))
-            IconButton(onClick = onDismiss,
-                modifier = initialFocus?.let { Modifier.focusRequester(it) } ?: Modifier) {
-                Icon(Icons.Rounded.Close, contentDescription = "Close subtitles")
-            }
-        }
-        if (!landscape) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                listOf("Tracks", "Inspect", "Settings").forEachIndexed { index, label ->
-                    TextButton(onClick = { portraitSection = index },
-                        colors = ButtonDefaults.textButtonColors(contentColor = subtitleOverlayAccent())) {
-                        Text(label, color = if (portraitSection == index) subtitleOverlayAccent()
-                            else Color.White)
-                    }
-                }
-            }
-        }
-        if (landscape) {
-            Row(Modifier.fillMaxWidth().weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Column(Modifier.weight(0.28f).fillMaxHeight()) {
-                    Text("Available tracks", style = MaterialTheme.typography.labelLarge)
-                    PlayerSubtitleTrackList(options, detectedSubtitles, selection, chosen,
-                        error, ready, onSelect, onSelectDetectedSubtitle, Modifier.fillMaxSize())
-                }
-                Column(Modifier.weight(0.34f).fillMaxHeight()) {
-                    Text("Inspect", style = MaterialTheme.typography.labelLarge)
-                    PlayerSubtitleInspectPanel(style, chosen, timeline,
-                        error, ready, subtitleAdjustAnchorMs, onAlignSubtitleToCue,
-                        Modifier.fillMaxSize())
-                }
-                Column(Modifier.weight(0.38f).fillMaxHeight()) {
-                    Text("Subtitle Settings", style = MaterialTheme.typography.labelLarge)
-                    PlayerSubtitleControls(style, onStyleChange, subtitleAdjustAnchorMs != null,
-                        chosen != null && ready && timeline.any { it.cues.isNotEmpty() },
-                        onBeginSubtitleAdjust, onCancelSubtitleAdjust, Modifier.fillMaxSize())
-                }
-            }
-        } else {
-            when (portraitSection) {
-                0 -> PlayerSubtitleTrackList(options, detectedSubtitles, selection, chosen,
-                    error, ready, onSelect,
-                    { subtitle -> onSelectDetectedSubtitle(subtitle); portraitSection = 1 },
-                    Modifier.fillMaxWidth().weight(1f))
-                1 -> PlayerSubtitleInspectPanel(style, chosen, timeline,
-                    error, ready, subtitleAdjustAnchorMs, onAlignSubtitleToCue,
-                    Modifier.fillMaxWidth().weight(1f))
-                else -> PlayerSubtitleControls(style, onStyleChange, subtitleAdjustAnchorMs != null,
-                    chosen != null && ready && timeline.any { it.cues.isNotEmpty() },
-                    { onBeginSubtitleAdjust(); portraitSection = 1 }, onCancelSubtitleAdjust,
-                    Modifier.fillMaxWidth().weight(1f))
-            }
-        }
-    }
-    }
-    }
-}
-
-@Composable
-private fun subtitleOverlayAccent(): Color {
-    val primary = MaterialTheme.colorScheme.primary
-    return if (primary.luminance() < 0.48f) lerp(primary, Color.White, 0.58f) else primary
+    PlayerSubtitleWorkspace(onDismiss, modifier, initialFocus,
+        tracks = { contentModifier, inspect ->
+            PlayerSubtitleTrackList(options, detectedSubtitles, selection, chosen,
+                error, ready, onSelect, { subtitle -> onSelectDetectedSubtitle(subtitle); inspect() }, contentModifier)
+        }, inspect = { contentModifier ->
+            PlayerSubtitleInspectPanel(style, chosen, timeline, error, ready,
+                subtitleAdjustAnchorMs, onAlignSubtitleToCue, contentModifier)
+        }, settings = { contentModifier, inspect ->
+            PlayerSubtitleControls(style, onStyleChange, subtitleAdjustAnchorMs != null,
+                chosen != null && ready && timeline.any { it.cues.isNotEmpty() },
+                { onBeginSubtitleAdjust(); inspect() }, onCancelSubtitleAdjust, contentModifier)
+        })
 }
 
 @Composable
@@ -2458,24 +2033,6 @@ private fun PlayerSubtitleTrackList(
                     { onSelect(PlayerTrackSelection(PlayerTrackMode.SPECIFIC, option.key)) })
             }
         }
-    }
-}
-
-@Composable
-private fun PlayerSubtitleChoiceRow(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    detail: String? = null
-) {
-    Column(Modifier.fillMaxWidth().clickable(onClick = onClick)
-        .padding(horizontal = 6.dp, vertical = 9.dp)) {
-        Text(label, color = if (selected) subtitleOverlayAccent() else Color.White,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            maxLines = 2, overflow = TextOverflow.Ellipsis)
-        if (detail != null) Text(detail, style = MaterialTheme.typography.bodySmall,
-            color = Color.White.copy(alpha = 0.65f), maxLines = 2)
     }
 }
 
@@ -2734,45 +2291,8 @@ private fun PlayerTrackSelectionSheet(
         )
         return
     }
-    var showAppearance by remember { mutableStateOf(false) }
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        dragHandle = { CompactSheetDragHandle() },
-        containerColor = Color(0xFF151313),
-        contentColor = Color.White,
-        shape = MiowserBottomSheetShape
-    ) {
-        BoxWithConstraints {
-        val maxSheetContentHeight = maxHeight * 0.58f
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                if (showAppearance) {
-                    IconButton(onClick = { showAppearance = false }) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back to subtitles")
-                    }
-                }
-                Text(
-                    if (showAppearance) "Subtitle appearance" else kind.title,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f).padding(horizontal = 6.dp, vertical = 2.dp)
-                )
-                if (kind == PlayerTrackKind.SUBTITLE && !showAppearance) {
-                    IconButton(onClick = { showAppearance = true }) {
-                        Icon(Icons.Rounded.Settings, contentDescription = "Subtitle appearance settings")
-                    }
-                }
-            }
-            if (showAppearance) {
-                PlayerSubtitleAppearance(subtitleStyle, onSubtitleStyleChange, maxSheetContentHeight)
-            } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth().heightIn(max = maxSheetContentHeight)
-            ) {
+    PlayerTrackSheet(kind.title, onDismiss) { listModifier ->
+        LazyColumn(listModifier) {
                 item(key = "auto") {
                     PlayerTrackChoiceRow(
                         label = "Auto",
@@ -2838,11 +2358,7 @@ private fun PlayerTrackSelectionSheet(
                         }
                     )
                 }
-            }
-            }
-            Spacer(Modifier.size(6.dp))
         }
-    }
     }
 }
 
@@ -2953,154 +2469,6 @@ private fun CaptionPresetPreview(
     }
 }
 
-@Composable
-private fun PlayerTrackChoiceRow(
-    label: String,
-    detail: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    enabled: Boolean = true,
-    onInspect: (() -> Unit)? = null
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f).clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 7.dp)) {
-            Text(
-                label,
-                style = MaterialTheme.typography.titleMedium,
-                color = when {
-                    selected -> MaterialTheme.colorScheme.primary
-                    !enabled -> Color.White.copy(alpha = 0.6f)
-                    else -> Color.White
-                }
-            )
-            if (detail.isNotBlank()) {
-                Text(
-                    detail,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.66f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-        if (onInspect != null) {
-            IconButton(onClick = onInspect) {
-                Icon(Icons.Rounded.Visibility, contentDescription = "Inspect subtitle",
-                    tint = Color.White)
-            }
-        }
-        if (selected) {
-            Icon(
-                Icons.Rounded.Check,
-                contentDescription = "Selected",
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(24.dp)
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-internal fun RotationPlayerButton(
-    isLandscape: Boolean,
-    locked: Boolean,
-    onRotate: () -> Unit,
-    onToggleLock: () -> Unit
-) {
-    val icon = when {
-        !locked -> Icons.Rounded.ScreenRotation
-        isLandscape -> Icons.Rounded.ScreenLockLandscape
-        else -> Icons.Rounded.ScreenLockPortrait
-    }
-    val description = if (locked) {
-        "Rotation locked. Tap to rotate, hold to unlock"
-    } else {
-        "Rotate screen. Hold to lock rotation"
-    }
-    Surface(
-        shape = CircleShape,
-        color = Color.Transparent,
-        contentColor = if (locked) MaterialTheme.colorScheme.primary else Color.White,
-        modifier = Modifier
-            .size(48.dp)
-            .clip(CircleShape)
-            .combinedClickable(enabled = LocalPlayerControlsActive.current,
-                onClick = onRotate, onLongClick = onToggleLock)
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription = description, modifier = Modifier.size(25.dp))
-        }
-    }
-}
-
-@Composable
-internal fun RoundPlayerButton(
-    icon: ImageVector,
-    contentDescription: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        onClick = onClick,
-        enabled = LocalPlayerControlsActive.current,
-        shape = CircleShape,
-        color = Color.Transparent,
-        contentColor = Color.White,
-        modifier = modifier.size(48.dp)
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription = contentDescription, modifier = Modifier.size(25.dp))
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun PlayerOptionButton(
-    icon: ImageVector,
-    label: String,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    onLongClickLabel: String? = null,
-    onLongClick: (() -> Unit)? = null,
-    testId: String = "player_option",
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = modifier.testTag(testId)
-            .size(48.dp)
-            .clip(CircleShape)
-            .combinedClickable(
-                enabled = enabled && LocalPlayerControlsActive.current,
-                onClick = onClick,
-                onLongClickLabel = onLongClickLabel,
-                onLongClick = onLongClick
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        if (enabled) {
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = Color.Black.copy(alpha = 0.28f),
-                modifier = Modifier.size(26.dp).offset(y = 1.dp)
-                    .blur(2.dp, BlurredEdgeTreatment.Unbounded)
-            )
-        }
-        Icon(
-            icon,
-            contentDescription = label,
-            tint = if (enabled) Color.White else Color(0xFF9C9C9C),
-            modifier = Modifier.size(26.dp)
-        )
-    }
-}
-
 internal fun formatPlayerTime(milliseconds: Long): String {
     val totalSeconds = milliseconds.coerceAtLeast(0L) / 1_000L
     val hours = totalSeconds / 3_600L
@@ -3126,9 +2494,6 @@ internal fun formatPlayerTimer(positionMs: Long, durationMs: Long, showRemaining
 /** A full-width seek swipe covers 10% of the video, bounded to a useful 1–5 minute range. */
 internal fun gestureSeekSpanMs(durationMs: Long): Long =
     if (durationMs > 0L) (durationMs / 10L).coerceIn(60_000L, 300_000L) else 60_000L
-
-private fun formatSpeed(speed: Float): String =
-    if (speed == speed.toInt().toFloat()) "${speed.toInt()}x" else "${speed}x"
 
 internal fun MediaType.toExoMimeTypeHint(): String? = when (this) {
     MediaType.HLS -> MimeTypes.APPLICATION_M3U8
