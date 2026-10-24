@@ -50,6 +50,12 @@ fallback/return actions. Local build and contract checks passed; device checks
 remain with the user. Recovery does not reopen a source or automatically resume
 playback. See [the step 6 report and checklist](video-assistant-step-6-2026-10-24.md).
 
+The subsequent approved UI follow-up replaces the separate browser control
+layout with the original player's shared components, preserving browser playback
+and the independent native ExoPlayer route. Unsupported browser actions/sections
+are hidden and clock updates are isolated to timeline leaves. See
+[the shared UI report](shared-player-ui-2026-10-25.md). Step 7 remains separate.
+
 Samsung's inspected **Video Assistant → Fullscreen** path controls a browser-backed
 media session. It does not first ask the user to select a detected URL and open
 that URL in a newly created standalone player.

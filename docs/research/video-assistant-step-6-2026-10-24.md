@@ -1,5 +1,9 @@
 # Video Assistant step 6 — transitions and recovery
 
+Follow-up: the browser route now uses the original player's shared control and
+panel layouts, with separate playback engines. See
+[the shared UI report](shared-player-ui-2026-10-25.md).
+
 The user verified step 5 works. Step 6 makes interruptions and return paths
 explicit for the browser-backed add-on. It continues to use the same HTML video,
 retained WebView and fullscreen custom View. Recovery never extracts a URL,
