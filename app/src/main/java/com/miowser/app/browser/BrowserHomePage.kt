@@ -136,7 +136,7 @@ fun BrowserHomePage(
     val keyboardController = LocalSoftwareKeyboardController.current
     var searchFocused by remember { mutableStateOf(false) }
     var searchFieldSize by remember { mutableStateOf(IntSize.Zero) }
-    val suggestions = rememberSearchSuggestions(searchText, searchEngine, searchFocused && suggestionsEnabled)
+    val suggestions = rememberBrowserSuggestions(searchText, searchEngine, searchFocused && suggestionsEnabled)
     val searchFieldShape = MaterialTheme.shapes.extraLarge
     LaunchedEffect(suggestionsEnabled) {
         if (!suggestionsEnabled) focusManager.clearFocus()
@@ -238,11 +238,13 @@ fun BrowserHomePage(
                         suggestions = suggestions,
                         anchorSize = searchFieldSize,
                         onSelect = { suggestion ->
-                            searchText = suggestion
+                            searchText = suggestion.value
                             focusManager.clearFocus()
-                            onSearchSuggestion(suggestion)
+                            if (suggestion.kind == BrowserSuggestionKind.SEARCH)
+                                onSearchSuggestion(suggestion.value)
+                            else onSearch(suggestion.value)
                         },
-                        onComplete = { suggestion -> searchText = suggestion }
+                        onComplete = { suggestion -> searchText = suggestion.value }
                     )
                 }
             }

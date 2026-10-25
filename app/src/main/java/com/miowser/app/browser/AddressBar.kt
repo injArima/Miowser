@@ -61,15 +61,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntSize
+import com.miowser.app.settings.SearchEngine
 import kotlinx.coroutines.flow.collect
 
 /**
@@ -79,7 +83,7 @@ import kotlinx.coroutines.flow.collect
  * detected-media list.
  */
 @Composable
-fun AddressBar(
+internal fun AddressBar(
     tabId: Long,
     value: TextFieldValue,
     onValueChange: (TextFieldValue) -> Unit,
@@ -89,6 +93,9 @@ fun AddressBar(
     onReload: () -> Unit,
     onStop: () -> Unit,
     isLoading: Boolean,
+    searchEngine: SearchEngine,
+    suggestionsEnabled: Boolean,
+    onSuggestionSelected: (BrowserSuggestion) -> Unit,
     detectedCount: Int,
     onOpenDetected: () -> Unit,
     isBookmarked: Boolean,
@@ -104,6 +111,7 @@ fun AddressBar(
     var fieldFocused by remember(tabId) { mutableStateOf(false) }
     val textState = remember(tabId) { TextFieldState(value.text, value.selection) }
     val textScroll = remember(tabId) { ScrollState(0) }
+    var fieldSize by remember(tabId) { mutableStateOf(IntSize.Zero) }
     val fieldInteraction = remember(tabId) { MutableInteractionSource() }
     val currentOnValueChange by rememberUpdatedState(onValueChange)
     val secureIconColor = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f)
@@ -116,6 +124,11 @@ fun AddressBar(
         SiteSecurity.OTHER -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val addressBarShape = MaterialTheme.shapes.extraLarge
+    val suggestions = rememberBrowserSuggestions(
+        textState.text.toString(),
+        searchEngine,
+        fieldFocused && suggestionsEnabled
+    )
     // Navigation and Home can replace the address externally; IME edits flow back to the tab.
     LaunchedEffect(tabId, value.text, value.selection) {
         if (textState.text.toString() != value.text || textState.selection != value.selection) {
@@ -176,6 +189,7 @@ fun AddressBar(
                             .fillMaxWidth()
                             .height(48.dp)
                             .clip(addressBarShape)
+                            .onSizeChanged { fieldSize = it }
                             .focusRequester(focusRequester)
                             .onFocusChanged {
                                 fieldFocused = it.isFocused
@@ -295,6 +309,25 @@ fun AddressBar(
                                     )
                                 }
                             )
+                        }
+                    )
+                    SearchSuggestionPopup(
+                        suggestions = suggestions,
+                        anchorSize = fieldSize,
+                        onSelect = { suggestion ->
+                            val selected = suggestion.value
+                            textState.edit {
+                                replace(0, length, selected)
+                                selection = TextRange(selected.length)
+                            }
+                            onSuggestionSelected(suggestion)
+                        },
+                        onComplete = { suggestion ->
+                            val completed = suggestion.value
+                            textState.edit {
+                                replace(0, length, completed)
+                                selection = TextRange(completed.length)
+                            }
                         }
                     )
                 }

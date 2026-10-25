@@ -1616,6 +1616,18 @@ fun BrowserScreen(
                             activeTab.isLoading = false
                         },
                         isLoading = activeTab.isLoading,
+                        searchEngine = AppSettings.current.searchEngine,
+                        suggestionsEnabled = activeScreen == null && playbackRequest == null &&
+                            !showOverflowMenu && !showBrowserDownloads && !showBackupRestore &&
+                            showSiteInfoTabId == null,
+                        onSuggestionSelected = { suggestion ->
+                            val resolved = if (suggestion.kind == BrowserSuggestionKind.SEARCH)
+                                AppSettings.current.searchUrl(suggestion.value)
+                            else suggestion.value
+                            if (resolved.isNotEmpty()) navigateTab(activeTab, resolved)
+                            keyboardController?.hide()
+                            activeTab.liveWebView?.requestFocus()
+                        },
                         detectedCount = activeTab.detectedMedia.count {
                             it.meetsMinimumDuration(minimumMediaLengthSeconds)
                         },
