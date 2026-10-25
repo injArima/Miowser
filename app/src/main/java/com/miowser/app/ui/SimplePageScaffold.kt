@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 fun SimplePageScaffold(
     title: String,
     onBack: () -> Unit,
+    titleContent: (@Composable () -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
     content: @Composable (Modifier) -> Unit
 ) {
@@ -34,7 +35,9 @@ fun SimplePageScaffold(
         containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             TopAppBar(
-                title = { Text(title, style = MaterialTheme.typography.titleLarge) },
+                title = {
+                    titleContent?.invoke() ?: Text(title, style = MaterialTheme.typography.titleLarge)
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
