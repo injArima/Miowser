@@ -52,6 +52,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -113,6 +114,7 @@ fun AddressBar(
         SiteSecurity.CHECKING, SiteSecurity.INSECURE,
         SiteSecurity.OTHER -> MaterialTheme.colorScheme.onSurfaceVariant
     }
+    val addressBarShape = MaterialTheme.shapes.extraLarge
     // Navigation and Home can replace the address externally; IME edits flow back to the tab.
     LaunchedEffect(tabId, value.text, value.selection) {
         if (textState.text.toString() != value.text || textState.selection != value.selection) {
@@ -172,6 +174,7 @@ fun AddressBar(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(48.dp)
+                            .clip(addressBarShape)
                             .focusRequester(focusRequester)
                             .onFocusChanged {
                                 fieldFocused = it.isFocused
@@ -206,7 +209,7 @@ fun AddressBar(
                                 interactionSource = fieldInteraction,
                                 leadingIcon = {
                                     Box(
-                                        modifier = Modifier.size(48.dp).background(
+                                        modifier = Modifier.size(width = 48.dp, height = 44.dp).background(
                                             Brush.horizontalGradient(
                                                 listOf(
                                                     (if (isLoading) MaterialTheme.colorScheme.primary
@@ -248,7 +251,7 @@ fun AddressBar(
                                         MaterialTheme.colorScheme.primary
                                     else MaterialTheme.colorScheme.onSurfaceVariant
                                     Box(
-                                        modifier = Modifier.size(48.dp).background(
+                                        modifier = Modifier.size(width = 48.dp, height = 44.dp).background(
                                             Brush.horizontalGradient(
                                                 listOf(Color.Transparent, trailingAccent.copy(alpha = 0.16f))
                                             )
@@ -280,7 +283,7 @@ fun AddressBar(
                                         enabled = true,
                                         isError = false,
                                         interactionSource = fieldInteraction,
-                                        shape = MaterialTheme.shapes.extraLarge
+                                        shape = addressBarShape
                                     )
                                 }
                             )
