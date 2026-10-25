@@ -25,7 +25,7 @@ import java.nio.charset.Charset
 
 internal data class SpeedDialSiteMetadata(val title: String?, val icon: Bitmap?)
 
-/** Small, persistent favicon cache shared by saved speed dials. Network work never runs on the UI thread. */
+/** Small, persistent favicon cache shared by speed dials and history. Network work never runs on the UI thread. */
 internal object SpeedDialSiteMetadataStore {
     private const val MAX_ICON_BYTES = 512 * 1024
     private const val MAX_PAGE_BYTES = 192 * 1024
@@ -40,8 +40,7 @@ internal object SpeedDialSiteMetadataStore {
     private val cacheScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun cacheVisitedIcon(context: Context, pageUrl: String, bitmap: Bitmap) {
-        val visitedOrigin = origin(pageUrl) ?: return
-        if (SpeedDials.entries.none { origin(it.url) == visitedOrigin }) return
+        origin(pageUrl) ?: return
         cacheScope.launch { saveVisitedIcon(context.applicationContext, pageUrl, bitmap) }
     }
 
