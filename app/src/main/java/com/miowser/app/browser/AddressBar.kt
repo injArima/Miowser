@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.VisibilityOff
@@ -262,13 +263,16 @@ fun AddressBar(
                                         ),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        if (fieldFocused) SearchFieldActions(
-                                            showClear = false,
-                                            onClear = {},
-                                            onSubmit = onSubmit,
-                                            submitEnabled = textState.text.isNotBlank(),
-                                            submitDescription = "Go to address or search"
-                                        ) else IconButton(onClick = onToggleBookmark) {
+                                        if (fieldFocused) IconButton(
+                                            onClick = onSubmit,
+                                            enabled = textState.text.isNotBlank(),
+                                            modifier = Modifier.size(40.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Rounded.Search,
+                                                contentDescription = "Go to address or search"
+                                            )
+                                        } else IconButton(onClick = onToggleBookmark) {
                                             // StarBorder is the actual hollow bookmark state; the
                                             // ordinary Star glyph is filled in every icon style.
                                             Icon(
