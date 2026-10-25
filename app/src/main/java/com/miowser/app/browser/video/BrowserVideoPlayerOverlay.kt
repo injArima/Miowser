@@ -66,7 +66,8 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
     title: String, sourceLabel: String, onExit: () -> Unit) {
     val video = state.video ?: return
     val owner = state.owner ?: return
-    val activity = LocalContext.current.videoActivity()
+    val context = LocalContext.current
+    val activity = context.videoActivity()
     val host = activity as? MainActivity
     val inPip = host?.playerInPictureInPicture == true && host.browserVideoPipOwner == owner
     val supportsPip = remember(activity) { host?.packageManager?.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE) == true }
@@ -92,24 +93,37 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
     var interaction by remember { mutableIntStateOf(0) }
     var rotationLocked by remember { mutableStateOf(false) }
     var pendingRotation by remember { mutableStateOf<Boolean?>(null) }
-    val orientationOwner = remember { booleanArrayOf(false) }
     val modal = overlays.isPresent || adjustments || audioPanel
 
     DisposableEffect(controller, activity) {
         val original = activity?.requestedOrientation
         val originalBrightness = activity?.window?.attributes?.screenBrightness
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+        PlayerDisplayPreferenceStore.brightness(context)?.let { saved ->
+            activity?.window?.let { window ->
+                window.attributes = window.attributes.apply { screenBrightness = saved }
+            }
+        }
         controller.setRichUi(true)
         onDispose {
             speedHold.stop(controller)
             controller.setRichUi(false)
-            if (orientationOwner[0] && activity != null && original != null) activity.requestedOrientation = original
+            if (activity != null && original != null) activity.requestedOrientation = original
             if (originalBrightness != null) activity.window.attributes = activity.window.attributes.apply { screenBrightness = originalBrightness }
         }
     }
-    LaunchedEffect(landscape, pendingRotation) {
+    LaunchedEffect(activity, landscape, pendingRotation, rotationLocked) {
         if (pendingRotation == landscape) {
+            delay(300)
+            activity?.requestedOrientation = if (rotationLocked) ActivityInfo.SCREEN_ORIENTATION_LOCKED
+                else ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
             pendingRotation = null
-            if (rotationLocked) activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LOCKED
+        }
+    }
+    LaunchedEffect(controller, owner, state.controlsEnabled, video.sourceRevision) {
+        if (state.controlsEnabled) {
+            val saved = PlayerDisplayPreferenceStore.scaleMode(context)
+            BrowserVideoScale.entries.firstOrNull { it.name == saved }?.let(controller::setScale)
         }
     }
     BackHandler(enabled = locked && !inPip && state.controlsEnabled && !modal) { locked = false; visible = true }
@@ -160,7 +174,8 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                     onStopHoldToSpeed = { speedHold.stop(controller); holdingSpeed = false },
                     onSeekTo = { target -> controller.state.value.session?.state?.browserSeekWindow()?.let { window ->
                         act { controller.seekTo(window.startMs + target) }
-                    } }, onFeedback = { feedback = it; feedbackSequence++ }, onBrightnessCommitted = {},
+                    } }, onFeedback = { feedback = it; feedbackSequence++ },
+                    onBrightnessCommitted = { PlayerDisplayPreferenceStore.saveBrightness(context, it) },
                     canSeek = state.canSeek, volumeEnabled = audio?.isVolumeFixed != true,
                     onVolumeInteraction = { if (controller.state.value.session?.state?.muted == true) controller.setMuted(false) })
                 AnimatedVisibility(visible && state.controlsEnabled,
@@ -176,10 +191,10 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                             else {
                                 PlayerTopBar(landscape, rotationLocked, video.speed.toFloat(),
                                     onRotate = {
-                                        interaction++; orientationOwner[0] = true; pendingRotation = !landscape
+                                        interaction++; pendingRotation = !landscape
                                         activity?.requestedOrientation = if (landscape) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
                                     }, onToggleRotationLock = {
-                                        interaction++; orientationOwner[0] = true; pendingRotation = null; rotationLocked = !rotationLocked
+                                        interaction++; pendingRotation = null; rotationLocked = !rotationLocked
                                         activity?.requestedOrientation = if (rotationLocked) ActivityInfo.SCREEN_ORIENTATION_LOCKED else ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
                                     }, onDownload = null,
                                     onPip = if (supportsPip) ({
@@ -195,7 +210,11 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                                     showSeekControls = state.canSeek)
                                 PlayerBottomChrome(title.ifBlank { "Video" }, sourceLabel, video.height.takeIf { it > 0 }?.let { "${it}p" },
                                     landscape, PlayerScaleMode.valueOf(video.scale.name), video.speed.toFloat(), owner,
-                                    scaleMenu, { scaleMenu = it; interaction++ }, { mode -> scaleMenu = false; act { controller.setScale(BrowserVideoScale.valueOf(mode.name)) } },
+                                    scaleMenu, { scaleMenu = it; interaction++ }, { mode ->
+                                        scaleMenu = false
+                                        PlayerDisplayPreferenceStore.saveScaleMode(context, mode.name)
+                                        act { controller.setScale(BrowserVideoScale.valueOf(mode.name)) }
+                                    },
                                     speedMenu, { speedMenu = it; interaction++ }, { rate -> speedMenu = false; act { controller.setSpeed(rate.toDouble()) } },
                                     subtitleFocus, "Subtitles", true, if (video.captions.isNotEmpty()) ({ closeMenus(); overlays.open(PlayerOverlay.SUBTITLES); interaction++ }) else null,
                                     "Audio tracks", true, if (video.audioTracks.size > 1) ({ closeMenus(); audioPanel = true; interaction++ }) else null,
@@ -228,7 +247,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
             }
         }, overlayContent = {
             if (adjustments && state.controlsEnabled) PlayerAdjustmentsSheet(activity, { adjustments = false },
-                onBrightnessCommitted = {}, volumeEnabled = audio?.isVolumeFixed != true,
+                volumeEnabled = audio?.isVolumeFixed != true,
                 onVolumeInteraction = { if (controller.state.value.session?.state?.muted == true) controller.setMuted(false) })
             if (audioPanel && state.controlsEnabled) PlayerTrackSheet("Audio", { audioPanel = false }) { listModifier ->
                 LazyColumn(listModifier) {

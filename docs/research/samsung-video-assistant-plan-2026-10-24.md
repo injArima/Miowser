@@ -32,6 +32,14 @@ at those earlier checkpoints; they do not claim validation of this cleanup.
 - The rich browser overlay reuses the original player UI and exposes supported
   controls. Exact session/source ownership, gesture handling, control suppression,
   explicit PiP and bounded fullscreen-entry recovery remain necessary.
+- Browser fullscreen now enables sensor orientation by default. A manual turn
+  returns to sensor control after rotation settles unless rotation is locked;
+  long-pressing the existing rotation control still toggles that lock. Exiting
+  restores the browser's prior orientation and window brightness.
+- Browser playback shares the native player's existing display-preference store:
+  explicit Fit/Zoom/Fill choices are saved and restored for subsequent sessions
+  and source revisions, and brightness adjustments from gestures or the slider
+  are saved and restored on entry. No system-wide brightness setting is written.
 
 The cleanup audited the feature from its initial prototype through the current
 button implementation, including normal-tab integration, shared player UI,
@@ -68,6 +76,10 @@ Runtime preservation is intended, not yet verified. User checks should cover:
 3. PiP, background/return, tab navigation, source replacement, returning to the
    website and closing fullscreen.
 4. Existing native-player/library playback, subtitle settings and playlist input.
+5. Sensor turns, manual rotate and rotation lock/unlock; select Fit/Zoom/Fill and
+   change brightness through both gesture and slider, then close/reopen the
+   browser player and open a different video. Confirm the choices persist, the
+   browser's brightness/orientation return on exit, and PiP/return remain usable.
 
 ## Main finding
 
