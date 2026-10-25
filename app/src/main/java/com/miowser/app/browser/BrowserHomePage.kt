@@ -7,6 +7,7 @@ import androidx.compose.animation.animateColorAsState
 import android.graphics.Bitmap
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -68,6 +69,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -134,6 +136,7 @@ fun BrowserHomePage(
     var searchFocused by remember { mutableStateOf(false) }
     var searchFieldSize by remember { mutableStateOf(IntSize.Zero) }
     val suggestions = rememberSearchSuggestions(searchText, searchEngine, searchFocused && suggestionsEnabled)
+    val searchFieldShape = MaterialTheme.shapes.extraLarge
     LaunchedEffect(suggestionsEnabled) {
         if (!suggestionsEnabled) focusManager.clearFocus()
     }
@@ -195,22 +198,52 @@ fun BrowserHomePage(
                         value = searchText,
                         onValueChange = { searchText = it },
                         modifier = Modifier.fillMaxWidth()
+                            .clip(searchFieldShape)
                             .onSizeChanged { searchFieldSize = it }
                             .focusRequester(searchFocusRequester)
                             .onFocusChanged { searchFocused = it.isFocused },
                         placeholder = { Text("Search with ${searchEngine.label} or enter address") },
-                        leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                        leadingIcon = {
+                            Box(
+                                modifier = Modifier.size(48.dp).background(
+                                    Brush.horizontalGradient(
+                                        listOf(
+                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                                            Color.Transparent
+                                        )
+                                    )
+                                ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Rounded.Search, contentDescription = null)
+                            }
+                        },
                         trailingIcon = {
-                            SearchFieldActions(
-                                showClear = searchText.isNotEmpty(),
-                                onClear = { searchText = "" },
-                                onSubmit = { submitSearch() },
-                                submitEnabled = searchText.isNotBlank(),
-                                submitDescription = "Go to address or search"
-                            )
+                            Box(
+                                modifier = Modifier.size(48.dp).background(
+                                    Brush.horizontalGradient(
+                                        listOf(
+                                            Color.Transparent,
+                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                                        )
+                                    )
+                                ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                IconButton(
+                                    onClick = { submitSearch() },
+                                    enabled = searchText.isNotBlank(),
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.Search,
+                                        contentDescription = "Go to address or search"
+                                    )
+                                }
+                            }
                         },
                         singleLine = true,
-                        shape = MaterialTheme.shapes.extraLarge,
+                        shape = searchFieldShape,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                         keyboardActions = KeyboardActions(onGo = { submitSearch() })
                     )
