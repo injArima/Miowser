@@ -8,15 +8,12 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         var policy = {enabled: false}, host = null, button = null, plate = null, icon = null, insetProbe = null;
         var selected = null, frame = null, animation = null, disposed = false, pending = false;
         var restore = null, entryTimeout = null;
-        var autoTimer = null, fadeTimer = null, wakeTimer = null, layoutTimers = [];
-        var candidate = null, candidateRevision = -1, suppressed = false, scrolling = false, readyAt = 0;
+        var wakeTimer = null, layoutTimers = [], scrolling = false;
         var displayVersion = 0, displayKey = '', nativeReady = false, focused = false;
-        var lastNativePresentation = -Infinity;
         var pressGuard = null, pressTimer = null;
-        function cancelPress(rearm) {
+        function cancelPress() {
             if (pressTimer !== null) clearTimeout(pressTimer); pressTimer = null;
             pressGuard = null;
-            if (rearm && selected && button && !button.hidden) armAuto();
         }
         function capturePress(event) {
             var guard = pressGuard;
@@ -24,14 +21,14 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             var point = event.changedTouches && event.changedTouches[0] || event;
             if (!(point.clientX >= guard.left - 1 && point.clientX <= guard.right + 1 &&
                 point.clientY >= guard.top - 1 && point.clientY <= guard.bottom + 1)) {
-                cancelPress(true); return;
+                cancelPress(); return;
             }
             // Installed at document start, before site handlers. Only a native-owned,
             // bound physical gesture at this target can use this short-lived guard.
             // Block site handlers/default link navigation even if its DOM hit changed.
             event.stopImmediatePropagation();
             if (event.type === 'click') {
-                event.preventDefault(); cancelPress(false); click(event);
+                event.preventDefault(); cancelPress(); click(event);
             }
         }
         var guardedEvents = ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'mousedown', 'mouseup', 'click'];
@@ -39,9 +36,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         function reduced() {
             return policy.reducedMotion || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
         }
-        function cancelAuto() { if (autoTimer !== null) clearTimeout(autoTimer); autoTimer = null; }
-        function cancelFade() {
-            if (fadeTimer !== null) clearTimeout(fadeTimer); fadeTimer = null;
+        function cancelAnimation() {
             if (animation) animation.cancel(); animation = null;
         }
         function nativeDisplay(visible, fade, x, y, size, view) {
@@ -55,60 +50,24 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             var key = JSON.stringify(data) + policy.background + policy.foreground + policy.reducedMotion;
             if (key === displayKey) return;
             displayKey = key; data.version = ++displayVersion; nativeReady = false;
-            if (visible) lastNativePresentation = performance.now();
-            if (visible && button) { cancelFade(); button.style.setProperty('opacity', '1'); }
+            if (visible && button) { cancelAnimation(); button.style.setProperty('opacity', '1'); }
             api.display(data);
-        }
-        function expire() {
-            autoTimer = null;
-            if (!button || button.hidden || !selected || focused) return;
-            var paintedNatively = nativeReady;
-            suppressed = true; selected = null;
-            button.disabled = true; button.style.setProperty('pointer-events', 'none');
-            cancelFade();
-            nativeDisplay(false, !reduced());
-            if (reduced()) { button.hidden = true; button.style.setProperty('visibility', 'hidden'); return; }
-            if (!paintedNatively && button.animate) animation = button.animate(
-                [{opacity: 1}, {opacity: 0}], {duration: 300, easing: 'ease-in', fill: 'forwards'});
-            fadeTimer = setTimeout(function () {
-                fadeTimer = null;
-                if (suppressed && button) { button.hidden = true; button.style.setProperty('visibility', 'hidden'); }
-            }, 300);
-        }
-        function armAuto() { cancelAuto(); autoTimer = setTimeout(expire, 3000); }
-        function refreshNativeLease() {
-            // Activity can keep a fixed button visible without changing geometry. Renew
-            // at most once per second; playback-clock updates alone do not renew it.
-            if (!pressGuard && policy.nativeDisplay && performance.now() - lastNativePresentation >= 1000) displayKey = '';
         }
         function wake(event) {
             if (event && (!event.isTrusted || event.target === host)) return;
             if (!policy.enabled || disposed) return;
-            refreshNativeLease();
-            if (wakeTimer !== null) clearTimeout(wakeTimer);
-            if (suppressed || !selected) {
-                cancelFade();
-                if (button) { button.hidden = true; button.disabled = true; }
-            }
-            cancelAuto(); suppressed = false; readyAt = performance.now() + 200;
-            wakeTimer = setTimeout(function () {
-                wakeTimer = null; readyAt = 0; schedule();
-                if (selected && button && !button.hidden) armAuto();
-            }, 200);
             schedule();
         }
         function scroll() {
             layoutTimers.forEach(clearTimeout); layoutTimers = [];
             if (wakeTimer !== null) clearTimeout(wakeTimer);
             if (!policy.frameConstrained) {
-                wakeTimer = null; scrolling = false; readyAt = 0; suppressed = false;
-                refreshNativeLease();
-                if (selected && button && !button.hidden) armAuto();
+                wakeTimer = null; scrolling = false;
                 schedule(); return;
             }
             hide(); scrolling = true;
             wakeTimer = setTimeout(function () {
-                wakeTimer = null; scrolling = false; readyAt = 0; schedule();
+                wakeTimer = null; scrolling = false; schedule();
             }, 200);
         }
         function layoutChanged() {
@@ -189,11 +148,10 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             Object.keys(styles).forEach(function (key) { element.style.setProperty(key, styles[key]); });
         }
         function hide() {
-            cancelPress(false);
+            cancelPress();
             selected = null;
             focused = false;
-            candidate = null; candidateRevision = -1; suppressed = false;
-            cancelAuto(); cancelFade(); nativeDisplay(false, false);
+            cancelAnimation(); nativeDisplay(false, false);
             if (button) {
                 button.hidden = true; button.disabled = true;
                 setStyles(button, {'visibility': 'hidden', 'pointer-events': 'none'});
@@ -212,6 +170,9 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         }
         function clip(record, view) {
             var video = record.video, rect = video.getBoundingClientRect();
+            // The screen-anchored action remains available when its video scrolls away.
+            if (!policy.frameConstrained) return {left: rect.left, top: rect.top,
+                right: rect.left + rect.width, bottom: rect.top + rect.height};
             var result = intersect({left: rect.left, top: rect.top, right: rect.left + rect.width,
                 bottom: rect.top + rect.height}, {left: view.left, top: view.top,
                 right: view.left + view.width, bottom: view.top + view.height});
@@ -247,8 +208,8 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         }
         function eligible(record) {
             var video = record.video;
-            if (!video.isConnected || video.paused || video.ended || video.readyState < 2 ||
-                !(video.videoWidth > 0) || !(video.videoHeight > 0) || record.ratio <= 0 ||
+            if (!video.isConnected || !(video.currentSrc || video.src || video.srcObject) ||
+                !(video.videoWidth > 0) || !(video.videoHeight > 0) || (policy.frameConstrained && record.ratio <= 0) ||
                 typeof video.requestFullscreen !== 'function') return false;
             var style = window.getComputedStyle(video);
             return style.display !== 'none' && style.visibility !== 'hidden' && style.visibility !== 'collapse' &&
@@ -353,7 +314,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 objectFit: video.style ? video.style.getPropertyValue('object-fit') : undefined,
                 fitPriority: video.style ? video.style.getPropertyPriority('object-fit') : ''};
             var entry = restore;
-            prepareEntryPlayback(entry);
+            if (!video.paused && !video.ended) prepareEntryPlayback(entry);
             entryTimeout = setTimeout(function () {
                 if (restore === entry && document.fullscreenElement !== entry.video) failed(entry);
             }, 8000);
@@ -401,16 +362,14 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 'box-shadow': '0 2px 6px rgba(0,0,0,.3)'});
             plate.appendChild(icon); button.appendChild(plate);
             button.addEventListener('click', click);
-            button.addEventListener('pointerdown', function (event) { cancelAuto(); event.stopPropagation(); });
-            button.addEventListener('pointerup', armAuto);
-            button.addEventListener('pointercancel', armAuto);
+            button.addEventListener('pointerdown', function (event) { event.stopPropagation(); });
             button.addEventListener('focus', function () {
-                focused = true; cancelAuto(); cancelFade(); nativeDisplay(false, false);
+                focused = true; cancelAnimation(); nativeDisplay(false, false);
                 button.style.setProperty('opacity', '1'); button.style.setProperty('outline', '2px solid currentColor');
             });
             button.addEventListener('blur', function () {
                 focused = false; button.style.setProperty('outline', 'none');
-                if (selected && policy.enabled) { armAuto(); displayKey = ''; schedule(); }
+                if (selected && policy.enabled) { displayKey = ''; schedule(); }
             });
             shadow.appendChild(button);
             insetProbe = document.createElement('span');
@@ -437,10 +396,6 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 }
             });
             if (!best) { hide(); return; }
-            if (candidate !== best || candidateRevision !== best.sourceRevision) {
-                candidate = best; candidateRevision = best.sourceRevision; suppressed = false;
-            }
-            if (suppressed || performance.now() < readyAt) return;
             makeButton();
             if (!host.isConnected) document.documentElement.appendChild(host);
             var size = 60 / view.scale, gap = 8 / view.scale;
@@ -472,7 +427,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             selected = best;
             button.hidden = false; button.disabled = false;
             if (appearing) {
-                cancelFade(); button.style.setProperty('opacity', '1'); armAuto();
+                cancelAnimation(); button.style.setProperty('opacity', '1');
                 if (!reduced() && button.animate) animation = button.animate(
                     [{opacity: 0}, {opacity: 1}], {duration: 300, easing: 'ease-out'});
             }
@@ -504,10 +459,10 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             nativeReady: function (version, ok) {
                 if (version !== displayVersion || !policy.nativeDisplay || !selected || !button || button.hidden) return;
                 nativeReady = ok === true;
-                cancelFade(); button.style.setProperty('opacity', nativeReady ? '0' : '1');
+                cancelAnimation(); button.style.setProperty('opacity', nativeReady ? '0' : '1');
             },
             nativeLost: function () {
-                cancelPress(true);
+                cancelPress();
                 nativeReady = false; displayKey = '';
                 if (button && selected && !button.hidden) button.style.setProperty('opacity', '1');
                 schedule();
@@ -516,18 +471,17 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 var ok = version === displayVersion && Number.isSafeInteger(request) && request > 0 &&
                     policy.nativeDisplay && nativeReady && selected && eligible(selected) &&
                     button && !button.hidden && !button.disabled && !pending && !document.fullscreenElement;
-                cancelPress(false);
+                cancelPress();
                 if (ok) {
-                    cancelAuto();
                     pressGuard = {request: request, left: parseFloat(button.style.left), top: parseFloat(button.style.top)};
                     pressGuard.right = pressGuard.left + parseFloat(button.style.width);
                     pressGuard.bottom = pressGuard.top + parseFloat(button.style.height);
-                    pressTimer = setTimeout(function () { cancelPress(true); }, 1500);
+                    pressTimer = setTimeout(cancelPress, 1500);
                 }
                 if (api.pressReady) api.pressReady({version: version, request: request, ok: !!ok});
             },
             nativePressCancel: function (request) {
-                if (pressGuard && pressGuard.request === request) cancelPress(true);
+                if (pressGuard && pressGuard.request === request) cancelPress();
             },
             policy: function (next) {
                 var enabledBefore = policy.enabled, nativeBefore = policy.nativeDisplay;

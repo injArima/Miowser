@@ -247,14 +247,14 @@ check('a playing dynamic video can replace an idle preview at capacity', () => {
   assert.equal(f.state().videos.length, 8);
   assert(f.state().videos.some(v => v.height === 1080 && v.playing));
 });
-check('hidden/offscreen video cannot keep a floating button visible', () => {
+check('hidden pages hide the button but scrolling the detected video away does not', () => {
   const f = enabledFixture();
   f.document.visibilityState = 'hidden'; f.document.dispatch('visibilitychange'); f.flush();
   assert.equal(f.button().hidden, true);
   f.document.visibilityState = 'visible';
   f.initial[0].getBoundingClientRect = () => ({ left: 0, top: 3000, width: 640, height: 360 });
   f.initial[0].dispatch('resize'); f.flush();
-  assert.equal(f.button().hidden, true);
+  assert.equal(f.button().hidden, false);
 });
 check('data URLs never enter the native telemetry payload', () => {
   const f = fixture([video('data:video/mp4;base64,' + 'A'.repeat(100000))]); f.bind(); f.flush();
@@ -326,15 +326,15 @@ check('already-enabled website controls remain enabled after return', () => {
 check('programmatic clicks cannot trigger the action', () => {
   const f = enabledFixture(); f.click(false); assert.equal(f.initial[0].fullscreenRequests, 0);
 });
-check('a video paused before the click is revalidated', () => {
+check('a detected paused video can enter fullscreen without starting playback', () => {
   const f = enabledFixture(); f.initial[0].paused = true; f.click();
-  assert.equal(f.initial[0].fullscreenRequests, 0);
-  f.initial[0].dispatch('pause'); f.flush(); assert.equal(f.button().hidden, true);
+  assert.equal(f.initial[0].fullscreenRequests, 1);
+  f.flush(); assert.equal(f.initial[0].paused, true);
 });
-check('scrolling a video offscreen before the next frame cannot open a stale selection', () => {
+check('a screen-anchored action still opens its detected video after scrolling it offscreen', () => {
   const f = enabledFixture();
   f.initial[0].getBoundingClientRect = () => ({left: 0, top: -500, width: 640, height: 360});
-  f.click(); assert.equal(f.initial[0].fullscreenRequests, 0); assert.equal(f.button().hidden, true);
+  f.click(); assert.equal(f.initial[0].fullscreenRequests, 1);
 });
 check('the most recently touched eligible video wins within a frame', () => {
   const first = video(), second = video('https://cdn.test/second.mp4');
@@ -843,14 +843,14 @@ check('YouTube-shaped viewport overflow does not clip a visible video to a zero-
   assert.equal(f.button().hidden, false); assert.equal(f.button().style.top, '1790px');
   assert.equal(f.button().style.left, '1010px'); f.click(); assert.equal(f.document.fullscreenElement, v);
 });
-check('viewport overflow exception still respects the actual nested player clipping', () => {
+check('embedded-frame fallback still respects the actual nested player clipping', () => {
   const {f, player} = youtubeBodyFixture();
   player.getBoundingClientRect = () => ({left: 0, top: 56, right: 490, bottom: 95, width: 490, height: 39});
-  f.bind(); f.policy(true); f.flush(); assert.notEqual(f.button()?.hidden, false);
+  f.bind(); f.policy(true, {frameConstrained: true}); f.flush(); assert.notEqual(f.button()?.hidden, false);
 });
 check('body overflow remains a local clip when the root or containment prevents propagation', () => {
   for (const options of [['auto', 'none'], ['visible', 'paint']]) {
-    const {f} = youtubeBodyFixture(...options); f.bind(); f.policy(true); f.flush();
+    const {f} = youtubeBodyFixture(...options); f.bind(); f.policy(true, {frameConstrained: true}); f.flush();
     assert.notEqual(f.button()?.hidden, false);
   }
 });
@@ -973,13 +973,12 @@ check('screen-anchored input stays valid when scrolling leaves the selected vide
   assert.equal(f.input().stopped, true); assert.equal(f.initial[0].fullscreenRequests, 1);
 });
 check('a disappearing selected video cannot turn native input into a page link click', () => {
-  const f = nativePressFixture(); f.press(); f.initial[0].paused = true;
+  const f = nativePressFixture(); f.press(); f.initial[0].isConnected = false;
   const event = f.input(); assert.equal(event.stopped, true); assert.equal(event.prevented, true);
   assert.equal(f.initial[0].fullscreenRequests, 0);
 });
-check('display waits 200ms before showing the Samsung-style anchor', () => {
-  const f = fixture(); f.bind(); f.policy(true); f.advance(199);
-  assert.equal(f.button(), undefined); f.advance(1);
+check('detection shows the screen anchor without waiting for page interaction', () => {
+  const f = fixture(); f.bind(); f.policy(true); f.render();
   assert.equal(f.button().hidden, false); assert.equal(f.button().style.left, '1010px');
   assert.equal(f.button().style.top, '1790px');
 });
@@ -1011,22 +1010,22 @@ check('heartbeat and playback-clock changes do not resend unchanged native geome
   for (let i = 0; i < 3; i++) { f.initial[0].currentTime++; f.initial[0].dispatch('timeupdate'); f.flush(); }
   assert.equal(f.messages.filter(m => m.type === 'assistantDisplay').length, before);
 });
-check('auto-hide disables the tap immediately and cannot be undone by clock updates', () => {
-  const f = nativeFixture(); f.nativeAck(f.display().version, true); f.advance(2700);
-  assert.equal(f.button().disabled, true); assert.equal(f.button().style['pointer-events'], 'none');
-  assert.equal(f.messages.filter(m => m.type === 'assistantDisplay').at(-1).visible, false);
-  f.advance(300); assert.equal(f.button().hidden, true);
-  f.initial[0].dispatch('timeupdate'); f.flush(); assert.equal(f.button().hidden, true);
+check('inactivity leaves the detected-video action visible and touchable', () => {
+  const f = nativeFixture(); f.nativeAck(f.display().version, true); f.advance(30000);
+  assert.equal(f.button().disabled, false); assert.equal(f.button().style['pointer-events'], 'auto');
+  assert.equal(f.messages.filter(m => m.type === 'assistantDisplay').at(-1).visible, true);
+  assert.equal(f.button().hidden, false);
+  f.initial[0].dispatch('timeupdate'); f.flush(); assert.equal(f.button().hidden, false);
 });
-check('an ordinary page tap reveals a hidden button but never opens the player itself', () => {
+check('ordinary page taps leave the persistent button available without opening the player', () => {
   const f = enabledFixture(); f.advance(3100);
   f.document.dispatch('pointerup', {isTrusted: false, target: f.initial[0]}); f.advance(250);
-  assert.equal(f.button().hidden, true);
+  assert.equal(f.button().hidden, false);
   f.document.dispatch('pointerup', {isTrusted: true, target: f.initial[0]}); f.advance(250);
   assert.equal(f.button().hidden, false); assert.equal(f.initial[0].fullscreenRequests, 0);
   f.click(); assert.equal(f.initial[0].fullscreenRequests, 1);
 });
-check('a touch beginning before auto-hide keeps the button alive for its click', () => {
+check('the persistent button remains clickable after a long touch', () => {
   const f = enabledFixture(); f.advance(2600); f.button().dispatch('pointerdown', {stopPropagation() {}});
   f.advance(1000); assert.equal(f.button().disabled, false); f.click(); assert.equal(f.initial[0].fullscreenRequests, 1);
 });
@@ -1047,12 +1046,12 @@ check('embedded frames retain their reachable existing target without a toolbar 
   assert.equal(f.messages.some(m => m.type === 'assistantDisplay'), false);
   f.click(); assert.equal(f.initial[0].fullscreenRequests, 1);
 });
-check('focused web controls remain visible and are not removed by auto-hide', () => {
+check('web controls remain visible through focus and blur', () => {
   const f = nativeFixture(); f.nativeAck(f.display().version, true);
   f.button().dispatch('focus'); f.advance(6000);
   assert.equal(f.button().hidden, false); assert.equal(f.button().style.opacity, '1');
   assert.equal(f.button().style.outline, '2px solid currentColor');
-  f.button().dispatch('blur'); f.advance(3300); assert.equal(f.button().hidden, true);
+  f.button().dispatch('blur'); f.advance(3300); assert.equal(f.button().hidden, false);
 });
 function entryReloadFixture(native = false) {
   const f = native ? nativePressFixture() : enabledFixture(), v = f.initial[0];

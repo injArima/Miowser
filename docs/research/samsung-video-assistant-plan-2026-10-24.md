@@ -16,6 +16,15 @@ at those earlier checkpoints; they do not claim validation of this cleanup.
   screen above the reserved Jump-to-top slot, with a 48 dp face, 60 dp touch
   target and 28 dp mark. The visible gap is 12 dp even when Jump to top is hidden.
   See [the placement checkpoint](video-assistant-screen-anchor-2026-10-25.md).
+- Visibility now follows detected usable video availability rather than activity:
+  no three-second auto-hide, including while paused, buffering or scrolled offscreen
+  on main-frame pages. Paused entry preserves pause. Hidden pages, fullscreen,
+  removed/unusable videos and a disabled assistant still hide the action. The
+  frame-local iframe fallback remains constrained by its visible frame area.
+  Validated video-state messages renew the native safety lease without resending
+  geometry, changing the gesture generation or adding another polling loop. Its
+  15-second deadline allows the existing 10-second paused-video heartbeat to arrive;
+  stale/disconnected pages still lose the native touch target.
 - The native layer owns the gesture and forwards the physical tap after the
   bound document prepares its input guard. Entry stays single-tap. Cross-origin
   embedded frames retain their frame-local DOM fallback; it cannot draw outside
@@ -50,7 +59,10 @@ emulator or device checks were run**, as requested. No app data was accessed.
 Runtime preservation is intended, not yet verified. User checks should cover:
 
 1. First-tap entry on YouTube and a normal video page; scrolling, zooming,
-   rotation and the screen anchor; embedded-frame fallback.
+   rotation and the screen anchor; embedded-frame fallback. Leave a detected video
+   paused for at least 30 seconds: the button must stay visible and respond to its
+   first tap while keeping playback paused. Remove the video or navigate away and
+   confirm the target disappears.
 2. Fullscreen continuity and deliberate pause, seek/skip, speed and the 2× hold
    badge, mute, gestures, caption/audio selection and Fit/Zoom/Fill.
 3. PiP, background/return, tab navigation, source replacement, returning to the

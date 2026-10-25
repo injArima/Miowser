@@ -28,5 +28,8 @@ Recorded from the user's instruction on 2026-10-25.
   reserved Jump-to-top slot, even when Jump to top is hidden. Keep the 48 dp face,
   60 dp touch target and 28 dp mark. The existing embedded-frame DOM fallback is
   an implementation boundary; it cannot draw outside its iframe with this route.
+- Keep the action visible while a usable video remains detected, including pause,
+  buffering and scrolling the main-frame video offscreen. Do not auto-hide it on
+  inactivity. Entering fullscreen from a paused video must preserve its pause.
 - Use the [current implementation and cleanup overview](research/samsung-video-assistant-plan-2026-10-24.md)
   for present behavior; older reports describe historical checkpoints.

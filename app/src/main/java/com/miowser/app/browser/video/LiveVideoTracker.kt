@@ -185,6 +185,8 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
                     val states = (0 until videos.length()).map { decode(videos.getJSONObject(it)) }
                     if (registry.update(channel.navigation, channel.frameId, json.getLong("sequence"), states, now)) {
                         channel.lastUpdate = now
+                        if (states.isNotEmpty() && displayChannel?.first === proxy && displayChannel?.second === channel)
+                            nativeDisplay?.keepAlive()
                         if (type == "fullscreenActive" && attempt in 1..9_007_199_254_740_991L) {
                             val session = registry.snapshot().firstOrNull { it.id.frameId == channel.frameId && it.id.elementId == element }
                             if (session != null) {

@@ -14,6 +14,9 @@ import com.miowser.app.R
 import com.miowser.app.browser.BrowserFloatingActionLayout
 import kotlin.math.roundToInt
 
+// The existing video-state heartbeat is 10 seconds when playback is paused.
+private const val DISPLAY_LEASE_MS = 15_000L
+
 /** Native face and gesture owner; only an acknowledged physical tap enters the WebView. */
 internal class NativeVideoAssistantDisplay(context: Context) : FrameLayout(context) {
     private val faceBackground = GradientDrawable().apply { shape = GradientDrawable.OVAL }
@@ -92,7 +95,11 @@ internal class NativeVideoAssistantDisplay(context: Context) : FrameLayout(conte
         expiry?.let(::removeCallbacks)
         val ticket = generation
         expiry = Runnable { if (generation == ticket) { clear(); onLost?.invoke() } }
-            .also { postDelayed(it, 4500) }
+            .also { postDelayed(it, DISPLAY_LEASE_MS) }
+    }
+
+    fun keepAlive() {
+        expiry?.let { removeCallbacks(it); postDelayed(it, DISPLAY_LEASE_MS) }
     }
 
     fun dismiss(animate: Boolean) {
