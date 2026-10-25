@@ -2,12 +2,14 @@ package com.miowser.app.browser
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -54,6 +56,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -103,6 +106,13 @@ fun AddressBar(
     val currentOnValueChange by rememberUpdatedState(onValueChange)
     val secureIconColor = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f)
         Color(0xFF81C995) else Color(0xFF137333)
+    val securityAccent = when (siteSecurity) {
+        SiteSecurity.SECURE -> secureIconColor
+        SiteSecurity.CERTIFICATE_ERROR,
+        SiteSecurity.CERTIFICATE_BYPASSED -> MaterialTheme.colorScheme.error
+        SiteSecurity.CHECKING, SiteSecurity.INSECURE,
+        SiteSecurity.OTHER -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
     // Navigation and Home can replace the address externally; IME edits flow back to the tab.
     LaunchedEffect(tabId, value.text, value.selection) {
         if (textState.text.toString() != value.text || textState.selection != value.selection) {
@@ -147,7 +157,7 @@ fun AddressBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp),
+                .padding(horizontal = 8.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
                 if (isPrivate) Icon(
@@ -159,7 +169,9 @@ fun AddressBar(
                 Box(modifier = Modifier.weight(1f)) {
                     BasicTextField(
                         state = textState,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
                             .focusRequester(focusRequester)
                             .onFocusChanged {
                                 fieldFocused = it.isFocused
@@ -193,55 +205,74 @@ fun AddressBar(
                                 visualTransformation = VisualTransformation.None,
                                 interactionSource = fieldInteraction,
                                 leadingIcon = {
-                                    IconButton(onClick = onOpenSiteInfo) {
-                                        if (isLoading) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(20.dp).semantics {
-                                                    contentDescription = "Loading page"
-                                                },
-                                                color = MaterialTheme.colorScheme.primary,
-                                                strokeWidth = 2.dp
+                                    Box(
+                                        modifier = Modifier.size(48.dp).background(
+                                            Brush.horizontalGradient(
+                                                listOf(
+                                                    (if (isLoading) MaterialTheme.colorScheme.primary
+                                                        else securityAccent).copy(alpha = 0.18f),
+                                                    Color.Transparent
+                                                )
                                             )
-                                        } else {
-                                            Icon(
-                                                imageVector = when (siteSecurity) {
-                                                    SiteSecurity.SECURE -> Icons.Rounded.Lock
-                                                    SiteSecurity.CERTIFICATE_ERROR,
-                                                    SiteSecurity.CERTIFICATE_BYPASSED -> Icons.Outlined.WarningAmber
-                                                    SiteSecurity.CHECKING, SiteSecurity.INSECURE,
-                                                    SiteSecurity.OTHER -> Icons.Outlined.Info
-                                                },
-                                                contentDescription = "Site information: ${siteSecurity.label}",
-                                                tint = when (siteSecurity) {
-                                                    SiteSecurity.SECURE -> secureIconColor
-                                                    SiteSecurity.CERTIFICATE_ERROR,
-                                                    SiteSecurity.CERTIFICATE_BYPASSED -> MaterialTheme.colorScheme.error
-                                                    SiteSecurity.CHECKING, SiteSecurity.INSECURE,
-                                                    SiteSecurity.OTHER -> MaterialTheme.colorScheme.onSurfaceVariant
-                                                }
-                                            )
+                                        ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        IconButton(onClick = onOpenSiteInfo) {
+                                            if (isLoading) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(20.dp).semantics {
+                                                        contentDescription = "Loading page"
+                                                    },
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    strokeWidth = 2.dp
+                                                )
+                                            } else {
+                                                Icon(
+                                                    imageVector = when (siteSecurity) {
+                                                        SiteSecurity.SECURE -> Icons.Rounded.Lock
+                                                        SiteSecurity.CERTIFICATE_ERROR,
+                                                        SiteSecurity.CERTIFICATE_BYPASSED -> Icons.Outlined.WarningAmber
+                                                        SiteSecurity.CHECKING, SiteSecurity.INSECURE,
+                                                        SiteSecurity.OTHER -> Icons.Outlined.Info
+                                                    },
+                                                    contentDescription = "Site information: ${siteSecurity.label}",
+                                                    tint = securityAccent
+                                                )
+                                            }
                                         }
                                     }
                                 },
                                 placeholder = { Text(if (isPrivate) "Private search or address" else "Search or enter address") },
                                 trailingIcon = {
-                                    if (fieldFocused) SearchFieldActions(
-                                        showClear = textState.text.isNotEmpty(),
-                                        onClear = { textState.edit { replace(0, length, "") } },
-                                        onSubmit = onSubmit,
-                                        submitEnabled = textState.text.isNotBlank(),
-                                        submitDescription = "Go to address or search"
-                                    ) else IconButton(onClick = onToggleBookmark) {
-                                        // StarBorder is the actual hollow bookmark state; the
-                                        // ordinary Star glyph is filled in every icon style.
-                                        Icon(
-                                            imageVector = if (isBookmarked) Icons.Rounded.Star
-                                                else Icons.Rounded.StarBorder,
-                                            contentDescription = if (isBookmarked) "Remove bookmark"
-                                                else "Add bookmark",
-                                            tint = if (isBookmarked) MaterialTheme.colorScheme.primary
-                                                else LocalContentColor.current
-                                        )
+                                    val trailingAccent = if (fieldFocused || isBookmarked)
+                                        MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                                    Box(
+                                        modifier = Modifier.size(48.dp).background(
+                                            Brush.horizontalGradient(
+                                                listOf(Color.Transparent, trailingAccent.copy(alpha = 0.16f))
+                                            )
+                                        ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (fieldFocused) SearchFieldActions(
+                                            showClear = false,
+                                            onClear = {},
+                                            onSubmit = onSubmit,
+                                            submitEnabled = textState.text.isNotBlank(),
+                                            submitDescription = "Go to address or search"
+                                        ) else IconButton(onClick = onToggleBookmark) {
+                                            // StarBorder is the actual hollow bookmark state; the
+                                            // ordinary Star glyph is filled in every icon style.
+                                            Icon(
+                                                imageVector = if (isBookmarked) Icons.Rounded.Star
+                                                    else Icons.Rounded.StarBorder,
+                                                contentDescription = if (isBookmarked) "Remove bookmark"
+                                                    else "Add bookmark",
+                                                tint = if (isBookmarked) MaterialTheme.colorScheme.primary
+                                                    else LocalContentColor.current
+                                            )
+                                        }
                                     }
                                 },
                                 container = {
