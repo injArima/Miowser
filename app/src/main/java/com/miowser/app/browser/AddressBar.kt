@@ -22,9 +22,10 @@ import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.TextFieldDecorator
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Star
@@ -53,7 +54,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
@@ -98,6 +101,8 @@ fun AddressBar(
     val textScroll = remember(tabId) { ScrollState(0) }
     val fieldInteraction = remember(tabId) { MutableInteractionSource() }
     val currentOnValueChange by rememberUpdatedState(onValueChange)
+    val secureIconColor = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f)
+        Color(0xFF81C995) else Color(0xFF137333)
     // Navigation and Home can replace the address externally; IME edits flow back to the tab.
     LaunchedEffect(tabId, value.text, value.selection) {
         if (textState.text.toString() != value.text || textState.selection != value.selection) {
@@ -191,14 +196,20 @@ fun AddressBar(
                                 leadingIcon = {
                                     IconButton(onClick = onOpenSiteInfo) {
                                         Icon(
-                                            imageVector = if (siteSecurity == SiteSecurity.SECURE) Icons.Rounded.Lock
-                                                else Icons.Rounded.LockOpen,
+                                            imageVector = when (siteSecurity) {
+                                                SiteSecurity.SECURE -> Icons.Rounded.Lock
+                                                SiteSecurity.CERTIFICATE_ERROR,
+                                                SiteSecurity.CERTIFICATE_BYPASSED -> Icons.Outlined.WarningAmber
+                                                SiteSecurity.CHECKING, SiteSecurity.INSECURE,
+                                                SiteSecurity.OTHER -> Icons.Outlined.Info
+                                            },
                                             contentDescription = "Site information: ${siteSecurity.label}",
                                             tint = when (siteSecurity) {
-                                                SiteSecurity.SECURE -> MaterialTheme.colorScheme.primary
-                                                SiteSecurity.INSECURE, SiteSecurity.CERTIFICATE_ERROR,
+                                                SiteSecurity.SECURE -> secureIconColor
+                                                SiteSecurity.CERTIFICATE_ERROR,
                                                 SiteSecurity.CERTIFICATE_BYPASSED -> MaterialTheme.colorScheme.error
-                                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                                SiteSecurity.CHECKING, SiteSecurity.INSECURE,
+                                                SiteSecurity.OTHER -> MaterialTheme.colorScheme.onSurfaceVariant
                                             }
                                         )
                                     }
