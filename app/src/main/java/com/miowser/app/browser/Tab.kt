@@ -224,6 +224,12 @@ class Tab(
     internal fun finishBrowserVideoFullscreen() { liveVideoTracker?.onNativeFullscreenHidden() }
     internal fun pauseBrowserVideoHost(pip: Boolean) { liveVideoTracker?.onHostPaused(pip) }
     internal fun resumeBrowserVideoHost() { liveVideoTracker?.onHostResumed() }
+    internal fun attachVideoAssistantDisplay(engine: WebView, display: com.miowser.app.browser.video.NativeVideoAssistantDisplay) {
+        if (liveWebView === engine) liveVideoTracker?.attachNativeDisplay(display)
+    }
+    internal fun detachVideoAssistantDisplay(display: com.miowser.app.browser.video.NativeVideoAssistantDisplay) {
+        liveVideoTracker?.detachNativeDisplay(display)
+    }
     private var videoButtonPolicy = VideoAssistantButtonPolicy()
     internal fun updateVideoAssistantButton(policy: VideoAssistantButtonPolicy) {
         if (videoButtonPolicy == policy) return

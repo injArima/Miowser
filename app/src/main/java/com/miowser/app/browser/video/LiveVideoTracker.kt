@@ -23,7 +23,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     private val playback: BrowserVideoController = BrowserVideoController(),
     private val onFullscreenFailure: () -> Unit = {}) {
     private data class Channel(val frameId: Long, val document: String, val token: String,
-        val navigation: Long, val connectedAt: Long, var lastUpdate: Long = -1,
+        val navigation: Long, val connectedAt: Long, val mainFrame: Boolean, var lastUpdate: Long = -1,
         var lastHello: Long = connectedAt)
     private val registry = LiveVideoSessionRegistry(tabId)
     private val channels = IdentityHashMap<JavaScriptReplyProxy, Channel>()
@@ -38,6 +38,9 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     private var pruneScheduled = false
     private var buttonPolicy = initialButtonPolicy
     private var lastFailureAt = -10_000L
+    private var nativeDisplay: NativeVideoAssistantDisplay? = null
+    private var displayChannel: Pair<JavaScriptReplyProxy, Channel>? = null
+    private var displayVersion = 0L
     private data class Owner(val id: LiveVideoId, val attempt: Long)
     private data class Pending(val id: Long, val command: BrowserVideoCommand, val timeout: Runnable)
     private var owner: Owner? = null
@@ -93,6 +96,9 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     }
 
     fun onNavigationStarted() {
+        nativeDisplay?.clear()
+        displayChannel = null
+        displayVersion = 0
         accepting = false
         onNativeFullscreenHidden("The page changed. Return to the website to open its current video.")
         channels.forEach { (proxy, channel) ->
@@ -137,10 +143,33 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
                     if (++helloCount > 16) return
                     old?.let { channels.remove(proxy); registry.closeFrame(it.frameId) }
                     val frame = registry.openFrame(document, origin, mainFrame) ?: return
-                    val channel = Channel(frame, document, UUID.randomUUID().toString(), registry.navigation, now)
+                    val channel = Channel(frame, document, UUID.randomUUID().toString(), registry.navigation, now, mainFrame)
                     channels[proxy] = channel
                     acknowledge(proxy, channel)
                     publish()
+                }
+                "assistantDisplay" -> {
+                    val channel = channels[proxy] ?: return
+                    val display = nativeDisplay ?: return
+                    if (!mainFrame || !channel.mainFrame || !buttonPolicy.enabled ||
+                        channel.document != document || channel.navigation != registry.navigation ||
+                        json.optLong("navigation", -1) != channel.navigation || json.optString("token") != channel.token) return
+                    val version = json.optLong("version", -1)
+                    if (version !in 1..9_007_199_254_740_991L || version <= displayVersion) return
+                    displayVersion = version
+                    displayChannel = proxy to channel
+                    if (!json.optBoolean("visible")) {
+                        display.dismiss(json.optBoolean("fade") && !buttonPolicy.reducedMotion)
+                        return
+                    }
+                    val geometry = VideoAssistantDisplayGeometry(version, json.optDouble("left"), json.optDouble("top"),
+                        json.optDouble("width"), json.optDouble("height"), json.optDouble("viewportWidth"),
+                        json.optDouble("viewportHeight"))
+                    display.present(geometry, android.graphics.Color.parseColor(buttonPolicy.background),
+                        android.graphics.Color.parseColor(buttonPolicy.foreground), buttonPolicy.reducedMotion) { ok ->
+                        if (nativeDisplay === display && channels[proxy] === channel && displayVersion == version)
+                            displayReply("nativeDisplayReady", version, ok)
+                    }
                 }
                 "state", "retire", "fullscreenError", "fullscreenActive", "fullscreenEnded", "fullscreenResumed", "controlStarted", "controlAck" -> {
                     val channel = channels[proxy] ?: return
@@ -214,22 +243,49 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
 
     private fun acknowledge(proxy: JavaScriptReplyProxy, channel: Channel) {
         runCatching { proxy.postMessage(JSONObject().put("type", "bind").put("documentId", channel.document)
-            .put("navigation", channel.navigation).put("token", channel.token).put("button", policyJson()).toString()) }
+            .put("navigation", channel.navigation).put("token", channel.token).put("button", policyJson(channel)).toString()) }
+    }
+
+    fun attachNativeDisplay(display: NativeVideoAssistantDisplay) {
+        nativeDisplay?.setOnLost(null)
+        nativeDisplay?.clear()
+        nativeDisplay = display
+        display.setOnLost { displayReply("nativeDisplayLost", displayVersion, false) }
+        sendButtonPolicies()
+    }
+    fun detachNativeDisplay(display: NativeVideoAssistantDisplay) {
+        if (nativeDisplay !== display) return
+        display.setOnLost(null); display.clear()
+        nativeDisplay = null
+        sendButtonPolicies()
+    }
+    private fun displayReply(type: String, version: Long, ok: Boolean) {
+        val (proxy, channel) = displayChannel ?: return
+        if (channels[proxy] !== channel || !accepting || retired) return
+        runCatching { proxy.postMessage(JSONObject().put("type", type).put("documentId", channel.document)
+            .put("navigation", channel.navigation).put("token", channel.token)
+            .put("version", version).put("ok", ok).toString()) }
     }
 
     fun updateButtonPolicy(next: VideoAssistantButtonPolicy) {
         if (retired || next == buttonPolicy) return
         buttonPolicy = next
+        if (!next.enabled) nativeDisplay?.clear()
+        sendButtonPolicies()
+    }
+    private fun sendButtonPolicies() {
         channels.forEach { (proxy, channel) ->
             runCatching { proxy.postMessage(JSONObject().put("type", "buttonPolicy")
                 .put("documentId", channel.document).put("navigation", channel.navigation)
-                .put("token", channel.token).put("button", policyJson()).toString()) }
+                .put("token", channel.token).put("button", policyJson(channel)).toString()) }
         }
     }
 
-    private fun policyJson() = JSONObject().put("enabled", buttonPolicy.enabled)
+    private fun policyJson(channel: Channel) = JSONObject().put("enabled", buttonPolicy.enabled)
         .put("background", buttonPolicy.background).put("foreground", buttonPolicy.foreground)
         .put("reducedMotion", buttonPolicy.reducedMotion)
+        .put("nativeDisplay", nativeDisplay != null && channel.mainFrame)
+        .put("frameConstrained", !channel.mainFrame)
 
     private fun publish() {
         mutableSessions.value = registry.snapshot()
@@ -251,6 +307,8 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
         if (retired) return
         retired = true
         onNavigationStarted()
+        nativeDisplay?.setOnLost(null)
+        nativeDisplay = null
         playback.disconnect()
         runCatching { script?.remove() }
         script = null

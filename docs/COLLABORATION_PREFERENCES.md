@@ -24,3 +24,9 @@ Samsung's external-placement findings remain in
 [the reinspection report](research/samsung-single-tap-recheck-2026-10-25.md).
 Discuss and prove a revised external-placement route before replacing the
 working browser-player entry path again. Placement must not add activation steps.
+
+The user then explicitly selected a **native Android display prototype** with
+additional work to preserve single-tap input. The current prototype uses a
+decorative native face over the existing real web tap target on main-frame pages;
+embedded frames retain their working in-frame overlay. Scope and device checks
+are in [the prototype report](research/native-video-assistant-display-prototype-2026-10-25.md).

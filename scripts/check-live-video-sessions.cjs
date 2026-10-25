@@ -116,7 +116,7 @@ function fixture(initial = [video()]) {
   }
   class ResizeObserver { observe() {} unobserve() {} disconnect() {} }
   const context = vm.createContext({ window, document, MutationObserver, IntersectionObserver, ResizeObserver,
-    performance: { now: () => time }, setTimeout: fn => { timers.set(next, fn); return next++; },
+    performance: { now: () => time }, setTimeout: (fn, delay = 0) => { timers.set(next, {fn, at: time + delay}); return next++; },
     clearTimeout: id => timers.delete(id), setInterval: fn => { intervals.set(next, fn); return next++; },
     clearInterval: id => intervals.delete(id) });
   function run() { vm.runInContext(buttonSource + controlSource + source, context); }
@@ -127,11 +127,17 @@ function fixture(initial = [video()]) {
     bridge.onmessage({ data: JSON.stringify({ type: 'bind', documentId: hello.documentId,
       navigation: 3, token: 'frame-token', ...extra }) });
   }
-  function flush() {
-    time += 500;
-    const pending = [...timers.values()]; timers.clear(); pending.forEach(fn => fn());
-    render();
+  function advance(ms) {
+    const end = time + ms;
+    for (let count = 0; count < 1000; count++) {
+      const nextTimer = [...timers.entries()].filter(([, t]) => t.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
+      if (!nextTimer) break;
+      time = Math.max(time, nextTimer[1].at); timers.delete(nextTimer[0]); nextTimer[1].fn(); render();
+      if (count === 999) throw new Error('unbounded timeout loop');
+    }
+    time = end; render();
   }
+  function flush() { advance(500); }
   function render() { const pending = [...animationFrames.values()]; animationFrames.clear(); pending.forEach(fn => fn()); }
   function mutate(added = []) {
     mutations.filter(m => m.connected).forEach(m => m.callback([{ type: 'childList', addedNodes: added }]));
@@ -170,7 +176,7 @@ function fixture(initial = [video()]) {
       elementId: active?.elementId, attempt: active?.attempt, recoveryId: 0, ...extra, ...credentials})});
   }
   return { initial, window, document, messages, timers, intervals, children, intersections, mutations, attribute,
-    run, bind, flush, mutate, state, button, policy, click, render, elements, animationFrames, control, lifecycle, time: () => time };
+    run, bind, flush, advance, mutate, state, button, policy, click, render, elements, animationFrames, control, lifecycle, time: () => time };
 }
 let checks = 0;
 function check(name, test) { test(); checks++; console.log('PASS ' + name); }
@@ -295,7 +301,7 @@ check('floating action is visible only after app policy enables it', () => {
   assert.equal(f.button().hidden, false); assert.equal(f.button().disabled, false);
   assert.equal(f.button().style.width, '48px');
   assert.equal(f.button().attributes['aria-label'], 'Open video fullscreen with Miowser');
-  assert.equal(f.button().style['background-color'], '#123456');
+  assert.equal(f.button().children[0].style['background-color'], '#123456');
   assert.equal(f.button().parentElement.parentElement, null); // Closed shadow root, not a page layout wrapper.
 });
 check('disabled policy leaves no touchable action over the page', () => {
@@ -354,29 +360,29 @@ check('synchronous fullscreen failure does not strand the button', () => {
   const f = enabledFixture(); f.initial[0].requestFullscreen = () => { throw new Error('unsupported'); };
   f.click(); f.flush(); assert.equal(f.button().hidden, false); assert.equal(f.initial[0].controls, false);
 });
-check('button stays inside the clipped visible video', () => {
+check('button anchors below the clipped visible video without adding page space', () => {
   const v = video(); v.getBoundingClientRect = () => ({ left: -100, top: -30, width: 640, height: 360 });
   const f = enabledFixture([v]), b = f.button();
-  assert.equal(b.style.top, '8px'); assert.equal(b.style.left, '484px');
+  assert.equal(b.style.top, '338px'); assert.equal(b.style.left, '492px');
 });
 check('overflow-clipping ancestors constrain placement', () => {
   const v = video(), parent = new Element('div');
   parent.getBoundingClientRect = () => ({ left: 200, top: 20, right: 400, bottom: 140, width: 200, height: 120 });
   parent.computed = { overflowX: 'hidden', overflowY: 'hidden' }; v.parentElement = parent;
-  const f = enabledFixture([v]); assert.equal(f.button().style.left, '344px'); assert.equal(f.button().style.top, '28px');
+  const f = enabledFixture([v]); assert.equal(f.button().style.left, '352px'); assert.equal(f.button().style.top, '148px');
 });
 check('pinch-zoom viewport preserves the apparent touch target size', () => {
   const f = enabledFixture();
   Object.assign(f.window.visualViewport, { scale: 2, offsetLeft: 200, offsetTop: 40, width: 540, height: 960 });
-  f.window.visualViewport.dispatch('resize'); f.render();
+  f.window.visualViewport.dispatch('resize'); f.advance(250);
   assert.equal(f.button().style.width, '24px'); assert.equal(f.button().style.height, '24px');
-  assert.equal(f.button().style.left, '612px'); assert.equal(f.button().style.top, '44px');
+  assert.equal(f.button().style.left, '616px'); assert.equal(f.button().style.top, '374px');
 });
 check('safe-area insets are respected inside the WebView viewport', () => {
   const f = fixture(); const original = f.window.getComputedStyle;
   f.window.visualViewport.width = 620;
   f.window.getComputedStyle = e => ({ ...original(e), ...(e.tagName === 'SPAN' ? {paddingRight: '40px'} : {}) });
-  f.bind(); f.policy(true); f.flush(); assert.equal(f.button().style.left, '524px');
+  f.bind(); f.policy(true); f.flush(); assert.equal(f.button().style.left, '532px');
 });
 check('small previews, hidden videos and denied fullscreen do not get a button', () => {
   const tiny = video(); tiny.getBoundingClientRect = () => ({left: 0, top: 0, width: 100, height: 60});
@@ -397,7 +403,7 @@ check('pagehide removes the host and cancels animation-frame work', () => {
 check('scroll bursts coalesce geometry work without waiting for telemetry', () => {
   const f = enabledFixture(); f.initial[0].getBoundingClientRect = () => ({left: 0, top: 100, width: 640, height: 360});
   for (let i = 0; i < 100; i++) f.window.dispatch('scroll');
-  assert.equal(f.animationFrames.size, 1); f.render(); assert.equal(f.button().style.top, '108px');
+  assert.equal(f.animationFrames.size, 1); f.advance(250); assert.equal(f.button().style.top, '468px');
 });
 check('stale policy tokens cannot re-enable a hidden button', () => {
   const f = enabledFixture(); f.policy(false); f.flush();
@@ -469,7 +475,7 @@ check('ignored seek setters produce an error rather than a false success', () =>
   const f = playingFixture();
   Object.defineProperty(f.initial[0], 'currentTime', {get: () => 12, set() {}});
   const id = f.control('seek', 25); assert.equal(ack(f, id), undefined);
-  f.flush(); assert.equal(ack(f, id).ok, false);
+  f.advance(7000); assert.equal(ack(f, id).ok, false);
 });
 check('a newer seek cancels the old confirmation listener', () => {
   const f = playingFixture(); f.initial[0].seeking = true;
@@ -689,7 +695,7 @@ check('native fallback and channel reset make website controls available', () =>
 });
 check('a hanging fullscreen request times out and can be tried again', () => {
   const f = enabledFixture(), v = f.initial[0]; v.requestFullscreen = () => ({catch() {}});
-  f.click(); assert.equal(v.controls, false); f.flush();
+  f.click(); assert.equal(v.controls, false); f.advance(8000);
   assert.equal(v.controls, false); assert.equal(f.messages.filter(m => m.type === 'fullscreenError').length, 1);
   assert.equal(f.button().hidden, false);
   v.requestFullscreen = () => { f.document.fullscreenElement = v; f.document.dispatch('fullscreenchange'); return {catch() {}}; };
@@ -698,7 +704,7 @@ check('a hanging fullscreen request times out and can be tried again', () => {
 check('late rejection from an expired entry cannot tear down a newer fullscreen entry', () => {
   const f = enabledFixture(), v = f.initial[0]; let lateReject;
   v.requestFullscreen = () => ({catch(reject) { lateReject = reject; }});
-  f.click(); f.flush();
+  f.click(); f.advance(8000);
   v.requestFullscreen = () => { f.document.fullscreenElement = v; f.document.dispatch('fullscreenchange'); return {catch() {}}; };
   f.click(); f.control('richUi', 1); lateReject();
   assert.equal(v.controls, false); assert.equal(f.document.fullscreenElement, v);
@@ -841,8 +847,8 @@ function youtubeBodyFixture(rootOverflow = 'visible', containment = 'none') {
 }
 check('YouTube-shaped viewport overflow does not clip a visible video to a zero-height body', () => {
   const {f, v} = youtubeBodyFixture(); f.bind(); f.policy(true); f.flush();
-  assert.equal(f.button().hidden, false); assert.equal(f.button().style.top, '68px');
-  assert.equal(f.button().style.left, '434px'); f.click(); assert.equal(f.document.fullscreenElement, v);
+  assert.equal(f.button().hidden, false); assert.equal(f.button().style.top, '344px');
+  assert.equal(f.button().style.left, '442px'); f.click(); assert.equal(f.document.fullscreenElement, v);
 });
 check('viewport overflow exception still respects the actual nested player clipping', () => {
   const {f, player} = youtubeBodyFixture();
@@ -899,5 +905,90 @@ check('floating entry does not insert a layout row or wrap the video', () => {
   assert.equal(hosts[0].style.width, '0'); assert.equal(hosts[0].style.height, '0');
   assert.equal(f.button().style.position, 'fixed');
   assert.equal(v.parentElement, parent);
+});
+function nativeFixture() {
+  const f = fixture(); f.bind(); f.policy(true, {nativeDisplay: true}); f.flush();
+  f.display = () => f.messages.filter(m => m.type === 'assistantDisplay' && m.visible).at(-1);
+  f.nativeAck = (version, ok, credentials = {}) => f.window.MiowserLiveVideo.onmessage({data: JSON.stringify({
+    type: 'nativeDisplayReady', documentId: f.messages.find(m => m.type === 'hello').documentId,
+    navigation: 3, token: 'frame-token', version, ok, ...credentials})});
+  return f;
+}
+check('display waits 200ms before showing the Samsung-style anchor', () => {
+  const f = fixture(); f.bind(); f.policy(true); f.advance(199);
+  assert.equal(f.button(), undefined); f.advance(1);
+  assert.equal(f.button().hidden, false); assert.equal(f.button().style.left, '592px');
+  assert.equal(f.button().style.top, '378px');
+});
+check('native display sends normalized visual geometry with a 48px real tap target', () => {
+  const f = nativeFixture(), d = f.display();
+  assert.equal(d.left * 1080, 592); assert.equal(d.top * 1920, 378);
+  assert.equal(d.width * 1080, 48); assert.equal(d.height * 1920, 48);
+  assert.equal(f.button().children[0].style.width, '40px');
+});
+check('native readiness hides only the web visual and keeps the same one-tap fullscreen action', () => {
+  const f = nativeFixture(); assert.equal(f.button().style.opacity, '1');
+  f.nativeAck(f.display().version, true);
+  assert.equal(f.button().style.opacity, '0'); assert.equal(f.button().style['pointer-events'], 'auto');
+  f.click(); assert.equal(f.initial[0].fullscreenRequests, 1); assert.equal(f.initial[0].currentTime, 12);
+});
+check('failed native rendering leaves the working web face and action available', () => {
+  const f = nativeFixture(); f.nativeAck(f.display().version, false);
+  assert.equal(f.button().style.opacity, '1'); f.click(); assert.equal(f.initial[0].fullscreenRequests, 1);
+});
+check('old or foreign display acknowledgements cannot hide the current web target', () => {
+  const f = nativeFixture(), old = f.display().version;
+  f.nativeAck(old, true, {token: 'old-token'}); assert.equal(f.button().style.opacity, '1');
+  f.window.visualViewport.height = 1800; f.window.visualViewport.dispatch('resize'); f.advance(250);
+  assert(f.display().version > old); f.nativeAck(old, true);
+  assert.equal(f.button().style.opacity, '1');
+});
+check('heartbeat and playback-clock changes do not resend unchanged native geometry', () => {
+  const f = nativeFixture(); const before = f.messages.filter(m => m.type === 'assistantDisplay').length;
+  for (let i = 0; i < 3; i++) { f.initial[0].currentTime++; f.initial[0].dispatch('timeupdate'); f.flush(); }
+  assert.equal(f.messages.filter(m => m.type === 'assistantDisplay').length, before);
+});
+check('auto-hide disables the tap immediately and cannot be undone by clock updates', () => {
+  const f = nativeFixture(); f.nativeAck(f.display().version, true); f.advance(2700);
+  assert.equal(f.button().disabled, true); assert.equal(f.button().style['pointer-events'], 'none');
+  assert.equal(f.messages.filter(m => m.type === 'assistantDisplay').at(-1).visible, false);
+  f.advance(300); assert.equal(f.button().hidden, true);
+  f.initial[0].dispatch('timeupdate'); f.flush(); assert.equal(f.button().hidden, true);
+});
+check('an ordinary page tap reveals a hidden button but never opens the player itself', () => {
+  const f = enabledFixture(); f.advance(3100);
+  f.document.dispatch('pointerup', {isTrusted: false, target: f.initial[0]}); f.advance(250);
+  assert.equal(f.button().hidden, true);
+  f.document.dispatch('pointerup', {isTrusted: true, target: f.initial[0]}); f.advance(250);
+  assert.equal(f.button().hidden, false); assert.equal(f.initial[0].fullscreenRequests, 0);
+  f.click(); assert.equal(f.initial[0].fullscreenRequests, 1);
+});
+check('a touch beginning before auto-hide keeps the button alive for its click', () => {
+  const f = enabledFixture(); f.advance(2600); f.button().dispatch('pointerdown', {stopPropagation() {}});
+  f.advance(1000); assert.equal(f.button().disabled, false); f.click(); assert.equal(f.initial[0].fullscreenRequests, 1);
+});
+check('scrolling hides stale native geometry until scrolling settles', () => {
+  const f = nativeFixture(); f.nativeAck(f.display().version, true);
+  f.window.dispatch('scroll'); assert.equal(f.button().hidden, true);
+  assert.equal(f.messages.filter(m => m.type === 'assistantDisplay').at(-1).visible, false);
+  f.advance(199); assert.equal(f.button().hidden, true);
+  f.advance(1); assert.equal(f.button().hidden, false);
+});
+check('main-frame button clamps inside the viewport when the below-video area is too small', () => {
+  const f = fixture(); f.window.visualViewport.height = 400;
+  f.bind(); f.policy(true); f.flush(); assert.equal(f.button().style.top, '352px');
+});
+check('embedded frames retain their reachable existing target without a toolbar route', () => {
+  const f = fixture(); f.bind(); f.policy(true, {frameConstrained: true}); f.flush();
+  assert.equal(f.button().style.left, '584px'); assert.equal(f.button().style.top, '18px');
+  assert.equal(f.messages.some(m => m.type === 'assistantDisplay'), false);
+  f.click(); assert.equal(f.initial[0].fullscreenRequests, 1);
+});
+check('focused web controls remain visible and are not removed by auto-hide', () => {
+  const f = nativeFixture(); f.nativeAck(f.display().version, true);
+  f.button().dispatch('focus'); f.advance(6000);
+  assert.equal(f.button().hidden, false); assert.equal(f.button().style.opacity, '1');
+  assert.equal(f.button().style.outline, '2px solid currentColor');
+  f.button().dispatch('blur'); f.advance(3300); assert.equal(f.button().hidden, true);
 });
 console.log(checks + ' live-video script checks passed; no device tests were run.');

@@ -5,9 +5,78 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
 (function () {
     'use strict';
     window.__miowserCreateVideoButton = function (api) {
-        var policy = {enabled: false}, host = null, button = null, icon = null, insetProbe = null;
+        var policy = {enabled: false}, host = null, button = null, plate = null, icon = null, insetProbe = null;
         var selected = null, frame = null, animation = null, disposed = false, pending = false;
         var restore = null, entryTimeout = null;
+        var autoTimer = null, fadeTimer = null, wakeTimer = null, layoutTimers = [];
+        var candidate = null, candidateRevision = -1, suppressed = false, scrolling = false, readyAt = 0;
+        var displayVersion = 0, displayKey = '', nativeReady = false, focused = false;
+        function reduced() {
+            return policy.reducedMotion || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+        }
+        function cancelAuto() { if (autoTimer !== null) clearTimeout(autoTimer); autoTimer = null; }
+        function cancelFade() {
+            if (fadeTimer !== null) clearTimeout(fadeTimer); fadeTimer = null;
+            if (animation) animation.cancel(); animation = null;
+        }
+        function nativeDisplay(visible, fade, x, y, size, view) {
+            if (!policy.nativeDisplay || !api.display) return;
+            var data = {visible: visible, fade: !!fade};
+            if (visible) {
+                data.left = (x - view.left) / view.width; data.top = (y - view.top) / view.height;
+                data.width = size / view.width; data.height = size / view.height;
+                data.viewportWidth = view.width; data.viewportHeight = view.height;
+            }
+            var key = JSON.stringify(data) + policy.background + policy.foreground + policy.reducedMotion;
+            if (key === displayKey) return;
+            displayKey = key; data.version = ++displayVersion; nativeReady = false;
+            if (visible && button) { cancelFade(); button.style.setProperty('opacity', '1'); }
+            api.display(data);
+        }
+        function expire() {
+            autoTimer = null;
+            if (!button || button.hidden || !selected || focused) return;
+            var paintedNatively = nativeReady;
+            suppressed = true; selected = null;
+            button.disabled = true; button.style.setProperty('pointer-events', 'none');
+            cancelFade();
+            nativeDisplay(false, !reduced());
+            if (reduced()) { button.hidden = true; button.style.setProperty('visibility', 'hidden'); return; }
+            if (!paintedNatively && button.animate) animation = button.animate(
+                [{opacity: 1}, {opacity: 0}], {duration: 300, easing: 'ease-in', fill: 'forwards'});
+            fadeTimer = setTimeout(function () {
+                fadeTimer = null;
+                if (suppressed && button) { button.hidden = true; button.style.setProperty('visibility', 'hidden'); }
+            }, 300);
+        }
+        function armAuto() { cancelAuto(); autoTimer = setTimeout(expire, 3000); }
+        function wake(event) {
+            if (event && (!event.isTrusted || event.target === host)) return;
+            if (!policy.enabled || disposed) return;
+            if (wakeTimer !== null) clearTimeout(wakeTimer);
+            if (suppressed || !selected) {
+                cancelFade();
+                if (button) { button.hidden = true; button.disabled = true; }
+            }
+            cancelAuto(); suppressed = false; readyAt = performance.now() + 200;
+            wakeTimer = setTimeout(function () {
+                wakeTimer = null; readyAt = 0; schedule();
+                if (selected && button && !button.hidden) armAuto();
+            }, 200);
+            schedule();
+        }
+        function scroll() {
+            layoutTimers.forEach(clearTimeout); layoutTimers = [];
+            if (wakeTimer !== null) clearTimeout(wakeTimer);
+            hide(); scrolling = true;
+            wakeTimer = setTimeout(function () {
+                wakeTimer = null; scrolling = false; readyAt = 0; schedule();
+            }, 200);
+        }
+        function layoutChanged() {
+            scroll();
+            [400, 600, 800, 1000].forEach(function (delay) { layoutTimers.push(setTimeout(schedule, delay)); });
+        }
         function cancelEntryTimeout() {
             if (entryTimeout !== null) clearTimeout(entryTimeout);
             entryTimeout = null;
@@ -18,7 +87,9 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         }
         function hide() {
             selected = null;
-            if (animation) { animation.cancel(); animation = null; }
+            focused = false;
+            candidate = null; candidateRevision = -1; suppressed = false;
+            cancelAuto(); cancelFade(); nativeDisplay(false, false);
             if (button) {
                 button.hidden = true; button.disabled = true;
                 setStyles(button, {'visibility': 'hidden', 'pointer-events': 'none'});
@@ -218,11 +289,23 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 path.setAttribute('d', data); path.setAttribute('fill', 'currentColor'); icon.appendChild(path);
             });
             setStyles(icon, {'pointer-events': 'none', 'display': 'block'});
-            button.appendChild(icon);
+            plate = document.createElement('span');
+            setStyles(plate, {'all': 'initial', 'display': 'flex', 'align-items': 'center',
+                'justify-content': 'center', 'pointer-events': 'none', 'border-radius': '50%',
+                'box-shadow': '0 2px 6px rgba(0,0,0,.3)'});
+            plate.appendChild(icon); button.appendChild(plate);
             button.addEventListener('click', click);
-            button.addEventListener('pointerdown', function (event) { event.stopPropagation(); });
-            button.addEventListener('focus', function () { button.style.setProperty('outline', '2px solid currentColor'); });
-            button.addEventListener('blur', function () { button.style.setProperty('outline', 'none'); });
+            button.addEventListener('pointerdown', function (event) { cancelAuto(); event.stopPropagation(); });
+            button.addEventListener('pointerup', armAuto);
+            button.addEventListener('pointercancel', armAuto);
+            button.addEventListener('focus', function () {
+                focused = true; cancelAuto(); cancelFade(); nativeDisplay(false, false);
+                button.style.setProperty('opacity', '1'); button.style.setProperty('outline', '2px solid currentColor');
+            });
+            button.addEventListener('blur', function () {
+                focused = false; button.style.setProperty('outline', 'none');
+                if (selected && policy.enabled) { armAuto(); displayKey = ''; schedule(); }
+            });
             shadow.appendChild(button);
             insetProbe = document.createElement('span');
             setStyles(insetProbe, {'all': 'initial', 'position': 'fixed', 'visibility': 'hidden',
@@ -236,6 +319,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             frame = null;
             if (disposed || !policy.enabled || !api.bound() || document.visibilityState === 'hidden' ||
                 !document.fullscreenEnabled || document.fullscreenElement || pending) { hide(); return; }
+            if (scrolling) return;
             var view = viewport(), best = null, bestBox = null, bestScore = -1, bestInteraction = -1;
             api.records().forEach(function (record) {
                 if (!eligible(record)) return;
@@ -247,26 +331,47 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 }
             });
             if (!best) { hide(); return; }
+            if (candidate !== best || candidateRevision !== best.sourceRevision) {
+                candidate = best; candidateRevision = best.sourceRevision; suppressed = false;
+            }
+            if (suppressed || performance.now() < readyAt) return;
             makeButton();
             if (!host.isConnected) document.documentElement.appendChild(host);
             var size = 48 / view.scale, gap = 8 / view.scale;
             var insets = window.getComputedStyle(insetProbe);
-            var left = Math.max(bestBox.left, view.left + (parseFloat(insets.paddingLeft) || 0));
-            var top = Math.max(bestBox.top, view.top + (parseFloat(insets.paddingTop) || 0));
-            var right = Math.min(bestBox.right, view.left + view.width - (parseFloat(insets.paddingRight) || 0));
-            var bottom = Math.min(bestBox.bottom, view.top + view.height - (parseFloat(insets.paddingBottom) || 0));
-            if (right - left < size + gap * 2 || bottom - top < size + gap * 2) { hide(); return; }
+            var left = view.left + (parseFloat(insets.paddingLeft) || 0);
+            var top = view.top + (parseFloat(insets.paddingTop) || 0);
+            var right = view.left + view.width - (parseFloat(insets.paddingRight) || 0);
+            var bottom = view.top + view.height - (parseFloat(insets.paddingBottom) || 0);
+            // Root-attached overlay: do not reserve page space or inherit the player's clip.
+            // The local viewport also keeps a child frame's existing trusted target reachable.
+            if (right - left < size || bottom - top < size) { hide(); return; }
+            var x = Math.max(left, Math.min(Math.max(bestBox.right - size, bestBox.left), right - size));
+            var y = Math.max(top, Math.min(bestBox.bottom + gap, bottom - size));
+            if (policy.frameConstrained) {
+                if (bestBox.right - bestBox.left < size + gap * 2 || bestBox.bottom - bestBox.top < size + gap * 2) {
+                    hide(); return;
+                }
+                x = Math.max(left, Math.min(bestBox.right - gap - size, right - size));
+                y = Math.max(top, bestBox.top + gap);
+            }
             var appearing = button.hidden;
-            setStyles(button, {'left': (right - gap - size) + 'px', 'top': (top + gap) + 'px',
-                'width': size + 'px', 'height': size + 'px', 'border-radius': (16 / view.scale) + 'px',
-                'background-color': policy.background, 'color': policy.foreground,
+            setStyles(button, {'left': x + 'px', 'top': y + 'px',
+                'width': size + 'px', 'height': size + 'px', 'border-radius': '50%',
+                'background-color': 'transparent', 'border': 'none', 'box-shadow': 'none', 'color': policy.foreground,
                 'visibility': 'visible', 'pointer-events': 'auto'});
-            setStyles(icon, {'width': (28 / view.scale) + 'px', 'height': (28 / view.scale) + 'px'});
+            setStyles(plate, {'width': (40 / view.scale) + 'px', 'height': (40 / view.scale) + 'px',
+                'background-color': policy.background});
+            setStyles(icon, {'width': (24 / view.scale) + 'px', 'height': (24 / view.scale) + 'px'});
             selected = best;
             button.hidden = false; button.disabled = false;
-            var reduced = policy.reducedMotion || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-            if (appearing && !reduced && button.animate) animation = button.animate(
-                [{opacity: 0}, {opacity: 1}], {duration: 140, easing: 'ease-out'});
+            if (appearing) {
+                cancelFade(); button.style.setProperty('opacity', '1'); armAuto();
+                if (!reduced() && button.animate) animation = button.animate(
+                    [{opacity: 0}, {opacity: 1}], {duration: 300, easing: 'ease-out'});
+            }
+            if (focused) nativeDisplay(false, false);
+            else nativeDisplay(true, false, x, y, size, view);
         }
         function schedule() {
             if (disposed) return;
@@ -287,11 +392,34 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         }
         document.addEventListener('fullscreenchange', fullscreenChanged);
         return {
+            wake: wake, scroll: scroll, layoutChanged: layoutChanged,
+            nativeReady: function (version, ok) {
+                if (version !== displayVersion || !policy.nativeDisplay || !selected || !button || button.hidden) return;
+                nativeReady = ok === true;
+                cancelFade(); button.style.setProperty('opacity', nativeReady ? '0' : '1');
+            },
+            nativeLost: function () {
+                nativeReady = false; displayKey = '';
+                if (button && selected && !button.hidden) button.style.setProperty('opacity', '1');
+                schedule();
+            },
             policy: function (next) {
+                var enabledBefore = policy.enabled, nativeBefore = policy.nativeDisplay;
                 policy = {enabled: next && next.enabled === true,
                     background: next && /^#[0-9a-f]{6}$/i.test(next.background) ? next.background : '#303038',
                     foreground: next && /^#[0-9a-f]{6}$/i.test(next.foreground) ? next.foreground : '#FFFFFF',
-                    reducedMotion: next && next.reducedMotion === true};
+                    reducedMotion: next && next.reducedMotion === true,
+                    nativeDisplay: next && next.nativeDisplay === true,
+                    frameConstrained: next && next.frameConstrained === true};
+                if (nativeBefore !== policy.nativeDisplay) {
+                    nativeReady = false; displayKey = '';
+                    if (button) button.style.setProperty('opacity', '1');
+                }
+                if (policy.enabled && !enabledBefore) wake();
+                if (!policy.enabled) {
+                    if (wakeTimer !== null) clearTimeout(wakeTimer); wakeTimer = null;
+                    layoutTimers.forEach(clearTimeout); layoutTimers = []; scrolling = false;
+                }
                 schedule();
             },
             schedule: schedule,
@@ -324,13 +452,15 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             },
             destroy: function () {
                 disposed = true;
+                if (wakeTimer !== null) clearTimeout(wakeTimer); wakeTimer = null;
+                layoutTimers.forEach(clearTimeout); layoutTimers = [];
                 cancelEntryTimeout();
                 if (frame !== null) window.cancelAnimationFrame(frame);
                 frame = null;
                 hide(); restoreControls();
                 document.removeEventListener('fullscreenchange', fullscreenChanged);
                 if (host) host.remove();
-                host = button = icon = insetProbe = null;
+                host = button = plate = icon = insetProbe = null;
             }
         };
     };

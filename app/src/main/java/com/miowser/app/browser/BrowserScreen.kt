@@ -106,6 +106,8 @@ import com.miowser.app.adblock.AdBlockFilters
 import com.miowser.app.adblock.SiteProtection
 import com.miowser.app.bookmarks.BookmarkList
 import com.miowser.app.browser.video.VideoAssistantButtonPolicy
+import com.miowser.app.browser.video.NativeVideoAssistantDisplay
+import com.miowser.app.browser.video.releaseVideoAssistantHost
 import com.miowser.app.browser.video.BrowserVideoPlayerOverlay
 import com.miowser.app.browser.video.BrowserVideoSurface
 import com.miowser.app.browser.video.keepBrowserRendererForPip
@@ -1734,10 +1736,15 @@ fun BrowserScreen(
                                 // child directly via canChildScrollUp below, which WebView answers
                                 // correctly through its ordinary View.canScrollVertically.
                                 SwipeRefreshLayout(ctx).apply {
+                                    val content = FrameLayout(ctx)
+                                    val display = NativeVideoAssistantDisplay(ctx)
+                                    content.addView(engine, FrameLayout.LayoutParams(-1, -1))
+                                    content.addView(display, FrameLayout.LayoutParams(-1, -1))
                                     addView(
-                                        engine,
+                                        content,
                                         ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                                     )
+                                    tab.attachVideoAssistantDisplay(engine, display)
                                     setColorSchemeColors(pullToRefreshTint)
                                     setOnChildScrollUpCallback { _, _ ->
                                         tab.liveWebView === engine && engine.canScrollVertically(-1)
@@ -1754,7 +1761,9 @@ fun BrowserScreen(
                                 ) View.VISIBLE else View.INVISIBLE
                                 swipeRefresh.isRefreshing = isRefreshing
                             },
-                            onRelease = { host -> host.removeAllViews() }
+                            onRelease = { host ->
+                                releaseVideoAssistantHost(host, tab::detachVideoAssistantDisplay)
+                            }
                         )
                     }
                 }

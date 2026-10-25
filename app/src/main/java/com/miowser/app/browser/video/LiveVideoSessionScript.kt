@@ -202,6 +202,13 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             records: function () { return Array.from(videos.values()); },
             bound: function () { return running && binding !== null; },
             interacted: schedule,
+            display: function (data) {
+                if (!running || !binding) return;
+                var message = {type: 'assistantDisplay', documentId: documentId,
+                    navigation: binding.navigation, token: binding.token};
+                Object.keys(data).forEach(function (key) { message[key] = data[key]; });
+                send(message);
+            },
             entering: function () { return ++fullscreenSerial; },
             fullscreen: function (record, attempt, active) {
                 if (!active && controls) controls.release();
@@ -267,11 +274,14 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             watch(video);
         }, true);
         listen(document, 'visibilitychange', visibility);
-        listen(window, 'scroll', schedule, {passive: true, capture: true});
-        listen(window, 'resize', schedule, {passive: true});
+        function scrollDisplay() { if (assistant) assistant.scroll(); schedule(); }
+        function layoutDisplay() { if (assistant) assistant.layoutChanged(); schedule(); }
+        listen(document, 'pointerup', function (event) { if (assistant) assistant.wake(event); }, {passive: true});
+        listen(window, 'scroll', scrollDisplay, {passive: true, capture: true});
+        listen(window, 'resize', layoutDisplay, {passive: true});
         if (window.visualViewport) {
-            listen(window.visualViewport, 'resize', schedule, {passive: true});
-            listen(window.visualViewport, 'scroll', schedule, {passive: true});
+            listen(window.visualViewport, 'resize', layoutDisplay, {passive: true});
+            listen(window.visualViewport, 'scroll', scrollDisplay, {passive: true});
         }
         hello();
     }
@@ -319,6 +329,14 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             if (message.type === 'control' && binding && message.documentId === documentId &&
                 message.navigation === binding.navigation && message.token === binding.token) {
                 if (controls) controls.receive(message);
+                return;
+            }
+            if ((message.type === 'nativeDisplayReady' || message.type === 'nativeDisplayLost') && binding &&
+                message.documentId === documentId && message.navigation === binding.navigation && message.token === binding.token) {
+                if (assistant) {
+                    if (message.type === 'nativeDisplayLost') assistant.nativeLost();
+                    else assistant.nativeReady(message.version, message.ok);
+                }
                 return;
             }
             if (['releaseFullscreen', 'suspendFullscreen', 'resumeFullscreen', 'fallbackFullscreen'].indexOf(message.type) >= 0 &&
