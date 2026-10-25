@@ -207,6 +207,10 @@ fun AddressBar(
                                 singleLine = true,
                                 visualTransformation = VisualTransformation.None,
                                 interactionSource = fieldInteraction,
+                                contentPadding = OutlinedTextFieldDefaults.contentPadding(
+                                    top = 8.dp,
+                                    bottom = 8.dp
+                                ),
                                 leadingIcon = {
                                     Box(
                                         modifier = Modifier.size(width = 48.dp, height = 44.dp).background(
