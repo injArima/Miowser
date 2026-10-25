@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -202,22 +203,8 @@ fun BrowserHomePage(
                             .onSizeChanged { searchFieldSize = it }
                             .focusRequester(searchFocusRequester)
                             .onFocusChanged { searchFocused = it.isFocused },
-                        placeholder = { Text("Search with ${searchEngine.label} or enter address") },
-                        leadingIcon = {
-                            Box(
-                                modifier = Modifier.size(48.dp).background(
-                                    Brush.horizontalGradient(
-                                        listOf(
-                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                                            Color.Transparent
-                                        )
-                                    )
-                                ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Rounded.Search, contentDescription = null)
-                            }
-                        },
+                        placeholder = { Text("Search ${searchEngine.label} or type URL") },
+                        prefix = { Spacer(Modifier.width(8.dp)) },
                         trailingIcon = {
                             Box(
                                 modifier = Modifier.size(48.dp).background(
