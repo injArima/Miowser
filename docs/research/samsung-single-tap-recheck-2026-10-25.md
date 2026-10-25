@@ -1,5 +1,9 @@
 # Samsung Internet: single-tap entry and external placement recheck
 
+The later [display-only investigation on live YouTube](samsung-button-placement-youtube-2026-10-25.md)
+adds measured screen coordinates, native view bounds, animation resources and
+show/hide timing. It leaves Miowser's existing activation action unchanged.
+
 Follow-up: the user approved removing the two-step route and
 [restoring the consistent floating button](video-assistant-single-tap-restored-2026-10-25.md).
 
