@@ -24,8 +24,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
-import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.HotelClass
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -68,7 +68,7 @@ import com.miowser.app.ui.theme.ExpressiveTokens
  * Media are all full pages (see [Screen]), not sheets, so there's no "currently open" state left
  * to highlight (a page fully covers this bar anyway). Unlike AddressBar's star, this Bookmarks
  * button has no per-tap state of its own: it's not a toggle for the current page, just navigation
- * to the saved-bookmarks list — Bookmarks (a stack of ribbons) says that plainly regardless of
+ * to the saved-bookmarks list — the unfilled Hotel Class star cluster says that plainly regardless of
  * whether the active tab happens to be bookmarked.
  */
 @Composable
@@ -120,7 +120,7 @@ fun BottomBar(
                 Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = stringResource(R.string.nav_forward))
             }
             IconButton(onClick = onBookmarks, enabled = ready) {
-                Icon(Icons.Rounded.Bookmarks, contentDescription = stringResource(R.string.nav_bookmarks), tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Rounded.HotelClass, contentDescription = stringResource(R.string.nav_bookmarks), tint = MaterialTheme.colorScheme.primary)
             }
             Box(
                 modifier = Modifier
