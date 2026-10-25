@@ -36,3 +36,9 @@ tap/scroll interception. The native layer now owns its target's gestures and
 forwards a physical tap only after the bound document prepares its input guard.
 This remains a single tap, retains the existing launch action, and prevents page
 click-through. See [the input fix](research/native-video-assistant-input-fix-2026-10-25.md).
+
+The latest placement request supersedes video-relative positioning for the native
+floating button: anchor it to the browser screen, directly above the space
+reserved for Jump to top. Keep that space reserved even when Jump to top is hidden.
+The existing embedded-frame DOM fallback remains a separate implementation
+boundary; it cannot render outside its iframe using the current input route.

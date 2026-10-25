@@ -360,29 +360,29 @@ check('synchronous fullscreen failure does not strand the button', () => {
   const f = enabledFixture(); f.initial[0].requestFullscreen = () => { throw new Error('unsupported'); };
   f.click(); f.flush(); assert.equal(f.button().hidden, false); assert.equal(f.initial[0].controls, false);
 });
-check('button anchors below the clipped visible video without adding page space', () => {
+check('button stays in its screen slot despite the visible video position', () => {
   const v = video(); v.getBoundingClientRect = () => ({ left: -100, top: -30, width: 640, height: 360 });
   const f = enabledFixture([v]), b = f.button();
-  assert.equal(b.style.top, '338px'); assert.equal(b.style.left, '480px');
+  assert.equal(b.style.top, '1790px'); assert.equal(b.style.left, '1010px');
 });
-check('overflow-clipping ancestors constrain placement', () => {
+check('a clipped eligible video uses the same reserved screen slot', () => {
   const v = video(), parent = new Element('div');
   parent.getBoundingClientRect = () => ({ left: 200, top: 20, right: 400, bottom: 140, width: 200, height: 120 });
   parent.computed = { overflowX: 'hidden', overflowY: 'hidden' }; v.parentElement = parent;
-  const f = enabledFixture([v]); assert.equal(f.button().style.left, '340px'); assert.equal(f.button().style.top, '148px');
+  const f = enabledFixture([v]); assert.equal(f.button().style.left, '1010px'); assert.equal(f.button().style.top, '1790px');
 });
 check('pinch-zoom viewport preserves the apparent touch target size', () => {
   const f = enabledFixture();
   Object.assign(f.window.visualViewport, { scale: 2, offsetLeft: 200, offsetTop: 40, width: 540, height: 960 });
   f.window.visualViewport.dispatch('resize'); f.advance(250);
   assert.equal(f.button().style.width, '30px'); assert.equal(f.button().style.height, '30px');
-  assert.equal(f.button().style.left, '610px'); assert.equal(f.button().style.top, '374px');
+  assert.equal(f.button().style.left, '705px'); assert.equal(f.button().style.top, '935px');
 });
 check('safe-area insets are respected inside the WebView viewport', () => {
   const f = fixture(); const original = f.window.getComputedStyle;
   f.window.visualViewport.width = 620;
   f.window.getComputedStyle = e => ({ ...original(e), ...(e.tagName === 'SPAN' ? {paddingRight: '40px'} : {}) });
-  f.bind(); f.policy(true); f.flush(); assert.equal(f.button().style.left, '520px');
+  f.bind(); f.policy(true); f.flush(); assert.equal(f.button().style.left, '510px');
 });
 check('small previews, hidden videos and denied fullscreen do not get a button', () => {
   const tiny = video(); tiny.getBoundingClientRect = () => ({left: 0, top: 0, width: 100, height: 60});
@@ -403,7 +403,7 @@ check('pagehide removes the host and cancels animation-frame work', () => {
 check('scroll bursts coalesce geometry work without waiting for telemetry', () => {
   const f = enabledFixture(); f.initial[0].getBoundingClientRect = () => ({left: 0, top: 100, width: 640, height: 360});
   for (let i = 0; i < 100; i++) f.window.dispatch('scroll');
-  assert.equal(f.animationFrames.size, 1); f.advance(250); assert.equal(f.button().style.top, '468px');
+  assert.equal(f.animationFrames.size, 1); f.advance(250); assert.equal(f.button().style.top, '1790px');
 });
 check('stale policy tokens cannot re-enable a hidden button', () => {
   const f = enabledFixture(); f.policy(false); f.flush();
@@ -847,8 +847,8 @@ function youtubeBodyFixture(rootOverflow = 'visible', containment = 'none') {
 }
 check('YouTube-shaped viewport overflow does not clip a visible video to a zero-height body', () => {
   const {f, v} = youtubeBodyFixture(); f.bind(); f.policy(true); f.flush();
-  assert.equal(f.button().hidden, false); assert.equal(f.button().style.top, '344px');
-  assert.equal(f.button().style.left, '430px'); f.click(); assert.equal(f.document.fullscreenElement, v);
+  assert.equal(f.button().hidden, false); assert.equal(f.button().style.top, '1790px');
+  assert.equal(f.button().style.left, '1010px'); f.click(); assert.equal(f.document.fullscreenElement, v);
 });
 check('viewport overflow exception still respects the actual nested player clipping', () => {
   const {f, player} = youtubeBodyFixture();
@@ -941,7 +941,7 @@ check('native press prepares the same selected video without opening it from a b
 check('native gesture blocks site pointer handlers and consumes its click only once', () => {
   const f = nativePressFixture(); f.press();
   assert.equal(f.input('pointerdown').stopped, true); assert.equal(f.input('pointerup').stopped, true);
-  assert.equal(f.input('touchstart', {changedTouches: [{clientX: 616, clientY: 402}]}).stopped, true);
+  assert.equal(f.input('touchstart', {changedTouches: [{clientX: 1040, clientY: 1820}]}).stopped, true);
   f.input(); assert.equal(f.input().stopped, false); assert.equal(f.initial[0].fullscreenRequests, 1);
 });
 check('foreign native press messages cannot install an input guard', () => {
@@ -975,9 +975,9 @@ check('a separate touch outside the native target is left to the page', () => {
   assert.equal(f.input('pointerdown', {clientX: 20, clientY: 20}).stopped, false);
   assert.equal(f.input().stopped, false);
 });
-check('scroll invalidates native input preparation and stale clicks cannot launch', () => {
+check('screen-anchored input stays valid when scrolling leaves the selected video eligible', () => {
   const f = nativePressFixture(); f.press(); f.window.dispatch('scroll');
-  assert.equal(f.input().stopped, false); assert.equal(f.initial[0].fullscreenRequests, 0);
+  assert.equal(f.input().stopped, true); assert.equal(f.initial[0].fullscreenRequests, 1);
 });
 check('a disappearing selected video cannot turn native input into a page link click', () => {
   const f = nativePressFixture(); f.press(); f.initial[0].paused = true;
@@ -987,12 +987,12 @@ check('a disappearing selected video cannot turn native input into a page link c
 check('display waits 200ms before showing the Samsung-style anchor', () => {
   const f = fixture(); f.bind(); f.policy(true); f.advance(199);
   assert.equal(f.button(), undefined); f.advance(1);
-  assert.equal(f.button().hidden, false); assert.equal(f.button().style.left, '580px');
-  assert.equal(f.button().style.top, '378px');
+  assert.equal(f.button().hidden, false); assert.equal(f.button().style.left, '1010px');
+  assert.equal(f.button().style.top, '1790px');
 });
 check('native display sends normalized visual geometry with a 60px real tap target', () => {
   const f = nativeFixture(), d = f.display();
-  assert.equal(d.left * 1080, 580); assert.equal(d.top * 1920, 378);
+  assert.equal(d.left * 1080, 1010); assert.equal(d.top * 1920, 1790);
   assert.equal(d.width * 1080, 60); assert.equal(d.height * 1920, 60);
   assert.equal(f.button().children[0].style.width, '48px');
 });
@@ -1037,16 +1037,16 @@ check('a touch beginning before auto-hide keeps the button alive for its click',
   const f = enabledFixture(); f.advance(2600); f.button().dispatch('pointerdown', {stopPropagation() {}});
   f.advance(1000); assert.equal(f.button().disabled, false); f.click(); assert.equal(f.initial[0].fullscreenRequests, 1);
 });
-check('scrolling hides stale native geometry until scrolling settles', () => {
+check('scrolling keeps native placement fixed without hiding or resending unchanged geometry', () => {
   const f = nativeFixture(); f.nativeAck(f.display().version, true);
-  f.window.dispatch('scroll'); assert.equal(f.button().hidden, true);
-  assert.equal(f.messages.filter(m => m.type === 'assistantDisplay').at(-1).visible, false);
-  f.advance(199); assert.equal(f.button().hidden, true);
-  f.advance(1); assert.equal(f.button().hidden, false);
+  const before = f.messages.filter(m => m.type === 'assistantDisplay').length;
+  f.window.dispatch('scroll'); f.render(); assert.equal(f.button().hidden, false);
+  assert.equal(f.button().style.left, '1010px'); assert.equal(f.button().style.top, '1790px');
+  assert.equal(f.messages.filter(m => m.type === 'assistantDisplay').length, before);
 });
-check('main-frame button clamps inside the viewport when the below-video area is too small', () => {
+check('main-frame button keeps its bottom reserved slot in a shorter viewport', () => {
   const f = fixture(); f.window.visualViewport.height = 400;
-  f.bind(); f.policy(true); f.flush(); assert.equal(f.button().style.top, '340px');
+  f.bind(); f.policy(true); f.flush(); assert.equal(f.button().style.top, '270px');
 });
 check('embedded frames retain their reachable existing target without a toolbar route', () => {
   const f = fixture(); f.bind(); f.policy(true, {frameConstrained: true}); f.flush();

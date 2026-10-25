@@ -4,6 +4,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.webkit.WebView
+import com.miowser.app.browser.BrowserFloatingActionLayout
 import androidx.webkit.JavaScriptReplyProxy
 import androidx.webkit.ScriptHandler
 import androidx.webkit.WebViewCompat
@@ -296,6 +297,8 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
         .put("reducedMotion", buttonPolicy.reducedMotion)
         .put("nativeDisplay", nativeDisplay != null && channel.mainFrame)
         .put("frameConstrained", !channel.mainFrame)
+        .put("screenRightInset", BrowserFloatingActionLayout.VIDEO_RIGHT_INSET_DP)
+        .put("screenBottomInset", BrowserFloatingActionLayout.VIDEO_BOTTOM_INSET_DP)
 
     private fun publish() {
         mutableSessions.value = registry.snapshot()

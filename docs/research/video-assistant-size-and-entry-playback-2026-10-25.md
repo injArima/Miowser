@@ -1,5 +1,8 @@
 # Video-assistant size and fullscreen playback continuity
 
+The later [screen placement change](video-assistant-screen-anchor-2026-10-25.md)
+moves the native floating button above the reserved Jump to top slot.
+
 ## Changes
 
 - Native and web-rendered button faces increase from 40 to 48 dp. The mark

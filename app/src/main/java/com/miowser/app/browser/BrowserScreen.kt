@@ -1890,12 +1890,12 @@ fun BrowserScreen(
                         } + scaleOut(motion.spec(MotionTokens.feedbackExit), targetScale = MotionTokens.pressedScale),
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(16.dp)
+                        .padding(BrowserFloatingActionLayout.EDGE_DP.dp)
                         .zIndex(1f)
                 ) {
                     SmallFloatingActionButton(
                         onClick = { activeTab?.jumpToTop() },
-                        modifier = Modifier.size(48.dp).testTag("browser_jump_to_top")
+                        modifier = Modifier.size(BrowserFloatingActionLayout.JUMP_SIZE_DP.dp).testTag("browser_jump_to_top")
                     ) {
                         Icon(
                             Icons.Rounded.KeyboardArrowUp,

@@ -11,6 +11,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         var autoTimer = null, fadeTimer = null, wakeTimer = null, layoutTimers = [];
         var candidate = null, candidateRevision = -1, suppressed = false, scrolling = false, readyAt = 0;
         var displayVersion = 0, displayKey = '', nativeReady = false, focused = false;
+        var lastNativePresentation = -Infinity;
         var pressGuard = null, pressTimer = null;
         function cancelPress(rearm) {
             if (pressTimer !== null) clearTimeout(pressTimer); pressTimer = null;
@@ -54,6 +55,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             var key = JSON.stringify(data) + policy.background + policy.foreground + policy.reducedMotion;
             if (key === displayKey) return;
             displayKey = key; data.version = ++displayVersion; nativeReady = false;
+            if (visible) lastNativePresentation = performance.now();
             if (visible && button) { cancelFade(); button.style.setProperty('opacity', '1'); }
             api.display(data);
         }
@@ -74,9 +76,15 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             }, 300);
         }
         function armAuto() { cancelAuto(); autoTimer = setTimeout(expire, 3000); }
+        function refreshNativeLease() {
+            // Activity can keep a fixed button visible without changing geometry. Renew
+            // at most once per second; playback-clock updates alone do not renew it.
+            if (!pressGuard && policy.nativeDisplay && performance.now() - lastNativePresentation >= 1000) displayKey = '';
+        }
         function wake(event) {
             if (event && (!event.isTrusted || event.target === host)) return;
             if (!policy.enabled || disposed) return;
+            refreshNativeLease();
             if (wakeTimer !== null) clearTimeout(wakeTimer);
             if (suppressed || !selected) {
                 cancelFade();
@@ -92,6 +100,12 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         function scroll() {
             layoutTimers.forEach(clearTimeout); layoutTimers = [];
             if (wakeTimer !== null) clearTimeout(wakeTimer);
+            if (!policy.frameConstrained) {
+                wakeTimer = null; scrolling = false; readyAt = 0; suppressed = false;
+                refreshNativeLease();
+                if (selected && button && !button.hidden) armAuto();
+                schedule(); return;
+            }
             hide(); scrolling = true;
             wakeTimer = setTimeout(function () {
                 wakeTimer = null; scrolling = false; readyAt = 0; schedule();
@@ -436,18 +450,19 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             var top = view.top + (parseFloat(insets.paddingTop) || 0);
             var right = view.left + view.width - (parseFloat(insets.paddingRight) || 0);
             var bottom = view.top + view.height - (parseFloat(insets.paddingBottom) || 0);
-            // Root-attached overlay: do not reserve page space or inherit the player's clip.
-            // The local viewport also keeps a child frame's existing trusted target reachable.
+            // Screen slot above Jump to top, independent of the selected video's bounds.
             if (right - left < size || bottom - top < size) { hide(); return; }
-            var x = Math.max(left, Math.min(Math.max(bestBox.right - size, bestBox.left), right - size));
-            var y = Math.max(top, Math.min(bestBox.bottom + gap, bottom - size));
+            var x = right - size - policy.screenRightInset / view.scale;
+            var y = bottom - size - policy.screenBottomInset / view.scale;
             if (policy.frameConstrained) {
+                // Embedded documents retain their reachable trusted-click fallback.
+                // Their local viewport cannot place a DOM target outside the iframe.
                 if (bestBox.right - bestBox.left < size + gap * 2 || bestBox.bottom - bestBox.top < size + gap * 2) {
                     hide(); return;
                 }
                 x = Math.max(left, Math.min(bestBox.right - gap - size, right - size));
                 y = Math.max(top, bestBox.top + gap);
-            }
+            } else if (x < left || y < top) { hide(); return; }
             var appearing = button.hidden;
             setStyles(button, {'left': x + 'px', 'top': y + 'px',
                 'width': size + 'px', 'height': size + 'px', 'border-radius': '50%',
@@ -523,7 +538,9 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                     foreground: next && /^#[0-9a-f]{6}$/i.test(next.foreground) ? next.foreground : '#FFFFFF',
                     reducedMotion: next && next.reducedMotion === true,
                     nativeDisplay: next && next.nativeDisplay === true,
-                    frameConstrained: next && next.frameConstrained === true};
+                    frameConstrained: next && next.frameConstrained === true,
+                    screenRightInset: next && Number.isFinite(next.screenRightInset) && next.screenRightInset >= 0 && next.screenRightInset <= 256 ? next.screenRightInset : 10,
+                    screenBottomInset: next && Number.isFinite(next.screenBottomInset) && next.screenBottomInset >= 0 && next.screenBottomInset <= 256 ? next.screenBottomInset : 70};
                 if (nativeBefore !== policy.nativeDisplay) {
                     nativeReady = false; displayKey = '';
                     if (button) button.style.setProperty('opacity', '1');

@@ -11,6 +11,7 @@ import android.view.ViewConfiguration
 import android.widget.FrameLayout
 import android.widget.ImageView
 import com.miowser.app.R
+import com.miowser.app.browser.BrowserFloatingActionLayout
 import kotlin.math.roundToInt
 
 /** Native face and gesture owner; only an acknowledged physical tap enters the WebView. */
@@ -63,11 +64,12 @@ internal class NativeVideoAssistantDisplay(context: Context) : FrameLayout(conte
         hit.set((geometry.left * width).toFloat(), (geometry.top * height).toFloat(),
             ((geometry.left + geometry.width) * width).toFloat(),
             ((geometry.top + geometry.height) * height).toFloat())
-        val size = (hitWidth * 48 / 60).roundToInt()
+        val size = (hitWidth * BrowserFloatingActionLayout.VIDEO_FACE_DP / BrowserFloatingActionLayout.VIDEO_TOUCH_DP).roundToInt()
         face.layoutParams = LayoutParams(size, size)
         face.x = (geometry.left * width + (hitWidth - size) / 2).toFloat()
         face.y = (geometry.top * height + (hitHeight - size) / 2).toFloat()
-        val padding = (size * 10.0 / 48).roundToInt()
+        val padding = (size.toDouble() * (BrowserFloatingActionLayout.VIDEO_FACE_DP - BrowserFloatingActionLayout.VIDEO_ICON_DP) /
+            (2 * BrowserFloatingActionLayout.VIDEO_FACE_DP)).roundToInt()
         face.setPadding(padding, padding, padding, padding)
         face.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(background) }
         face.imageTintList = ColorStateList.valueOf(foreground)
@@ -83,7 +85,7 @@ internal class NativeVideoAssistantDisplay(context: Context) : FrameLayout(conte
             }
         } }
         expiry = Runnable { if (generation == ticket) { clear(); onLost?.invoke() } }
-            .also { postDelayed(it, 3600) }
+            .also { postDelayed(it, 4500) }
     }
 
     fun dismiss(animate: Boolean) {
@@ -124,7 +126,7 @@ internal class NativeVideoAssistantDisplay(context: Context) : FrameLayout(conte
                 expiry?.let(::removeCallbacks)
                 val ticket = generation
                 expiry = Runnable { if (generation == ticket) { clear(); onLost?.invoke() } }
-                    .also { postDelayed(it, 3600) }
+                    .also { postDelayed(it, 4500) }
                 pressTimeout = Runnable { cancelPress() }.also { postDelayed(it, 700) }
                 preparePress()
             }
