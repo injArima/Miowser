@@ -105,6 +105,71 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             if (entryTimeout !== null) clearTimeout(entryTimeout);
             entryTimeout = null;
         }
+        function cancelEntryPlayback() {
+            var entry = restore, recovery = entry && entry.playbackRecovery;
+            if (!recovery) return;
+            entry.playbackRecovery = null;
+            recovery.events.forEach(function (type) { entry.video.removeEventListener(type, recovery.schedule); });
+            document.removeEventListener('visibilitychange', recovery.visibility);
+            if (recovery.frame !== null) window.cancelAnimationFrame(recovery.frame);
+            if (recovery.timeout !== null) clearTimeout(recovery.timeout);
+            if (recovery.settle !== null) clearTimeout(recovery.settle);
+        }
+        function prepareEntryPlayback(entry) {
+            if (!entry.wasPlaying || (!entry.source && !entry.object)) return;
+            var recovery = {frame: null, timeout: null, settle: null, inFlight: false, attempts: 0,
+                events: ['pause', 'emptied', 'loadstart', 'loadedmetadata', 'loadeddata', 'canplay', 'seeked', 'playing', 'ended', 'error']};
+            entry.playbackRecovery = recovery;
+            function active() { return !disposed && restore === entry && entry.playbackRecovery === recovery; }
+            function attempt() {
+                recovery.frame = null;
+                if (!active()) return;
+                var video = entry.video, source = video.currentSrc || video.src || '';
+                if (!api.bound() || !video.isConnected || document.visibilityState === 'hidden' || video.ended || video.error ||
+                    (video.srcObject || null) !== entry.object || (source && source !== entry.source)) {
+                    cancelEntryPlayback(); return;
+                }
+                // Fullscreen surface handoff may temporarily empty and then restore the
+                // same media. Wait for its data/seek to settle; never reload or replace it.
+                if (video.paused || video.readyState < 2 || video.seeking) {
+                    if (recovery.settle !== null) clearTimeout(recovery.settle);
+                    recovery.settle = null;
+                }
+                if (document.fullscreenElement !== video || video.readyState < 2 || video.seeking || recovery.inFlight) return;
+                if (!video.paused) {
+                    // Healthy playback needs no play() call. Stop observing as soon as
+                    // the entry has stayed playable for a brief surface-settling window.
+                    if (recovery.settle === null) recovery.settle = setTimeout(function () {
+                        recovery.settle = null;
+                        if (active() && !video.paused && video.readyState >= 2 && !video.seeking) cancelEntryPlayback();
+                    }, 350);
+                    return;
+                }
+                recovery.inFlight = true; recovery.attempts++;
+                try {
+                    var result = video.play();
+                    if (result && result.then) result.then(function () {
+                        if (active()) { cancelEntryPlayback(); api.interacted(); }
+                    }, function (error) {
+                        if (!active()) return;
+                        recovery.inFlight = false;
+                        // Only a reload-aborted attempt may be retried on a later media
+                        // event. Permission/DRM failures keep the existing manual controls.
+                        if (!error || error.name !== 'AbortError' || recovery.attempts >= 3) cancelEntryPlayback();
+                    });
+                    else { cancelEntryPlayback(); api.interacted(); }
+                } catch (ignored) { cancelEntryPlayback(); }
+            }
+            recovery.schedule = function () {
+                if (active() && recovery.frame === null) recovery.frame = window.requestAnimationFrame(attempt);
+            };
+            recovery.visibility = function () { if (document.visibilityState === 'hidden') cancelEntryPlayback(); };
+            recovery.events.forEach(function (type) { entry.video.addEventListener(type, recovery.schedule); });
+            document.addEventListener('visibilitychange', recovery.visibility);
+            // One entry window, not an ongoing autoplay policy. Explicit transport/lifecycle
+            // actions cancel this immediately, even while the media is still loading.
+            recovery.timeout = setTimeout(function () { if (active()) cancelEntryPlayback(); }, 8000);
+        }
 
         function setStyles(element, styles) {
             Object.keys(styles).forEach(function (key) { element.style.setProperty(key, styles[key]); });
@@ -241,6 +306,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         }
         function restoreControls() {
             if (!restore) return;
+            cancelEntryPlayback();
             cancelEntryTimeout();
             clearControlGuard(restore);
             restore.video.controls = restore.controls;
@@ -270,9 +336,11 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             api.interacted();
             pending = true;
             restore = {video: video, record: record, attempt: api.entering(record), controls: video.controls,
+                wasPlaying: !video.paused && !video.ended, source: video.currentSrc || video.src || '', object: video.srcObject || null,
                 objectFit: video.style ? video.style.getPropertyValue('object-fit') : undefined,
                 fitPriority: video.style ? video.style.getPropertyPriority('object-fit') : ''};
             var entry = restore;
+            prepareEntryPlayback(entry);
             entryTimeout = setTimeout(function () {
                 if (restore === entry && document.fullscreenElement !== entry.video) failed(entry);
             }, 8000);
@@ -362,7 +430,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             if (suppressed || performance.now() < readyAt) return;
             makeButton();
             if (!host.isConnected) document.documentElement.appendChild(host);
-            var size = 48 / view.scale, gap = 8 / view.scale;
+            var size = 60 / view.scale, gap = 8 / view.scale;
             var insets = window.getComputedStyle(insetProbe);
             var left = view.left + (parseFloat(insets.paddingLeft) || 0);
             var top = view.top + (parseFloat(insets.paddingTop) || 0);
@@ -385,9 +453,9 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 'width': size + 'px', 'height': size + 'px', 'border-radius': '50%',
                 'background-color': 'transparent', 'border': 'none', 'box-shadow': 'none', 'color': policy.foreground,
                 'visibility': 'visible', 'pointer-events': 'auto'});
-            setStyles(plate, {'width': (40 / view.scale) + 'px', 'height': (40 / view.scale) + 'px',
+            setStyles(plate, {'width': (48 / view.scale) + 'px', 'height': (48 / view.scale) + 'px',
                 'background-color': policy.background});
-            setStyles(icon, {'width': (24 / view.scale) + 'px', 'height': (24 / view.scale) + 'px'});
+            setStyles(icon, {'width': (28 / view.scale) + 'px', 'height': (28 / view.scale) + 'px'});
             selected = best;
             button.hidden = false; button.disabled = false;
             if (appearing) {
@@ -409,6 +477,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             if (restore && document.fullscreenElement === restore.video) {
                 cancelEntryTimeout();
                 api.fullscreen(restore.record, restore.attempt, true);
+                if (restore.playbackRecovery) restore.playbackRecovery.schedule();
             } else if (restore) {
                 api.fullscreen(restore.record, restore.attempt, false);
                 pending = false; restoreControls();
@@ -417,6 +486,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         }
         document.addEventListener('fullscreenchange', fullscreenChanged);
         return {
+            cancelEntryPlayback: cancelEntryPlayback,
             wake: wake, scroll: scroll, layoutChanged: layoutChanged,
             nativeReady: function (version, ok) {
                 if (version !== displayVersion || !policy.nativeDisplay || !selected || !button || button.hidden) return;
@@ -472,11 +542,13 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             rich: function (elementId, attempt, attached) {
                 if (!restore || restore.record.id !== elementId || restore.attempt !== attempt ||
                     document.fullscreenElement !== restore.video || !restore.video.isConnected) return false;
+                if (!attached) cancelEntryPlayback();
                 if (attached) hideBrowserControls(restore);
                 else { clearControlGuard(restore); restore.video.controls = true; }
                 return true;
             },
             fallback: function () {
+                cancelEntryPlayback();
                 if (restore && document.fullscreenElement === restore.video) {
                     clearControlGuard(restore); restore.video.controls = true;
                 }

@@ -63,11 +63,11 @@ internal class NativeVideoAssistantDisplay(context: Context) : FrameLayout(conte
         hit.set((geometry.left * width).toFloat(), (geometry.top * height).toFloat(),
             ((geometry.left + geometry.width) * width).toFloat(),
             ((geometry.top + geometry.height) * height).toFloat())
-        val size = (hitWidth * 40 / 48).roundToInt()
+        val size = (hitWidth * 48 / 60).roundToInt()
         face.layoutParams = LayoutParams(size, size)
         face.x = (geometry.left * width + (hitWidth - size) / 2).toFloat()
         face.y = (geometry.top * height + (hitHeight - size) / 2).toFloat()
-        val padding = (size * 8.0 / 40).roundToInt()
+        val padding = (size * 10.0 / 48).roundToInt()
         face.setPadding(padding, padding, padding, padding)
         face.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(background) }
         face.imageTintList = ColorStateList.valueOf(foreground)

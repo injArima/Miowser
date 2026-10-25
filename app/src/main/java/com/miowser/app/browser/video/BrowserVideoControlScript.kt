@@ -31,10 +31,14 @@ internal const val BROWSER_VIDEO_CONTROL_SCRIPT = """
             var value = command.value;
             if (['play', 'pause', 'seek', 'skip', 'rate', 'richUi', 'snapshot', 'mute', 'scale', 'caption', 'audio', 'holdRate', 'releaseRate'].indexOf(command.action) < 0) return;
             lastCommand = command.commandId;
+            // Pause intent wins even when a source revision makes the command stale.
+            // A stale Play must not cancel recovery that is already trying to resume.
+            if (command.action === 'pause' && api.transportIntent) api.transportIntent();
             // Metadata can change between the last sample and this command arriving.
             if (['richUi', 'snapshot', 'releaseRate'].indexOf(command.action) < 0 &&
                 !(command.action === 'pause' && command.sourceRevision === -1) &&
                 command.sourceRevision !== owner.record.sourceRevision) { ack(false); return; }
+            if (command.action === 'play' && api.transportIntent) api.transportIntent();
             try {
                 switch (command.action) {
                     case 'holdRate':

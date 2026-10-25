@@ -1,5 +1,10 @@
 # Native video-assistant input correction
 
+The subsequent [button sizing and playback-continuity change](video-assistant-size-and-entry-playback-2026-10-25.md)
+increases the touch target and addresses the separate pause observation below.
+The test results in this report describe this input-correction checkpoint, not
+verification of that subsequent change.
+
 ## Problem
 
 The initial native prototype painted the icon above a transparent web button.

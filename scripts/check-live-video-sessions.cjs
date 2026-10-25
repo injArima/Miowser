@@ -299,7 +299,7 @@ check('floating action is visible only after app policy enables it', () => {
   const f = fixture(); f.bind(); f.flush(); assert.equal(f.button(), undefined);
   f.policy(true); f.flush();
   assert.equal(f.button().hidden, false); assert.equal(f.button().disabled, false);
-  assert.equal(f.button().style.width, '48px');
+  assert.equal(f.button().style.width, '60px');
   assert.equal(f.button().attributes['aria-label'], 'Open video fullscreen with Miowser');
   assert.equal(f.button().children[0].style['background-color'], '#123456');
   assert.equal(f.button().parentElement.parentElement, null); // Closed shadow root, not a page layout wrapper.
@@ -363,26 +363,26 @@ check('synchronous fullscreen failure does not strand the button', () => {
 check('button anchors below the clipped visible video without adding page space', () => {
   const v = video(); v.getBoundingClientRect = () => ({ left: -100, top: -30, width: 640, height: 360 });
   const f = enabledFixture([v]), b = f.button();
-  assert.equal(b.style.top, '338px'); assert.equal(b.style.left, '492px');
+  assert.equal(b.style.top, '338px'); assert.equal(b.style.left, '480px');
 });
 check('overflow-clipping ancestors constrain placement', () => {
   const v = video(), parent = new Element('div');
   parent.getBoundingClientRect = () => ({ left: 200, top: 20, right: 400, bottom: 140, width: 200, height: 120 });
   parent.computed = { overflowX: 'hidden', overflowY: 'hidden' }; v.parentElement = parent;
-  const f = enabledFixture([v]); assert.equal(f.button().style.left, '352px'); assert.equal(f.button().style.top, '148px');
+  const f = enabledFixture([v]); assert.equal(f.button().style.left, '340px'); assert.equal(f.button().style.top, '148px');
 });
 check('pinch-zoom viewport preserves the apparent touch target size', () => {
   const f = enabledFixture();
   Object.assign(f.window.visualViewport, { scale: 2, offsetLeft: 200, offsetTop: 40, width: 540, height: 960 });
   f.window.visualViewport.dispatch('resize'); f.advance(250);
-  assert.equal(f.button().style.width, '24px'); assert.equal(f.button().style.height, '24px');
-  assert.equal(f.button().style.left, '616px'); assert.equal(f.button().style.top, '374px');
+  assert.equal(f.button().style.width, '30px'); assert.equal(f.button().style.height, '30px');
+  assert.equal(f.button().style.left, '610px'); assert.equal(f.button().style.top, '374px');
 });
 check('safe-area insets are respected inside the WebView viewport', () => {
   const f = fixture(); const original = f.window.getComputedStyle;
   f.window.visualViewport.width = 620;
   f.window.getComputedStyle = e => ({ ...original(e), ...(e.tagName === 'SPAN' ? {paddingRight: '40px'} : {}) });
-  f.bind(); f.policy(true); f.flush(); assert.equal(f.button().style.left, '532px');
+  f.bind(); f.policy(true); f.flush(); assert.equal(f.button().style.left, '520px');
 });
 check('small previews, hidden videos and denied fullscreen do not get a button', () => {
   const tiny = video(); tiny.getBoundingClientRect = () => ({left: 0, top: 0, width: 100, height: 60});
@@ -848,7 +848,7 @@ function youtubeBodyFixture(rootOverflow = 'visible', containment = 'none') {
 check('YouTube-shaped viewport overflow does not clip a visible video to a zero-height body', () => {
   const {f, v} = youtubeBodyFixture(); f.bind(); f.policy(true); f.flush();
   assert.equal(f.button().hidden, false); assert.equal(f.button().style.top, '344px');
-  assert.equal(f.button().style.left, '442px'); f.click(); assert.equal(f.document.fullscreenElement, v);
+  assert.equal(f.button().style.left, '430px'); f.click(); assert.equal(f.document.fullscreenElement, v);
 });
 check('viewport overflow exception still respects the actual nested player clipping', () => {
   const {f, player} = youtubeBodyFixture();
@@ -923,8 +923,8 @@ function nativePressFixture() {
     type: 'nativePressCancel', documentId: f.messages.find(m => m.type === 'hello').documentId,
     navigation: 3, token: 'frame-token', version: f.display().version, request})});
   f.input = (type = 'click', values = {}) => {
-    const event = {type, isTrusted: true, clientX: parseFloat(f.button().style.left) + 24,
-      clientY: parseFloat(f.button().style.top) + 24, prevented: false, stopped: false,
+    const event = {type, isTrusted: true, clientX: parseFloat(f.button().style.left) + 30,
+      clientY: parseFloat(f.button().style.top) + 30, prevented: false, stopped: false,
       preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; },
       stopImmediatePropagation() { this.stopped = true; }, ...values};
     f.window.dispatch(type, event); return event;
@@ -987,14 +987,14 @@ check('a disappearing selected video cannot turn native input into a page link c
 check('display waits 200ms before showing the Samsung-style anchor', () => {
   const f = fixture(); f.bind(); f.policy(true); f.advance(199);
   assert.equal(f.button(), undefined); f.advance(1);
-  assert.equal(f.button().hidden, false); assert.equal(f.button().style.left, '592px');
+  assert.equal(f.button().hidden, false); assert.equal(f.button().style.left, '580px');
   assert.equal(f.button().style.top, '378px');
 });
-check('native display sends normalized visual geometry with a 48px real tap target', () => {
+check('native display sends normalized visual geometry with a 60px real tap target', () => {
   const f = nativeFixture(), d = f.display();
-  assert.equal(d.left * 1080, 592); assert.equal(d.top * 1920, 378);
-  assert.equal(d.width * 1080, 48); assert.equal(d.height * 1920, 48);
-  assert.equal(f.button().children[0].style.width, '40px');
+  assert.equal(d.left * 1080, 580); assert.equal(d.top * 1920, 378);
+  assert.equal(d.width * 1080, 60); assert.equal(d.height * 1920, 60);
+  assert.equal(f.button().children[0].style.width, '48px');
 });
 check('native readiness hides only the web visual and keeps the same one-tap fullscreen action', () => {
   const f = nativeFixture(); assert.equal(f.button().style.opacity, '1');
@@ -1046,11 +1046,11 @@ check('scrolling hides stale native geometry until scrolling settles', () => {
 });
 check('main-frame button clamps inside the viewport when the below-video area is too small', () => {
   const f = fixture(); f.window.visualViewport.height = 400;
-  f.bind(); f.policy(true); f.flush(); assert.equal(f.button().style.top, '352px');
+  f.bind(); f.policy(true); f.flush(); assert.equal(f.button().style.top, '340px');
 });
 check('embedded frames retain their reachable existing target without a toolbar route', () => {
   const f = fixture(); f.bind(); f.policy(true, {frameConstrained: true}); f.flush();
-  assert.equal(f.button().style.left, '584px'); assert.equal(f.button().style.top, '18px');
+  assert.equal(f.button().style.left, '572px'); assert.equal(f.button().style.top, '18px');
   assert.equal(f.messages.some(m => m.type === 'assistantDisplay'), false);
   f.click(); assert.equal(f.initial[0].fullscreenRequests, 1);
 });
@@ -1060,5 +1060,72 @@ check('focused web controls remain visible and are not removed by auto-hide', ()
   assert.equal(f.button().hidden, false); assert.equal(f.button().style.opacity, '1');
   assert.equal(f.button().style.outline, '2px solid currentColor');
   f.button().dispatch('blur'); f.advance(3300); assert.equal(f.button().hidden, true);
+});
+function entryReloadFixture(native = false) {
+  const f = native ? nativePressFixture() : enabledFixture(), v = f.initial[0];
+  const enter = v.requestFullscreen, play = v.play;
+  v.playCalls = 0;
+  v.play = function () { this.playCalls++; return play.call(this); };
+  v.requestFullscreen = function () {
+    this.paused = true; this.readyState = 0; this.dispatch('emptied');
+    return enter.call(this);
+  };
+  if (native) { f.press(); f.input(); } else f.click();
+  f.render();
+  f.mediaReady = () => { v.readyState = 4; v.dispatch('loadeddata'); f.render(); };
+  return f;
+}
+check('entry recovery waits for restored media and resumes the original position on both tap routes', () => {
+  for (const native of [false, true]) {
+    const f = entryReloadFixture(native), v = f.initial[0], source = v.currentSrc;
+    assert.equal(v.playCalls, 0); assert.equal(v.paused, true);
+    f.mediaReady(); assert.equal(v.playCalls, 1); assert.equal(v.paused, false);
+    assert.equal(v.currentTime, 12); assert.equal(v.currentSrc, source);
+    v.pause(); f.render(); assert.equal(v.playCalls, 1);
+  }
+});
+check('explicit pause while fullscreen media reloads cancels entry autoplay', () => {
+  const f = entryReloadFixture(), v = f.initial[0]; f.control('pause');
+  f.mediaReady(); assert.equal(v.paused, true); assert.equal(v.playCalls, 0);
+});
+check('even a source-stale pause expresses user intent and cancels entry autoplay', () => {
+  const f = entryReloadFixture(), v = f.initial[0]; f.control('pause', undefined, {sourceRevision: 999});
+  f.mediaReady(); assert.equal(v.playCalls, 0);
+});
+check('source replacement cancels fullscreen entry recovery', () => {
+  const f = entryReloadFixture(), v = f.initial[0]; v.currentSrc = 'blob:https://site.test/replacement';
+  f.mediaReady(); assert.equal(v.playCalls, 0);
+});
+check('fullscreen exit and hidden document cancel delayed entry playback', () => {
+  for (const hide of [false, true]) {
+    const f = entryReloadFixture(), v = f.initial[0];
+    if (hide) { f.document.visibilityState = 'hidden'; f.document.dispatch('visibilitychange'); }
+    else { f.document.fullscreenElement = null; f.document.dispatch('fullscreenchange'); }
+    f.mediaReady(); assert.equal(v.playCalls, 0);
+  }
+});
+check('entry recovery expires rather than starting a video long after the tap', () => {
+  const f = entryReloadFixture(), v = f.initial[0]; f.advance(8001);
+  f.mediaReady(); assert.equal(v.playCalls, 0);
+});
+check('permission-denied play is not retried and manual controls remain available', () => {
+  const f = entryReloadFixture(), v = f.initial[0];
+  v.play = function () { this.playCalls++; return {then(resolve, reject) { reject({name: 'NotAllowedError'}); }}; };
+  f.mediaReady(); v.dispatch('canplay'); f.render(); assert.equal(v.playCalls, 1);
+  assert.equal(f.document.fullscreenElement, v);
+});
+check('only a load-aborted play may retry on a later media readiness event', () => {
+  const f = entryReloadFixture(), v = f.initial[0], play = v.play;
+  v.play = function () {
+    if (this.playCalls === 0) { this.playCalls++; return {then(resolve, reject) { reject({name: 'AbortError'}); }}; }
+    return play.call(this);
+  };
+  f.mediaReady(); assert.equal(v.playCalls, 1);
+  v.dispatch('canplay'); f.render(); assert.equal(v.playCalls, 2); assert.equal(v.paused, false);
+});
+check('healthy entry finishes observing without any extra play call', () => {
+  const f = enabledFixture(), v = f.initial[0], play = v.play; v.playCalls = 0;
+  v.play = function () { this.playCalls++; return play.call(this); };
+  f.click(); f.render(); f.advance(351); v.pause(); f.render(); assert.equal(v.playCalls, 0);
 });
 console.log(checks + ' live-video script checks passed; no device tests were run.');

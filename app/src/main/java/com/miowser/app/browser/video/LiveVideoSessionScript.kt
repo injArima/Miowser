@@ -225,6 +225,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             }
         });
         if (window.__miowserCreateVideoControls) controls = window.__miowserCreateVideoControls({
+            transportIntent: function () { if (assistant) assistant.cancelEntryPlayback(); },
             owner: function () { return assistant ? assistant.owner() : null; },
             rich: function (id, attempt, attached) { return assistant && assistant.rich(id, attempt, attached); },
             trackId: trackId,
@@ -367,6 +368,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
                     packet('fullscreenResumed', {elementId: message.elementId, attempt: message.attempt,
                         recoveryId: message.recoveryId, ok: !!resumed});
                 } else if (matches) {
+                    if (message.type !== 'suspendFullscreen' || message.pip !== true) assistant.cancelEntryPlayback();
                     if (controls) controls.release();
                     if (message.type === 'releaseFullscreen') assistant.release(message.elementId, message.attempt);
                     else assistant.rich(message.elementId, message.attempt, message.type === 'suspendFullscreen');
