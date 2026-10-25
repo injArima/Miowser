@@ -185,7 +185,9 @@ check('reports current media properties without changing playback', () => {
   const f = fixture(); f.bind(); f.flush();
   const state = f.state().videos[0], original = f.initial[0];
   assert.equal(state.position, 12); assert.equal(state.speed, 1);
-  assert.equal(state.sourceKind, 'blob'); assert.equal(state.playing, true);
+  assert.equal(state.playing, true);
+  assert.equal(Object.hasOwn(state, 'source'), false); assert.equal(Object.hasOwn(state, 'sourceKind'), false);
+  assert.equal(Object.hasOwn(state, 'bounds'), false); assert.equal(Object.hasOwn(state, 'interacted'), false);
   assert.equal(original.currentTime, 12); assert.equal(original.currentSrc, original.src);
   assert.equal(original.paused, false);
 });
@@ -207,7 +209,6 @@ check('source replacement retains element identity and increments revision', () 
   f.initial[0].currentSrc = 'https://cdn.test/other.mp4';
   f.initial[0].dispatch('loadstart'); f.flush();
   assert.equal(f.state().videos[0].elementId, before.elementId);
-  assert.equal(f.state().videos[0].sourceKind, 'network');
   assert.equal(f.state().videos[0].sourceRevision, 2);
 });
 check('empty seekable ranges are preserved despite known duration', () => {
@@ -241,29 +242,29 @@ check('a playing dynamic video can replace an idle preview at capacity', () => {
   const previews = Array.from({ length: 8 }, () => { const v = video(); v.paused = true; return v; });
   const f = fixture(previews); f.bind(); f.flush();
   const chosen = video('https://site.test/chosen.mp4');
+  chosen.videoHeight = 1080;
   f.document.dispatch('play', { target: chosen }); f.flush();
   assert.equal(f.state().videos.length, 8);
-  assert(f.state().videos.some(v => v.source === chosen.currentSrc));
+  assert(f.state().videos.some(v => v.height === 1080 && v.playing));
 });
-check('hidden/offscreen video is not marked visible', () => {
-  const f = fixture(); f.bind(); f.flush();
+check('hidden/offscreen video cannot keep a floating button visible', () => {
+  const f = enabledFixture();
   f.document.visibilityState = 'hidden'; f.document.dispatch('visibilitychange'); f.flush();
-  assert.equal(f.state().videos[0].visible, false);
+  assert.equal(f.button().hidden, true);
   f.document.visibilityState = 'visible';
   f.initial[0].getBoundingClientRect = () => ({ left: 0, top: 3000, width: 640, height: 360 });
   f.initial[0].dispatch('resize'); f.flush();
-  assert.equal(f.state().videos[0].visible, false);
+  assert.equal(f.button().hidden, true);
 });
 check('data URLs never enter the native telemetry payload', () => {
   const f = fixture([video('data:video/mp4;base64,' + 'A'.repeat(100000))]); f.bind(); f.flush();
-  assert.equal(f.state().videos[0].sourceKind, 'data');
-  assert.equal(f.state().videos[0].source, null);
+  assert.equal(Object.hasOwn(f.state().videos[0], 'source'), false);
 });
 check('long signed URLs cannot overflow the batch limit', () => {
   const f = fixture(Array.from({ length: 8 }, () => video('https://cdn.test/' + 'x'.repeat(7000))));
   f.bind(); f.flush();
   assert(JSON.stringify(f.state()).length <= 24576);
-  assert(f.state().videos.every(v => v.source === null));
+  assert(f.state().videos.every(v => !Object.hasOwn(v, 'source')));
 });
 check('pagehide cancels sampling and pageshow can reconnect', () => {
   const f = fixture(); f.bind(); f.flush();
@@ -284,14 +285,6 @@ check('wrong-document bindings are ignored', () => {
   const f = fixture(); f.bind({ documentId: 'stale' }); f.flush();
   assert.equal(f.state(), undefined);
 });
-check('user interaction is reported once rather than repeated by clock ticks', () => {
-  const f = fixture(); f.bind(); f.flush();
-  f.initial[0].dispatch('pointerdown'); f.flush();
-  assert.equal(f.state().videos[0].interacted, true);
-  f.initial[0].dispatch('timeupdate'); f.flush();
-  assert.equal(f.state().videos[0].interacted, false);
-});
-
 function enabledFixture(initial) {
   const f = fixture(initial); f.bind(); f.policy(true); f.flush(); return f;
 }

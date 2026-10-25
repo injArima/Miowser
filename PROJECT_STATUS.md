@@ -4,6 +4,8 @@ Last updated: 2026-09-21 (collaboration preferences updated 2026-10-25)
 
 Current working preferences: [Collaboration preferences](docs/COLLABORATION_PREFERENCES.md).
 
+Browser video assistant: [current implementation and cleanup overview](docs/research/samsung-video-assistant-plan-2026-10-24.md).
+
 ## Product direction
 
 - Hub is the app homepage.

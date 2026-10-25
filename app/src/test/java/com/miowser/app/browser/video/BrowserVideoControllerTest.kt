@@ -209,8 +209,6 @@ class BrowserVideoControllerTest {
     }
 
     private fun session(): LiveVideoSession = LiveVideoSession(LiveVideoId(1, 1, 2, "document", "video"),
-        "https://test", false, LiveVideoState("video", "blob:https://test/video", LiveVideoSourceKind.BLOB,
-            12_000, 45_000, true, false, false, false, 1.0, 1280, 720, true, 1.0,
-            VideoFrameBounds(0.0, 0.0, 640.0, 360.0, 1080.0, 1920.0),
-            listOf(VideoTimeRange(0, 45_000)), listOf(VideoTimeRange(0, 20_000)), 4, 1, false), 1, 0)
+        LiveVideoState("video", 12_000, 45_000, true, false, false, 1.0, 1280, 720,
+            listOf(VideoTimeRange(0, 45_000)), listOf(VideoTimeRange(0, 20_000)), 4, 1), 1)
 }

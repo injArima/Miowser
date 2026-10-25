@@ -2,7 +2,6 @@ package com.miowser.app.browser
 
 import android.graphics.Bitmap
 import android.net.http.SslError
-import android.util.Log
 import android.webkit.SslErrorHandler
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceError

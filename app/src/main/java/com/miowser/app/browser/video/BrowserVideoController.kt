@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 internal enum class BrowserVideoAction(val wireName: String, val family: String) {
     PLAY("play", "transport"), PAUSE("pause", "transport"), SEEK("seek", "seek"),
-    SKIP("skip", "seek"), RATE("rate", "rate"), RICH_UI("richUi", "ui"), SNAPSHOT("snapshot", "snapshot"),
+    SKIP("skip", "seek"), RATE("rate", "rate"), RICH_UI("richUi", "ui"),
     MUTE("mute", "mute"), SCALE("scale", "scale"), CAPTION("caption", "caption"), AUDIO("audio", "audio"),
     HOLD_RATE("holdRate", "rate"), RELEASE_RATE("releaseRate", "rate")
 }

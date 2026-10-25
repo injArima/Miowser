@@ -9,9 +9,6 @@ import androidx.webkit.JavaScriptReplyProxy
 import androidx.webkit.ScriptHandler
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.IdentityHashMap
@@ -19,7 +16,6 @@ import java.util.UUID
 
 /** Frame-bound telemetry, commands and recovery for the optional browser-backed player. */
 internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
-    private val mutableSessions: MutableStateFlow<List<LiveVideoSession>>,
     initialButtonPolicy: VideoAssistantButtonPolicy = VideoAssistantButtonPolicy(),
     private val playback: BrowserVideoController = BrowserVideoController(),
     private val onFullscreenFailure: () -> Unit = {}) {
@@ -29,7 +25,6 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     private val registry = LiveVideoSessionRegistry(tabId)
     private val channels = IdentityHashMap<JavaScriptReplyProxy, Channel>()
     private val main = Handler(Looper.getMainLooper())
-    val sessions: StateFlow<List<LiveVideoSession>> = mutableSessions.asStateFlow()
     private var script: ScriptHandler? = null
     private var accepting = false
     private var retired = false
@@ -86,7 +81,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
                     origin.host.isNullOrBlank() || (origin.host?.length ?: 0) > 253) return@addWebMessageListener
                 val text = runCatching { message.data }.getOrNull() ?: return@addWebMessageListener
                 if (text.length > MAX_MESSAGE_CHARS) return@addWebMessageListener
-                receive(text, origin.toString().take(1024), mainFrame, proxy)
+                receive(text, mainFrame, proxy)
             }
             script = WebViewCompat.addDocumentStartJavaScript(webView,
                 VIDEO_ASSISTANT_BUTTON_SCRIPT + BROWSER_VIDEO_CONTROL_SCRIPT + LIVE_VIDEO_SESSION_SCRIPT, setOf("*"))
@@ -108,7 +103,6 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
         }
         channels.clear()
         registry.reset()
-        mutableSessions.value = emptyList()
         main.removeCallbacks(prune)
         pruneScheduled = false
     }
@@ -120,41 +114,20 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
         webView.evaluateJavascript("window.__miowserLiveVideos && window.__miowserLiveVideos.connect();", null)
     }
 
-    fun activeVideo(): LiveVideoSession? {
-        registry.prune(SystemClock.elapsedRealtime(), protectedOwner())
-        return registry.active()
-    }
-
-    private fun receive(text: String, origin: String, mainFrame: Boolean, proxy: JavaScriptReplyProxy) {
+    private fun receive(text: String, mainFrame: Boolean, proxy: JavaScriptReplyProxy) {
         runCatching {
             val json = JSONObject(text)
             val document = json.optString("documentId")
             if (document.length !in 1..80) return
-            when (json.optString("type")) {
-                "hello" -> {
-                    val now = SystemClock.elapsedRealtime()
-                    if (now - helloWindow > 1000) { helloWindow = now; helloCount = 0 }
-                    val old = channels[proxy]
-                    if (old != null && old.document == document && old.navigation == registry.navigation) {
-                        if (now - old.lastHello < 500) return
-                        old.lastHello = now
-                        acknowledge(proxy, old)
-                        return
-                    }
-                    if (++helloCount > 16) return
-                    old?.let { channels.remove(proxy); registry.closeFrame(it.frameId) }
-                    val frame = registry.openFrame(document, origin, mainFrame) ?: return
-                    val channel = Channel(frame, document, UUID.randomUUID().toString(), registry.navigation, now, mainFrame)
-                    channels[proxy] = channel
-                    acknowledge(proxy, channel)
-                    publish()
-                }
+            val type = json.optString("type")
+            if (type == "hello") { receiveHello(document, mainFrame, proxy); return }
+            val channel = channels[proxy] ?: return
+            if (channel.document != document || channel.navigation != registry.navigation ||
+                json.optLong("navigation", -1) != channel.navigation || json.optString("token") != channel.token) return
+            when (type) {
                 "assistantDisplay" -> {
-                    val channel = channels[proxy] ?: return
                     val display = nativeDisplay ?: return
-                    if (!mainFrame || !channel.mainFrame || !buttonPolicy.enabled ||
-                        channel.document != document || channel.navigation != registry.navigation ||
-                        json.optLong("navigation", -1) != channel.navigation || json.optString("token") != channel.token) return
+                    if (!mainFrame || !channel.mainFrame || !buttonPolicy.enabled) return
                     val version = json.optLong("version", -1)
                     if (version !in 1..9_007_199_254_740_991L || version <= displayVersion) return
                     displayVersion = version
@@ -173,19 +146,12 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
                     }
                 }
                 "assistantPressReady" -> {
-                    val channel = channels[proxy] ?: return
                     if (!mainFrame || !channel.mainFrame || !buttonPolicy.enabled ||
-                        channel.document != document || channel.navigation != registry.navigation ||
-                        json.optLong("navigation", -1) != channel.navigation || json.optString("token") != channel.token ||
                         displayChannel?.first !== proxy || json.optLong("version", -1) != displayVersion) return
                     nativeDisplay?.acknowledgePress(displayVersion, json.optLong("request", -1), json.optBoolean("ok"))
                 }
                 "state", "retire", "fullscreenError", "fullscreenActive", "fullscreenEnded", "fullscreenResumed", "controlStarted", "controlAck" -> {
-                    val channel = channels[proxy] ?: return
-                    if (channel.document != document || channel.navigation != registry.navigation ||
-                        json.optLong("navigation", -1) != channel.navigation ||
-                        json.optString("token") != channel.token) return
-                    if (json.optString("type") == "fullscreenError") {
+                    if (type == "fullscreenError") {
                         val now = SystemClock.elapsedRealtime()
                         if (buttonPolicy.enabled && now - lastFailureAt >= 3_000) {
                             lastFailureAt = now
@@ -193,7 +159,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
                         }
                         return
                     }
-                    if (json.optString("type") == "retire") {
+                    if (type == "retire") {
                         if (owner?.id?.frameId == channel.frameId) clearOwner("The video page is no longer available. Return to the website.")
                         channels.remove(proxy)
                         registry.closeFrame(channel.frameId)
@@ -201,7 +167,6 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
                         return
                     }
                     val now = SystemClock.elapsedRealtime()
-                    val type = json.optString("type")
                     val attempt = json.optLong("attempt", -1)
                     val element = json.optString("elementId")
                     if (type == "fullscreenResumed" && (recoveryTimeout == null ||
@@ -216,12 +181,9 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
                     } else null
                     if (type == "state" && now - channel.lastUpdate < 100) return
                     val videos = json.getJSONArray("videos")
-                    val removed = json.getJSONArray("removed")
-                    if (videos.length() > LiveVideoSessionRegistry.MAX_VIDEOS_PER_FRAME ||
-                        removed.length() > LiveVideoSessionRegistry.MAX_VIDEOS_PER_FRAME) return
+                    if (videos.length() > LiveVideoSessionRegistry.MAX_VIDEOS_PER_FRAME) return
                     val states = (0 until videos.length()).map { decode(videos.getJSONObject(it)) }
-                    val deleted = (0 until removed.length()).map { removed.getString(it).take(80) }
-                    if (registry.update(channel.navigation, channel.frameId, json.getLong("sequence"), states, deleted, now)) {
+                    if (registry.update(channel.navigation, channel.frameId, json.getLong("sequence"), states, now)) {
                         channel.lastUpdate = now
                         if (type == "fullscreenActive" && attempt in 1..9_007_199_254_740_991L) {
                             val session = registry.snapshot().firstOrNull { it.id.frameId == channel.frameId && it.id.elementId == element }
@@ -250,9 +212,30 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
         } // Malformed/untrusted telemetry is ignored; never fail normal browsing.
     }
 
+    private fun receiveHello(document: String, mainFrame: Boolean, proxy: JavaScriptReplyProxy) {
+        val now = SystemClock.elapsedRealtime()
+        if (now - helloWindow > 1000) { helloWindow = now; helloCount = 0 }
+        val old = channels[proxy]
+        if (old != null && old.document == document && old.navigation == registry.navigation) {
+            if (now - old.lastHello < 500) return
+            old.lastHello = now
+            acknowledge(proxy, old)
+            return
+        }
+        if (++helloCount > 16) return
+        old?.let { channels.remove(proxy); registry.closeFrame(it.frameId) }
+        val frame = registry.openFrame(document) ?: return
+        val channel = Channel(frame, document, UUID.randomUUID().toString(), registry.navigation, now, mainFrame)
+        channels[proxy] = channel
+        acknowledge(proxy, channel)
+        publish()
+    }
+
+    private fun boundMessage(type: String, channel: Channel): JSONObject = JSONObject().put("type", type)
+        .put("documentId", channel.document).put("navigation", channel.navigation).put("token", channel.token)
+
     private fun acknowledge(proxy: JavaScriptReplyProxy, channel: Channel) {
-        runCatching { proxy.postMessage(JSONObject().put("type", "bind").put("documentId", channel.document)
-            .put("navigation", channel.navigation).put("token", channel.token).put("button", policyJson(channel)).toString()) }
+        runCatching { proxy.postMessage(boundMessage("bind", channel).put("button", policyJson(channel)).toString()) }
     }
 
     fun attachNativeDisplay(display: NativeVideoAssistantDisplay) {
@@ -273,8 +256,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     private fun displayReply(type: String, version: Long, ok: Boolean, request: Long = 0) {
         val (proxy, channel) = displayChannel ?: return
         if (channels[proxy] !== channel || !accepting || retired) return
-        runCatching { proxy.postMessage(JSONObject().put("type", type).put("documentId", channel.document)
-            .put("navigation", channel.navigation).put("token", channel.token)
+        runCatching { proxy.postMessage(boundMessage(type, channel)
             .put("version", version).put("ok", ok).put("request", request).toString()) }
     }
 
@@ -286,9 +268,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     }
     private fun sendButtonPolicies() {
         channels.forEach { (proxy, channel) ->
-            runCatching { proxy.postMessage(JSONObject().put("type", "buttonPolicy")
-                .put("documentId", channel.document).put("navigation", channel.navigation)
-                .put("token", channel.token).put("button", policyJson(channel)).toString()) }
+            runCatching { proxy.postMessage(boundMessage("buttonPolicy", channel).put("button", policyJson(channel)).toString()) }
         }
     }
 
@@ -301,10 +281,9 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
         .put("screenBottomInset", BrowserFloatingActionLayout.VIDEO_BOTTOM_INSET_DP)
 
     private fun publish() {
-        mutableSessions.value = registry.snapshot()
         val current = owner
         if (nativeFullscreen && current != null) {
-            val session = mutableSessions.value.firstOrNull { it.id == current.id }
+            val session = registry.snapshot().firstOrNull { it.id == current.id }
             if (session != null) {
                 if (playback.state.value.session?.state?.sourceRevision?.let { it != session.state.sourceRevision } == true) cancelPending()
                 playback.attach(session, current.attempt)
@@ -373,8 +352,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
         val entry = channels.entries.firstOrNull { it.value.frameId == current.id.frameId &&
             it.value.navigation == current.id.navigation && it.value.document == current.id.documentId } ?: return false
         return runCatching {
-            entry.key.postMessage(JSONObject().put("type", type).put("documentId", entry.value.document)
-                .put("navigation", entry.value.navigation).put("token", entry.value.token)
+            entry.key.postMessage(boundMessage(type, entry.value)
                 .put("elementId", current.id.elementId).put("attempt", current.attempt)
                 .put("recoveryId", recovery.requestId).put("pip", pip).toString())
             true
@@ -425,8 +403,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     }
 
     private fun controlJson(command: BrowserVideoCommand, channel: Channel, id: Long): JSONObject =
-        JSONObject().put("type", "control").put("documentId", channel.document).put("navigation", channel.navigation)
-            .put("token", channel.token).put("elementId", command.owner.elementId).put("attempt", command.attempt)
+        boundMessage("control", channel).put("elementId", command.owner.elementId).put("attempt", command.attempt)
             .put("commandId", id).put("sourceRevision", command.sourceRevision).put("action", command.action.wireName).also { json ->
                 command.value?.let { json.put("value", it) }
             }
@@ -458,18 +435,6 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
                 else VideoTimeRange((start * 1000).toLong(), (end * 1000).toLong())
             }
         }
-        val bounds = json.getJSONObject("bounds")
-        fun bound(key: String): Double = bounds.optDouble(key, 0.0)
-            .takeIf { it.isFinite() }?.coerceIn(-1_000_000.0, 1_000_000.0) ?: 0.0
-        val source = if (json.isNull("source")) null else json.optString("source")
-            .takeIf { it.length <= 8192 && it.isNotBlank() }
-        val sourceKind = when (json.optString("sourceKind")) {
-            "network" -> LiveVideoSourceKind.NETWORK
-            "blob" -> LiveVideoSourceKind.BLOB
-            "stream" -> LiveVideoSourceKind.MEDIA_STREAM
-            "data" -> LiveVideoSourceKind.DATA
-            else -> LiveVideoSourceKind.UNKNOWN
-        }
         fun tracks(key: String, limit: Int): List<BrowserMediaTrack> {
             val array = json.optJSONArray(key) ?: return emptyList()
             return (0 until minOf(array.length(), limit)).mapNotNull { index ->
@@ -478,16 +443,12 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
                 BrowserMediaTrack(id, track.optString("label").take(80), track.optString("language").take(16), track.optBoolean("selected"))
             }
         }
-        return LiveVideoState(json.getString("elementId"), source.takeUnless { sourceKind == LiveVideoSourceKind.DATA },
-            sourceKind, ms("position"), if (json.isNull("duration")) null else ms("duration"),
-            json.optBoolean("playing"), json.optBoolean("ended"), json.optBoolean("buffering"),
+        return LiveVideoState(json.getString("elementId"), ms("position"), if (json.isNull("duration")) null else ms("duration"),
+            json.optBoolean("playing"), json.optBoolean("buffering"),
             json.optBoolean("muted"), number("speed", 16.0), number("width", 32768.0).toInt(),
-            number("height", 32768.0).toInt(), json.optBoolean("visible"), number("intersection", 1.0),
-            VideoFrameBounds(bound("left"), bound("top"), bound("width").coerceAtLeast(0.0),
-                bound("height").coerceAtLeast(0.0), bound("viewportWidth").coerceAtLeast(0.0),
-                bound("viewportHeight").coerceAtLeast(0.0)), ranges(json.optJSONArray("seekable")),
+            number("height", 32768.0).toInt(), ranges(json.optJSONArray("seekable")),
             ranges(json.optJSONArray("buffered")), json.optInt("readyState").coerceIn(0, 4),
-            json.optLong("sourceRevision").coerceAtLeast(0), json.optBoolean("interacted"),
+            json.optLong("sourceRevision").coerceAtLeast(0),
             tracks("captions", 16), tracks("audioTracks", 8),
             BrowserVideoScale.entries.firstOrNull { it.css == json.optString("scale") } ?: BrowserVideoScale.FIT)
     }

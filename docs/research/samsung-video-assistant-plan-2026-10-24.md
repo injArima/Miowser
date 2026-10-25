@@ -1,8 +1,61 @@
 # Samsung Internet Video Assistant: findings and Miowser plan
 
-Date: 24 October 2026. **Research and implementation plan only.** No Miowser
+Original investigation: 24 October 2026. **Historical research and implementation plan.** No Miowser
 application code was changed for this investigation; no APK was installed or
 executed and no phone/app data was accessed.
+
+## Current implementation and cleanup — 25 October 2026
+
+This section describes the current implementation. The research and staged
+implementation notes below record earlier states, including checks performed
+at those earlier checkpoints; they do not claim validation of this cleanup.
+
+- Browser playback controls the existing HTML video session through WebView;
+  it does not create ExoPlayer or replace the existing media-discovery workflows.
+- Main-frame pages use a native Android floating button anchored to the browser
+  screen above the reserved Jump-to-top slot, with a 48 dp face, 60 dp touch
+  target and 28 dp mark. The visible gap is 12 dp even when Jump to top is hidden.
+  See [the placement checkpoint](video-assistant-screen-anchor-2026-10-25.md).
+- The native layer owns the gesture and forwards the physical tap after the
+  bound document prepares its input guard. Entry stays single-tap. Cross-origin
+  embedded frames retain their frame-local DOM fallback; it cannot draw outside
+  the iframe through the current input route.
+- The rich browser overlay reuses the original player UI and exposes supported
+  controls. Exact session/source ownership, gesture handling, control suppression,
+  explicit PiP and bounded fullscreen-entry recovery remain necessary.
+
+The cleanup audited the feature from its initial prototype through the current
+button implementation, including normal-tab integration, shared player UI,
+fixtures and build wiring. It removes:
+
+- The unused native session stream, active-video ranking API and diagnostic
+  source/visibility/frame-rectangle metadata. Video selection and source identity
+  still operate inside the web frame. Native origin/token checks remain.
+- The redundant explicit removed-ID payload: each message already contains a
+  complete bounded snapshot, including element removals.
+- The unused snapshot control command and unreachable legacy subtitle-appearance
+  composables. The current subtitle page, inspector, styling and adjuster remain.
+- Unused/duplicate imports and duplicate message-validation, serialization and
+  expiry-timer setup. The native button reuses its background and avoids redundant
+  layout/padding/tint assignments. Delayed layout corrections remain only for the
+  frame-constrained fallback.
+
+No feature modules were deleted merely to reduce file count. The earlier Video
+Lab build and rejected toolbar-arming route were already absent before this
+cleanup. Historical Samsung evidence and implementation reports are retained.
+
+Only static source/reference review was performed for this cleanup. Existing
+fixtures were adjusted to the smaller data contract; **no build, test runner,
+emulator or device checks were run**, as requested. No app data was accessed.
+Runtime preservation is intended, not yet verified. User checks should cover:
+
+1. First-tap entry on YouTube and a normal video page; scrolling, zooming,
+   rotation and the screen anchor; embedded-frame fallback.
+2. Fullscreen continuity and deliberate pause, seek/skip, speed and the 2× hold
+   badge, mute, gestures, caption/audio selection and Fit/Zoom/Fill.
+3. PiP, background/return, tab navigation, source replacement, returning to the
+   website and closing fullscreen.
+4. Existing native-player/library playback, subtitle settings and playlist input.
 
 ## Main finding
 

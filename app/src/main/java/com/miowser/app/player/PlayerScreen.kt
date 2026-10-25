@@ -14,7 +14,6 @@ import android.graphics.Typeface
 import android.graphics.Color as AndroidColor
 import android.net.Uri
 import android.provider.Settings
-import android.util.Log
 import android.view.ViewGroup
 import android.view.View
 import android.widget.FrameLayout
@@ -23,11 +22,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -36,7 +32,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
@@ -44,9 +39,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.offset
@@ -64,47 +57,21 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
-import androidx.compose.material.icons.rounded.Audiotrack
 import androidx.compose.material.icons.rounded.Brightness6
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.FitScreen
-import androidx.compose.material.icons.rounded.Forward10
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Replay10
-import androidx.compose.material.icons.rounded.ScreenLockLandscape
-import androidx.compose.material.icons.rounded.ScreenLockPortrait
-import androidx.compose.material.icons.rounded.ScreenRotation
-import androidx.compose.material.icons.rounded.SkipNext
-import androidx.compose.material.icons.rounded.SkipPrevious
-import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Subtitles
-import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedButton
-import com.miowser.app.ui.MiowserDropdownMenu
-import com.miowser.app.ui.MiowserMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -121,44 +88,29 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.BlurredEdgeTreatment
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Shadow
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.Font
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -180,10 +132,6 @@ import androidx.media3.common.VideoSize
 import androidx.media3.common.text.Cue
 import androidx.media3.extractor.text.CuesWithTiming
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.DefaultLoadControl
-import androidx.media3.exoplayer.DefaultRenderersFactory
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.CaptionStyleCompat
@@ -193,8 +141,6 @@ import com.miowser.app.R
 import com.miowser.app.grabber.DetectedMedia
 import com.miowser.app.browser.SubtitleViewer
 import com.miowser.app.browser.loadSubtitleForPlayback
-import com.miowser.app.ui.CompactSheetDragHandle
-import com.miowser.app.ui.MiowserBottomSheetShape
 import com.miowser.app.library.MediaLibrary
 import com.miowser.app.library.LibraryEntry
 import com.miowser.app.library.LibrarySubtitleStore
@@ -1396,9 +1342,6 @@ private fun captionFontResource(font: CaptionFontChoice): Int? = when (font) {
     CaptionFontChoice.LOBSTER -> R.font.subtitle_lobster
 }
 
-private fun captionFontFamily(font: CaptionFontChoice): FontFamily =
-    captionFontResource(font)?.let { FontFamily(Font(it)) } ?: FontFamily.Default
-
 @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
 private fun applyPlayerSubtitleStyle(view: PlayerView, style: PlayerSubtitleStyle, typeface: Typeface?) {
     view.subtitleView?.let { applyPlayerSubtitleStyle(it, style, typeface) }
@@ -2354,113 +2297,6 @@ private fun PlayerTrackSelectionSheet(
                         }
                     )
                 }
-        }
-    }
-}
-
-@Composable
-private fun PlayerSubtitleAppearance(
-    style: PlayerSubtitleStyle,
-    onChange: (PlayerSubtitleStyle) -> Unit,
-    maxHeight: Dp
-) {
-    Column(
-        modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight).verticalScroll(rememberScrollState())
-            .padding(horizontal = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(5.dp)
-    ) {
-        Text("Caption style", style = MaterialTheme.typography.titleMedium)
-        Column(
-            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                .background(Color(0xFFE5E5E5)).padding(6.dp),
-            verticalArrangement = Arrangement.spacedBy(1.dp)
-        ) {
-            CaptionVisualPreset.entries.forEach { preset ->
-                CaptionPresetPreview(
-                    preset = preset,
-                    size = style.size,
-                    fontFamily = captionFontFamily(style.font),
-                    selected = style.preset == preset,
-                    onClick = { onChange(style.copy(preset = preset)) }
-                )
-            }
-        }
-        Text("Font", style = MaterialTheme.typography.titleMedium)
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            CaptionFontChoice.entries.forEach { font ->
-                Surface(
-                    onClick = { onChange(style.copy(font = font)) },
-                    shape = RoundedCornerShape(50),
-                    color = if (style.font == font) MaterialTheme.colorScheme.primaryContainer
-                        else Color.White.copy(alpha = 0.12f),
-                    contentColor = if (style.font == font) MaterialTheme.colorScheme.onPrimaryContainer
-                        else Color.White
-                ) {
-                    Text(font.label, fontFamily = captionFontFamily(font),
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
-                        style = MaterialTheme.typography.labelLarge)
-                }
-            }
-        }
-        Text("Size · ${(style.size * 100).toInt()}%")
-        Slider(value = style.size, onValueChange = { onChange(style.copy(size = it)) },
-            valueRange = 0.7f..1.6f)
-        Text("Height above bottom · ${(style.bottomPadding * 100).toInt()}%")
-        Slider(value = style.bottomPadding, onValueChange = { onChange(style.copy(bottomPadding = it)) },
-            valueRange = 0.06f..0.25f)
-    }
-}
-
-@Composable
-private fun CaptionPresetPreview(
-    preset: CaptionVisualPreset,
-    size: Float,
-    fontFamily: FontFamily,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    val yellow = preset == CaptionVisualPreset.YELLOW_SHADOW ||
-        preset == CaptionVisualPreset.YELLOW_TRANSLUCENT
-    val background = when (preset) {
-        CaptionVisualPreset.STANDARD -> Color.Black
-        CaptionVisualPreset.WHITE_TRANSLUCENT,
-        CaptionVisualPreset.YELLOW_TRANSLUCENT -> Color.Black.copy(alpha = 0.67f)
-        else -> Color.Transparent
-    }
-    val outline = preset == CaptionVisualPreset.WHITE_OUTLINE
-    val shadow = preset == CaptionVisualPreset.WHITE_SHADOW ||
-        preset == CaptionVisualPreset.YELLOW_SHADOW
-    val captionStyle = MaterialTheme.typography.titleMedium.copy(
-        fontSize = (16f * size).sp,
-        fontWeight = FontWeight.Normal,
-        fontFamily = fontFamily,
-        textAlign = TextAlign.Center
-    )
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(8.dp),
-        color = Color.Transparent,
-        border = if (selected) BorderStroke(2.dp, Color(0xFF5143B7)) else null,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Box(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 7.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Box(Modifier.background(background).padding(horizontal = 5.dp, vertical = 1.dp),
-                contentAlignment = Alignment.Center) {
-                if (outline) {
-                    Text(preset.sample, style = captionStyle.copy(
-                        color = Color.Black, drawStyle = Stroke(width = 3f)), maxLines = 2)
-                }
-                Text(preset.sample, style = captionStyle.copy(
-                    color = if (yellow) Color.Yellow else Color.White,
-                    shadow = if (shadow) Shadow(Color.Black, Offset(2f, 2f), 4f) else null
-                ), maxLines = 2)
-            }
         }
     }
 }

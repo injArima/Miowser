@@ -15,30 +15,18 @@ Recorded from the user's instruction on 2026-10-25.
 
 ## Video action placement and interaction
 
-Uniform single-tap entry is required. The user rejected the toolbar's extra page
-tap and explicitly authorized restoring the original in-frame floating button.
-That restoration supersedes the earlier below-player row and toolbar fallback;
-see [the restoration report](research/video-assistant-single-tap-restored-2026-10-25.md).
-
-Samsung's external-placement findings remain in
-[the reinspection report](research/samsung-single-tap-recheck-2026-10-25.md).
-Discuss and prove a revised external-placement route before replacing the
-working browser-player entry path again. Placement must not add activation steps.
-
-The user then explicitly selected a **native Android display prototype** with
-additional work to preserve single-tap input. The current prototype uses a
-decorative native face over the existing real web tap target on main-frame pages;
-embedded frames retain their working in-frame overlay. Scope and device checks
-are in [the prototype report](research/native-video-assistant-display-prototype-2026-10-25.md).
-
-The user subsequently requested emulator testing and correction of native button
-tap/scroll interception. The native layer now owns its target's gestures and
-forwards a physical tap only after the bound document prepares its input guard.
-This remains a single tap, retains the existing launch action, and prevents page
-click-through. See [the input fix](research/native-video-assistant-input-fix-2026-10-25.md).
-
-The latest placement request supersedes video-relative positioning for the native
-floating button: anchor it to the browser screen, directly above the space
-reserved for Jump to top. Keep that space reserved even when Jump to top is hidden.
-The existing embedded-frame DOM fallback remains a separate implementation
-boundary; it cannot render outside its iframe using the current input route.
+- Keep browser playback on its existing WebView session, separate from ExoPlayer.
+  This is an additional route; preserve existing discovery and player workflows.
+- Uniform single-tap entry is required. The rejected below-player row and toolbar
+  arming route must not return. Discuss a different approach before replacing the
+  working launch path. [Samsung evidence](research/samsung-single-tap-recheck-2026-10-25.md).
+- The native Android layer owns the target's gestures and forwards the physical
+  tap only after the bound document prepares its input guard. Preserve the
+  document/source ownership and click-through protections.
+  [Input implementation](research/native-video-assistant-input-fix-2026-10-25.md).
+- Anchor the native floating button to the browser screen, directly above the
+  reserved Jump-to-top slot, even when Jump to top is hidden. Keep the 48 dp face,
+  60 dp touch target and 28 dp mark. The existing embedded-frame DOM fallback is
+  an implementation boundary; it cannot draw outside its iframe with this route.
+- Use the [current implementation and cleanup overview](research/samsung-video-assistant-plan-2026-10-24.md)
+  for present behavior; older reports describe historical checkpoints.

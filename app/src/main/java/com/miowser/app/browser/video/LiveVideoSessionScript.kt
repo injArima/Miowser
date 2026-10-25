@@ -14,7 +14,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
     var assistant = null;
     var controls = null, fullscreenSerial = 0, lifecycleSerial = -1;
     var trackIds = new WeakMap(), nextTrackId = 0;
-    var removed = new Set(), listeners = [];
+    var listeners = [];
     var MAX_VIDEOS = 8, UPDATE_MS = 500;
 
     function send(message) {
@@ -67,26 +67,15 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         }
     }
     function snapshot(record) {
-        var video = record.video, rect = video.getBoundingClientRect();
+        var video = record.video;
         refreshSource(record);
-        var source = record.source, object = record.object;
-        var kind = object ? 'stream' : source.indexOf('blob:') === 0 ? 'blob' :
-            source.indexOf('data:') === 0 ? 'data' : /^https?:/i.test(source) ? 'network' : 'unknown';
-        var visible = video.isConnected && document.visibilityState !== 'hidden' &&
-            rect.width > 0 && rect.height > 0 && record.ratio > 0 &&
-            rect.top < window.innerHeight && rect.left < window.innerWidth &&
-            rect.top + rect.height > 0 && rect.left + rect.width > 0;
         var result = {
-            elementId: record.id, source: kind === 'data' || source.length > 8192 ? null : source,
-            sourceKind: kind, position: finite(video.currentTime), duration: finite(video.duration),
-            playing: !video.paused && !video.ended, ended: !!video.ended,
+            elementId: record.id, position: finite(video.currentTime), duration: finite(video.duration),
+            playing: !video.paused && !video.ended,
             buffering: !video.paused && (video.readyState < 3 || !!video.seeking), muted: !!video.muted,
             speed: finite(video.playbackRate), width: video.videoWidth || 0, height: video.videoHeight || 0,
-            visible: visible, intersection: visible ? record.ratio : 0,
-            bounds: {left: finite(rect.left), top: finite(rect.top), width: finite(rect.width),
-                height: finite(rect.height), viewportWidth: window.innerWidth, viewportHeight: window.innerHeight},
             seekable: ranges(video.seekable), buffered: ranges(video.buffered), readyState: video.readyState,
-            sourceRevision: record.sourceRevision, interacted: record.interacted
+            sourceRevision: record.sourceRevision
         };
         var owner = assistant ? assistant.owner() : null;
         if (owner && owner.record === record) {
@@ -94,7 +83,6 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             result.audioTracks = mediaTracks(video, true);
             result.scale = window.getComputedStyle(video).objectFit || 'contain';
         }
-        record.interacted = false;
         return result;
     }
     function packet(type, extra) {
@@ -104,12 +92,9 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             if (record.video.isConnected) states.push(snapshot(record));
             else unwatch(record);
         });
-        // Keep string-sized payloads bounded even when a page uses very long signed URLs.
         var message = {type: type, documentId: documentId, navigation: binding.navigation,
-            token: binding.token, sequence: sequence++, videos: states, removed: Array.from(removed)};
+            token: binding.token, sequence: sequence++, videos: states};
         if (extra) Object.keys(extra).forEach(function (key) { message[key] = extra[key]; });
-        if (JSON.stringify(message).length > 24576) states.forEach(function (state) { state.source = null; });
-        removed.clear();
         send(message);
     }
     function flush() {
@@ -138,7 +123,6 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         if (intersection) intersection.unobserve(record.video);
         if (resize) resize.unobserve(record.video);
         videos.delete(record.id);
-        if (removed.size < MAX_VIDEOS) removed.add(record.id);
     }
     function watch(video) {
         if (!video || video.tagName !== 'VIDEO' || !video.isConnected) return;
@@ -148,7 +132,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         id = id || 'v' + (++nextId);
         ids.set(video, id);
         var record = {id: id, video: video, source: null, object: null, sourceRevision: 0,
-            ratio: 1, interacted: false, cleanups: []};
+            ratio: 1, cleanups: []};
         videos.set(id, record);
         ['loadedmetadata', 'durationchange', 'loadstart', 'emptied', 'resize', 'play', 'pause',
             'playing', 'waiting', 'seeking', 'seeked', 'timeupdate', 'ratechange', 'volumechange', 'ended', 'progress', 'error']
@@ -163,7 +147,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
                 record.cleanups.push(function () { tracks.removeEventListener(event, schedule); });
             });
         });
-        function interaction() { record.interacted = true; record.lastInteraction = performance.now(); schedule(); }
+        function interaction() { record.lastInteraction = performance.now(); schedule(); }
         video.addEventListener('pointerdown', interaction, {passive: true});
         record.cleanups.push(function () { video.removeEventListener('pointerdown', interaction); });
         if (intersection) intersection.observe(video);
@@ -199,9 +183,9 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         if (running) return;
         running = true;
         if (window.__miowserCreateVideoButton) assistant = window.__miowserCreateVideoButton({
-            records: function () { return Array.from(videos.values()); },
+            records: function () { return videos; },
             bound: function () { return running && binding !== null; },
-            interacted: schedule,
+            changed: schedule,
             display: function (data) {
                 if (!running || !binding) return;
                 var message = {type: 'assistantDisplay', documentId: documentId,
@@ -310,7 +294,6 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         observer = intersection = resize = null;
         videos.forEach(function (record) { record.cleanups.forEach(function (cleanup) { cleanup(); }); });
         videos.clear();
-        removed.clear();
         listeners.forEach(function (cleanup) { cleanup(); });
         listeners = [];
         binding = null;
@@ -327,34 +310,38 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
                 if (document.visibilityState !== 'hidden') hello();
                 return;
             }
-            if (message.type === 'buttonPolicy' && binding && message.documentId === documentId &&
-                message.navigation === binding.navigation && message.token === binding.token) {
+            if (message.type === 'bind') {
+                if (message.documentId !== documentId || !Number.isSafeInteger(message.navigation) ||
+                    typeof message.token !== 'string' || message.token.length > 80) return;
+                binding = {navigation: message.navigation, token: message.token};
+                if (assistant) assistant.policy(message.button);
+                schedule(); return;
+            }
+            if (!binding || message.documentId !== documentId || message.navigation !== binding.navigation ||
+                message.token !== binding.token) return;
+            if (message.type === 'buttonPolicy') {
                 if (assistant) assistant.policy(message.button);
                 return;
             }
-            if (message.type === 'control' && binding && message.documentId === documentId &&
-                message.navigation === binding.navigation && message.token === binding.token) {
+            if (message.type === 'control') {
                 if (controls) controls.receive(message);
                 return;
             }
-            if ((message.type === 'nativeDisplayReady' || message.type === 'nativeDisplayLost') && binding &&
-                message.documentId === documentId && message.navigation === binding.navigation && message.token === binding.token) {
+            if (message.type === 'nativeDisplayReady' || message.type === 'nativeDisplayLost') {
                 if (assistant) {
                     if (message.type === 'nativeDisplayLost') assistant.nativeLost();
                     else assistant.nativeReady(message.version, message.ok);
                 }
                 return;
             }
-            if ((message.type === 'nativePress' || message.type === 'nativePressCancel') && binding &&
-                message.documentId === documentId && message.navigation === binding.navigation && message.token === binding.token) {
+            if (message.type === 'nativePress' || message.type === 'nativePressCancel') {
                 if (assistant) {
                     if (message.type === 'nativePress') assistant.nativePress(message.version, message.request);
                     else assistant.nativePressCancel(message.request);
                 }
                 return;
             }
-            if (['releaseFullscreen', 'suspendFullscreen', 'resumeFullscreen', 'fallbackFullscreen'].indexOf(message.type) >= 0 &&
-                binding && message.documentId === documentId && message.navigation === binding.navigation && message.token === binding.token) {
+            if (['releaseFullscreen', 'suspendFullscreen', 'resumeFullscreen', 'fallbackFullscreen'].indexOf(message.type) >= 0) {
                 var owner = assistant ? assistant.owner() : null;
                 var matches = owner && owner.record.id === message.elementId && owner.attempt === message.attempt;
                 if (!Number.isSafeInteger(message.recoveryId) || message.recoveryId < 0) return;
@@ -375,12 +362,6 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
                 }
                 return;
             }
-            if (message.type !== 'bind' || message.documentId !== documentId ||
-                !Number.isSafeInteger(message.navigation) || typeof message.token !== 'string' ||
-                message.token.length > 80) return;
-            binding = {navigation: message.navigation, token: message.token};
-            if (assistant) assistant.policy(message.button);
-            schedule();
         } catch (ignored) {}
     };
     window.addEventListener('message', function (event) {

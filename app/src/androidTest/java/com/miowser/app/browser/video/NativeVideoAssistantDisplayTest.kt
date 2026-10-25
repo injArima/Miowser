@@ -18,7 +18,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.flow.MutableStateFlow
 
 /** Native input ownership plus a real Chromium trusted-click regression. */
 @RunWith(AndroidJUnit4::class)
@@ -129,7 +128,7 @@ class NativeVideoAssistantDisplayTest {
                     addView(web, FrameLayout.LayoutParams(-1, -1)); addView(display, FrameLayout.LayoutParams(-1, -1))
                 }
                 activity.setContentView(host)
-                tracker = LiveVideoTracker(987, web, MutableStateFlow(emptyList()), VideoAssistantButtonPolicy(enabled = true))
+                tracker = LiveVideoTracker(987, web, VideoAssistantButtonPolicy(enabled = true))
                 assertTrue(tracker.supported)
                 tracker.install(); tracker.attachNativeDisplay(display); tracker.onNavigationStarted()
                 web.webChromeClient = object : WebChromeClient() {

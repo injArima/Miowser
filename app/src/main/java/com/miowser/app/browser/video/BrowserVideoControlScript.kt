@@ -29,13 +29,13 @@ internal const val BROWSER_VIDEO_CONTROL_SCRIPT = """
                 api.reply('controlAck', command, ok);
             }
             var value = command.value;
-            if (['play', 'pause', 'seek', 'skip', 'rate', 'richUi', 'snapshot', 'mute', 'scale', 'caption', 'audio', 'holdRate', 'releaseRate'].indexOf(command.action) < 0) return;
+            if (['play', 'pause', 'seek', 'skip', 'rate', 'richUi', 'mute', 'scale', 'caption', 'audio', 'holdRate', 'releaseRate'].indexOf(command.action) < 0) return;
             lastCommand = command.commandId;
             // Pause intent wins even when a source revision makes the command stale.
             // A stale Play must not cancel recovery that is already trying to resume.
             if (command.action === 'pause' && api.transportIntent) api.transportIntent();
             // Metadata can change between the last sample and this command arriving.
-            if (['richUi', 'snapshot', 'releaseRate'].indexOf(command.action) < 0 &&
+            if (['richUi', 'releaseRate'].indexOf(command.action) < 0 &&
                 !(command.action === 'pause' && command.sourceRevision === -1) &&
                 command.sourceRevision !== owner.record.sourceRevision) { ack(false); return; }
             if (command.action === 'play' && api.transportIntent) api.transportIntent();
@@ -91,7 +91,6 @@ internal const val BROWSER_VIDEO_CONTROL_SCRIPT = """
                     case 'richUi':
                         if (value !== 1) releaseRate();
                         ack(api.rich(command.elementId, command.attempt, value === 1)); break;
-                    case 'snapshot': ack(true); break;
                     case 'seek': case 'skip': {
                         if (!Number.isFinite(value) || (command.action === 'skip' && Math.abs(value) > 60)) { ack(false); return; }
                         var target = command.action === 'skip' ? video.currentTime + value : value;

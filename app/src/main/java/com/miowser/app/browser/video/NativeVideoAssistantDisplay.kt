@@ -16,6 +16,7 @@ import kotlin.math.roundToInt
 
 /** Native face and gesture owner; only an acknowledged physical tap enters the WebView. */
 internal class NativeVideoAssistantDisplay(context: Context) : FrameLayout(context) {
+    private val faceBackground = GradientDrawable().apply { shape = GradientDrawable.OVAL }
     private val face = ImageView(context).apply {
         setImageResource(R.drawable.ic_miowser_mark)
         scaleType = ImageView.ScaleType.FIT_CENTER
@@ -24,6 +25,7 @@ internal class NativeVideoAssistantDisplay(context: Context) : FrameLayout(conte
         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         elevation = 3 * resources.displayMetrics.density
         visibility = View.INVISIBLE
+        background = faceBackground
     }
     private var generation = 0L
     private var expiry: Runnable? = null
@@ -56,7 +58,6 @@ internal class NativeVideoAssistantDisplay(context: Context) : FrameLayout(conte
         if (visibleVersion != geometry.version) cancelPress()
         visibleVersion = geometry.version
         presentationReady = false
-        expiry?.let(::removeCallbacks)
         face.animate().cancel()
         val wasVisible = face.visibility == View.VISIBLE && face.alpha > 0f
         val hitWidth = geometry.width * width
@@ -65,14 +66,14 @@ internal class NativeVideoAssistantDisplay(context: Context) : FrameLayout(conte
             ((geometry.left + geometry.width) * width).toFloat(),
             ((geometry.top + geometry.height) * height).toFloat())
         val size = (hitWidth * BrowserFloatingActionLayout.VIDEO_FACE_DP / BrowserFloatingActionLayout.VIDEO_TOUCH_DP).roundToInt()
-        face.layoutParams = LayoutParams(size, size)
+        if (face.layoutParams.width != size || face.layoutParams.height != size) face.layoutParams = LayoutParams(size, size)
         face.x = (geometry.left * width + (hitWidth - size) / 2).toFloat()
         face.y = (geometry.top * height + (hitHeight - size) / 2).toFloat()
         val padding = (size.toDouble() * (BrowserFloatingActionLayout.VIDEO_FACE_DP - BrowserFloatingActionLayout.VIDEO_ICON_DP) /
             (2 * BrowserFloatingActionLayout.VIDEO_FACE_DP)).roundToInt()
-        face.setPadding(padding, padding, padding, padding)
-        face.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(background) }
-        face.imageTintList = ColorStateList.valueOf(foreground)
+        if (face.paddingLeft != padding) face.setPadding(padding, padding, padding, padding)
+        faceBackground.setColor(background)
+        if (face.imageTintList?.defaultColor != foreground) face.imageTintList = ColorStateList.valueOf(foreground)
         face.visibility = View.VISIBLE
         face.alpha = if (wasVisible || reducedMotion) 1f else 0f
         if (!wasVisible && !reducedMotion) face.animate().alpha(1f).setDuration(300).start()
@@ -84,6 +85,12 @@ internal class NativeVideoAssistantDisplay(context: Context) : FrameLayout(conte
                 if (presentationReady) preparePress() else cancelPress()
             }
         } }
+        renewExpiry()
+    }
+
+    private fun renewExpiry() {
+        expiry?.let(::removeCallbacks)
+        val ticket = generation
         expiry = Runnable { if (generation == ticket) { clear(); onLost?.invoke() } }
             .also { postDelayed(it, 4500) }
     }
@@ -123,10 +130,7 @@ internal class NativeVideoAssistantDisplay(context: Context) : FrameLayout(conte
             val version = visibleVersion
             if (version != null && inputTarget != null && sendInput != null) {
                 press = Press(version, ++nextPress, MotionEvent.obtainNoHistory(event))
-                expiry?.let(::removeCallbacks)
-                val ticket = generation
-                expiry = Runnable { if (generation == ticket) { clear(); onLost?.invoke() } }
-                    .also { postDelayed(it, 4500) }
+                renewExpiry()
                 pressTimeout = Runnable { cancelPress() }.also { postDelayed(it, 700) }
                 preparePress()
             }

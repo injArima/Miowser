@@ -6,23 +6,20 @@ import org.junit.Test
 
 class BrowserVideoPresentationTest {
     private fun state(): BrowserVideoPlaybackState {
-        val video = LiveVideoState("video", "blob:https://test/video", LiveVideoSourceKind.BLOB,
-            12_000, 45_000, true, false, false, false, 1.0, 1280, 720, true, 1.0,
-            VideoFrameBounds(0.0, 0.0, 640.0, 360.0, 1080.0, 1920.0),
-            listOf(VideoTimeRange(0, 45_000)), listOf(VideoTimeRange(0, 20_000)), 4, 1, false)
+        val video = LiveVideoState("video", 12_000, 45_000, true, false, false, 1.0, 1280, 720,
+            listOf(VideoTimeRange(0, 45_000)), listOf(VideoTimeRange(0, 20_000)), 4, 1)
         return BrowserVideoPlaybackState(LiveVideoSession(LiveVideoId(1, 2, 3, "doc", "video"),
-            "https://test", false, video, 1, 0), 4, phase = BrowserVideoPhase.ACTIVE)
+            video, 1), 4, phase = BrowserVideoPhase.ACTIVE)
     }
 
-    @Test fun clockBufferGeometryAndDvrRangeUpdatesDoNotInvalidateControlPresentation() {
+    @Test fun clockBufferAndDvrRangeUpdatesDoNotInvalidateControlPresentation() {
         val initial = state(); val expected = browserVideoPresentation(initial)
         repeat(1000) { tick ->
             val session = initial.session!!
             val next = initial.copy(session = session.copy(updatedAtMs = tick.toLong(),
                 state = session.state.copy(positionMs = tick * 100L,
                     buffered = listOf(VideoTimeRange(0, 25_000 + tick.toLong())),
-                    seekable = listOf(VideoTimeRange(tick.toLong(), 45_000 + tick.toLong())),
-                    visible = false, intersectionRatio = 0.0)))
+                    seekable = listOf(VideoTimeRange(tick.toLong(), 45_000 + tick.toLong())))))
             assertEquals(expected, browserVideoPresentation(next))
         }
     }

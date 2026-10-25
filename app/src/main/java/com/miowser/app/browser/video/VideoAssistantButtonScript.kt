@@ -113,7 +113,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         }
         function layoutChanged() {
             scroll();
-            [400, 600, 800, 1000].forEach(function (delay) { layoutTimers.push(setTimeout(schedule, delay)); });
+            if (policy.frameConstrained) [400, 600, 800, 1000].forEach(function (delay) { layoutTimers.push(setTimeout(schedule, delay)); });
         }
         function cancelEntryTimeout() {
             if (entryTimeout !== null) clearTimeout(entryTimeout);
@@ -130,7 +130,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             if (recovery.settle !== null) clearTimeout(recovery.settle);
         }
         function prepareEntryPlayback(entry) {
-            if (!entry.wasPlaying || (!entry.source && !entry.object)) return;
+            if (!entry.source && !entry.object) return;
             var recovery = {frame: null, timeout: null, settle: null, inFlight: false, attempts: 0,
                 events: ['pause', 'emptied', 'loadstart', 'loadedmetadata', 'loadeddata', 'canplay', 'seeked', 'playing', 'ended', 'error']};
             entry.playbackRecovery = recovery;
@@ -163,7 +163,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 try {
                     var result = video.play();
                     if (result && result.then) result.then(function () {
-                        if (active()) { cancelEntryPlayback(); api.interacted(); }
+                        if (active()) { cancelEntryPlayback(); api.changed(); }
                     }, function (error) {
                         if (!active()) return;
                         recovery.inFlight = false;
@@ -171,7 +171,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                         // event. Permission/DRM failures keep the existing manual controls.
                         if (!error || error.name !== 'AbortError' || recovery.attempts >= 3) cancelEntryPlayback();
                     });
-                    else { cancelEntryPlayback(); api.interacted(); }
+                    else { cancelEntryPlayback(); api.changed(); }
                 } catch (ignored) { cancelEntryPlayback(); }
             }
             recovery.schedule = function () {
@@ -262,8 +262,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             if (guard.frame !== null) window.cancelAnimationFrame(guard.frame);
             if (guard.adopted) {
                 guard.root.adoptedStyleSheets = Array.from(guard.root.adoptedStyleSheets).filter(function (sheet) { return sheet !== guard.sheet; });
-            } else if (guard.sheet && guard.sheet.parentNode) guard.sheet.parentNode.removeChild(guard.sheet);
-            else if (guard.sheet && guard.sheet.parentElement) guard.sheet.remove();
+            } else if (guard.sheet) guard.sheet.remove();
             if (guard.attribute === null) entry.video.removeAttribute('data-miowser-rich-controls');
             else entry.video.setAttribute('data-miowser-rich-controls', guard.attribute);
             if (guard.pointer) entry.video.style.setProperty('pointer-events', guard.pointer, guard.priority);
@@ -346,11 +345,11 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 (currentBox.bottom - currentBox.top) * view.scale < 80) { hide(); return; }
             event.preventDefault(); event.stopPropagation();
             var record = selected, video = record.video;
-            record.interacted = true; record.lastInteraction = performance.now();
-            api.interacted();
+            record.lastInteraction = performance.now();
+            api.changed();
             pending = true;
             restore = {video: video, record: record, attempt: api.entering(record), controls: video.controls,
-                wasPlaying: !video.paused && !video.ended, source: video.currentSrc || video.src || '', object: video.srcObject || null,
+                source: video.currentSrc || video.src || '', object: video.srcObject || null,
                 objectFit: video.style ? video.style.getPropertyValue('object-fit') : undefined,
                 fitPriority: video.style ? video.style.getPropertyPriority('object-fit') : ''};
             var entry = restore;
@@ -380,8 +379,8 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             button.title = 'Open video fullscreen with Miowser';
             setStyles(button, {'all': 'initial', 'box-sizing': 'border-box', 'position': 'fixed',
                 'display': 'flex', 'align-items': 'center', 'justify-content': 'center',
-                'pointer-events': 'none', 'visibility': 'hidden', 'cursor': 'pointer', 'border': '1px solid rgba(255,255,255,.2)',
-                'box-shadow': '0 2px 8px rgba(0,0,0,.3)', 'outline-offset': '3px',
+                'pointer-events': 'none', 'visibility': 'hidden', 'cursor': 'pointer', 'border': 'none',
+                'background-color': 'transparent', 'border-radius': '50%', 'outline-offset': '3px',
                 'touch-action': 'manipulation', '-webkit-tap-highlight-color': 'transparent'});
             // Use the app's existing monochrome mark; no external icon/image request.
             icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -465,8 +464,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             } else if (x < left || y < top) { hide(); return; }
             var appearing = button.hidden;
             setStyles(button, {'left': x + 'px', 'top': y + 'px',
-                'width': size + 'px', 'height': size + 'px', 'border-radius': '50%',
-                'background-color': 'transparent', 'border': 'none', 'box-shadow': 'none', 'color': policy.foreground,
+                'width': size + 'px', 'height': size + 'px', 'color': policy.foreground,
                 'visibility': 'visible', 'pointer-events': 'auto'});
             setStyles(plate, {'width': (48 / view.scale) + 'px', 'height': (48 / view.scale) + 'px',
                 'background-color': policy.background});
