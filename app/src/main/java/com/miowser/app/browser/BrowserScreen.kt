@@ -1747,7 +1747,7 @@ fun BrowserScreen(
                                     tab.attachVideoAssistantDisplay(engine, display)
                                     setColorSchemeColors(pullToRefreshTint)
                                     setOnChildScrollUpCallback { _, _ ->
-                                        tab.liveWebView === engine && engine.canScrollVertically(-1)
+                                        display.ownsGesture || (tab.liveWebView === engine && engine.canScrollVertically(-1))
                                     }
                                     setOnRefreshListener {
                                         isRefreshing = true

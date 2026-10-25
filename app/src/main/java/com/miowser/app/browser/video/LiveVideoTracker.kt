@@ -171,6 +171,14 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
                             displayReply("nativeDisplayReady", version, ok)
                     }
                 }
+                "assistantPressReady" -> {
+                    val channel = channels[proxy] ?: return
+                    if (!mainFrame || !channel.mainFrame || !buttonPolicy.enabled ||
+                        channel.document != document || channel.navigation != registry.navigation ||
+                        json.optLong("navigation", -1) != channel.navigation || json.optString("token") != channel.token ||
+                        displayChannel?.first !== proxy || json.optLong("version", -1) != displayVersion) return
+                    nativeDisplay?.acknowledgePress(displayVersion, json.optLong("request", -1), json.optBoolean("ok"))
+                }
                 "state", "retire", "fullscreenError", "fullscreenActive", "fullscreenEnded", "fullscreenResumed", "controlStarted", "controlAck" -> {
                     val channel = channels[proxy] ?: return
                     if (channel.document != document || channel.navigation != registry.navigation ||
@@ -247,24 +255,26 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     }
 
     fun attachNativeDisplay(display: NativeVideoAssistantDisplay) {
+        nativeDisplay?.connectInput(null, null)
         nativeDisplay?.setOnLost(null)
         nativeDisplay?.clear()
         nativeDisplay = display
+        display.connectInput(webView) { type, version, request -> displayReply(type, version, false, request) }
         display.setOnLost { displayReply("nativeDisplayLost", displayVersion, false) }
         sendButtonPolicies()
     }
     fun detachNativeDisplay(display: NativeVideoAssistantDisplay) {
         if (nativeDisplay !== display) return
-        display.setOnLost(null); display.clear()
+        display.setOnLost(null); display.clear(); display.connectInput(null, null)
         nativeDisplay = null
         sendButtonPolicies()
     }
-    private fun displayReply(type: String, version: Long, ok: Boolean) {
+    private fun displayReply(type: String, version: Long, ok: Boolean, request: Long = 0) {
         val (proxy, channel) = displayChannel ?: return
         if (channels[proxy] !== channel || !accepting || retired) return
         runCatching { proxy.postMessage(JSONObject().put("type", type).put("documentId", channel.document)
             .put("navigation", channel.navigation).put("token", channel.token)
-            .put("version", version).put("ok", ok).toString()) }
+            .put("version", version).put("ok", ok).put("request", request).toString()) }
     }
 
     fun updateButtonPolicy(next: VideoAssistantButtonPolicy) {
@@ -308,6 +318,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
         retired = true
         onNavigationStarted()
         nativeDisplay?.setOnLost(null)
+        nativeDisplay?.connectInput(null, null)
         nativeDisplay = null
         playback.disconnect()
         runCatching { script?.remove() }

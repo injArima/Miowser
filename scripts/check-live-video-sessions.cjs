@@ -914,6 +914,76 @@ function nativeFixture() {
     navigation: 3, token: 'frame-token', version, ok, ...credentials})});
   return f;
 }
+function nativePressFixture() {
+  const f = nativeFixture(); f.nativeAck(f.display().version, true);
+  f.press = (request = 1, values = {}) => f.window.MiowserLiveVideo.onmessage({data: JSON.stringify({
+    type: 'nativePress', documentId: f.messages.find(m => m.type === 'hello').documentId,
+    navigation: 3, token: 'frame-token', version: f.display().version, request, ...values})});
+  f.cancelPress = request => f.window.MiowserLiveVideo.onmessage({data: JSON.stringify({
+    type: 'nativePressCancel', documentId: f.messages.find(m => m.type === 'hello').documentId,
+    navigation: 3, token: 'frame-token', version: f.display().version, request})});
+  f.input = (type = 'click', values = {}) => {
+    const event = {type, isTrusted: true, clientX: parseFloat(f.button().style.left) + 24,
+      clientY: parseFloat(f.button().style.top) + 24, prevented: false, stopped: false,
+      preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; },
+      stopImmediatePropagation() { this.stopped = true; }, ...values};
+    f.window.dispatch(type, event); return event;
+  };
+  return f;
+}
+check('native press prepares the same selected video without opening it from a bridge message', () => {
+  const f = nativePressFixture(); f.press();
+  assert.equal(f.messages.at(-1).type, 'assistantPressReady'); assert.equal(f.messages.at(-1).ok, true);
+  assert.equal(f.initial[0].fullscreenRequests, 0);
+  const event = f.input(); assert.equal(event.stopped, true); assert.equal(event.prevented, true);
+  assert.equal(f.initial[0].fullscreenRequests, 1); assert.equal(f.initial[0].currentTime, 12);
+});
+check('native gesture blocks site pointer handlers and consumes its click only once', () => {
+  const f = nativePressFixture(); f.press();
+  assert.equal(f.input('pointerdown').stopped, true); assert.equal(f.input('pointerup').stopped, true);
+  assert.equal(f.input('touchstart', {changedTouches: [{clientX: 616, clientY: 402}]}).stopped, true);
+  f.input(); assert.equal(f.input().stopped, false); assert.equal(f.initial[0].fullscreenRequests, 1);
+});
+check('foreign native press messages cannot install an input guard', () => {
+  const f = nativePressFixture(); f.press(1, {token: 'foreign'});
+  assert.equal(f.messages.some(m => m.type === 'assistantPressReady'), false);
+  assert.equal(f.input().stopped, false); assert.equal(f.initial[0].fullscreenRequests, 0);
+});
+check('stale geometry and invalid native press IDs are declined', () => {
+  const f = nativePressFixture(); f.press(1, {version: f.display().version - 1});
+  assert.equal(f.messages.at(-1).ok, false); f.press(-1); assert.equal(f.messages.at(-1).ok, false);
+  assert.equal(f.input().stopped, false);
+});
+check('cancelled native drag does not arm a later page click', () => {
+  const f = nativePressFixture(); f.press(); f.cancelPress(1);
+  assert.equal(f.input().stopped, false); assert.equal(f.initial[0].fullscreenRequests, 0);
+});
+check('an old cancellation cannot cancel a newer physical press', () => {
+  const f = nativePressFixture(); f.press(2); f.cancelPress(1); f.input();
+  assert.equal(f.initial[0].fullscreenRequests, 1);
+});
+check('native preparation never makes script-generated clicks trusted', () => {
+  const f = nativePressFixture(); f.press(); assert.equal(f.input('click', {isTrusted: false}).stopped, false);
+  assert.equal(f.initial[0].fullscreenRequests, 0); f.input(); assert.equal(f.initial[0].fullscreenRequests, 1);
+});
+check('a prepared native press expires without stealing later page clicks', () => {
+  const f = nativePressFixture(); f.press(); f.advance(1501);
+  assert.equal(f.input().stopped, false); assert.equal(f.initial[0].fullscreenRequests, 0);
+});
+check('a separate touch outside the native target is left to the page', () => {
+  const f = nativePressFixture(); f.press();
+  assert.equal(f.input('pointerdown', {clientX: 20, clientY: 20}).stopped, false);
+  assert.equal(f.input().stopped, false);
+});
+check('scroll invalidates native input preparation and stale clicks cannot launch', () => {
+  const f = nativePressFixture(); f.press(); f.window.dispatch('scroll');
+  assert.equal(f.input().stopped, false); assert.equal(f.initial[0].fullscreenRequests, 0);
+});
+check('a disappearing selected video cannot turn native input into a page link click', () => {
+  const f = nativePressFixture(); f.press(); f.initial[0].paused = true;
+  const event = f.input(); assert.equal(event.stopped, true); assert.equal(event.prevented, true);
+  assert.equal(f.initial[0].fullscreenRequests, 0);
+});
 check('display waits 200ms before showing the Samsung-style anchor', () => {
   const f = fixture(); f.bind(); f.policy(true); f.advance(199);
   assert.equal(f.button(), undefined); f.advance(1);

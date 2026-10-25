@@ -30,3 +30,9 @@ additional work to preserve single-tap input. The current prototype uses a
 decorative native face over the existing real web tap target on main-frame pages;
 embedded frames retain their working in-frame overlay. Scope and device checks
 are in [the prototype report](research/native-video-assistant-display-prototype-2026-10-25.md).
+
+The user subsequently requested emulator testing and correction of native button
+tap/scroll interception. The native layer now owns its target's gestures and
+forwards a physical tap only after the bound document prepares its input guard.
+This remains a single tap, retains the existing launch action, and prevents page
+click-through. See [the input fix](research/native-video-assistant-input-fix-2026-10-25.md).

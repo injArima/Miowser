@@ -1,5 +1,9 @@
 # Native video-assistant display prototype
 
+**Historical prototype:** the decorative touch-through design below was replaced
+after emulator feedback. See the [native input correction](native-video-assistant-input-fix-2026-10-25.md)
+for the current gesture ownership, verification and remaining playback observation.
+
 ## Scope
 
 The user selected **prototype native Android display first**, retaining uniform

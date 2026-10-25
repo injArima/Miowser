@@ -209,6 +209,11 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
                 Object.keys(data).forEach(function (key) { message[key] = data[key]; });
                 send(message);
             },
+            pressReady: function (data) {
+                if (!running || !binding) return;
+                send({type: 'assistantPressReady', documentId: documentId, navigation: binding.navigation,
+                    token: binding.token, version: data.version, request: data.request, ok: data.ok});
+            },
             entering: function () { return ++fullscreenSerial; },
             fullscreen: function (record, attempt, active) {
                 if (!active && controls) controls.release();
@@ -336,6 +341,14 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
                 if (assistant) {
                     if (message.type === 'nativeDisplayLost') assistant.nativeLost();
                     else assistant.nativeReady(message.version, message.ok);
+                }
+                return;
+            }
+            if ((message.type === 'nativePress' || message.type === 'nativePressCancel') && binding &&
+                message.documentId === documentId && message.navigation === binding.navigation && message.token === binding.token) {
+                if (assistant) {
+                    if (message.type === 'nativePress') assistant.nativePress(message.version, message.request);
+                    else assistant.nativePressCancel(message.request);
                 }
                 return;
             }

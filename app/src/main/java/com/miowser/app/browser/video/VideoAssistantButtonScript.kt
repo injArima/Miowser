@@ -11,6 +11,30 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         var autoTimer = null, fadeTimer = null, wakeTimer = null, layoutTimers = [];
         var candidate = null, candidateRevision = -1, suppressed = false, scrolling = false, readyAt = 0;
         var displayVersion = 0, displayKey = '', nativeReady = false, focused = false;
+        var pressGuard = null, pressTimer = null;
+        function cancelPress(rearm) {
+            if (pressTimer !== null) clearTimeout(pressTimer); pressTimer = null;
+            pressGuard = null;
+            if (rearm && selected && button && !button.hidden) armAuto();
+        }
+        function capturePress(event) {
+            var guard = pressGuard;
+            if (!guard || !event.isTrusted) return;
+            var point = event.changedTouches && event.changedTouches[0] || event;
+            if (!(point.clientX >= guard.left - 1 && point.clientX <= guard.right + 1 &&
+                point.clientY >= guard.top - 1 && point.clientY <= guard.bottom + 1)) {
+                cancelPress(true); return;
+            }
+            // Installed at document start, before site handlers. Only a native-owned,
+            // bound physical gesture at this target can use this short-lived guard.
+            // Block site handlers/default link navigation even if its DOM hit changed.
+            event.stopImmediatePropagation();
+            if (event.type === 'click') {
+                event.preventDefault(); cancelPress(false); click(event);
+            }
+        }
+        var guardedEvents = ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'mousedown', 'mouseup', 'click'];
+        guardedEvents.forEach(function (type) { window.addEventListener(type, capturePress, {capture: true, passive: false}); });
         function reduced() {
             return policy.reducedMotion || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
         }
@@ -86,6 +110,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             Object.keys(styles).forEach(function (key) { element.style.setProperty(key, styles[key]); });
         }
         function hide() {
+            cancelPress(false);
             selected = null;
             focused = false;
             candidate = null; candidateRevision = -1; suppressed = false;
@@ -399,9 +424,27 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 cancelFade(); button.style.setProperty('opacity', nativeReady ? '0' : '1');
             },
             nativeLost: function () {
+                cancelPress(true);
                 nativeReady = false; displayKey = '';
                 if (button && selected && !button.hidden) button.style.setProperty('opacity', '1');
                 schedule();
+            },
+            nativePress: function (version, request) {
+                var ok = version === displayVersion && Number.isSafeInteger(request) && request > 0 &&
+                    policy.nativeDisplay && nativeReady && selected && eligible(selected) &&
+                    button && !button.hidden && !button.disabled && !pending && !document.fullscreenElement;
+                cancelPress(false);
+                if (ok) {
+                    cancelAuto();
+                    pressGuard = {request: request, left: parseFloat(button.style.left), top: parseFloat(button.style.top)};
+                    pressGuard.right = pressGuard.left + parseFloat(button.style.width);
+                    pressGuard.bottom = pressGuard.top + parseFloat(button.style.height);
+                    pressTimer = setTimeout(function () { cancelPress(true); }, 1500);
+                }
+                if (api.pressReady) api.pressReady({version: version, request: request, ok: !!ok});
+            },
+            nativePressCancel: function (request) {
+                if (pressGuard && pressGuard.request === request) cancelPress(true);
             },
             policy: function (next) {
                 var enabledBefore = policy.enabled, nativeBefore = policy.nativeDisplay;
@@ -459,6 +502,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 frame = null;
                 hide(); restoreControls();
                 document.removeEventListener('fullscreenchange', fullscreenChanged);
+                guardedEvents.forEach(function (type) { window.removeEventListener(type, capturePress, true); });
                 if (host) host.remove();
                 host = button = plate = icon = insetProbe = null;
             }
