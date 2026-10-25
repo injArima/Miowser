@@ -1611,9 +1611,11 @@ fun BrowserScreen(
                             activeTab.liveWebView?.requestFocus()
                         },
                         onReload = { activeTab.reload() },
-                        onStop = { activeTab.liveWebView?.stopLoading() },
+                        onStop = {
+                            activeTab.liveWebView?.stopLoading()
+                            activeTab.isLoading = false
+                        },
                         isLoading = activeTab.isLoading,
-                        loadProgress = { activeTab.loadProgress },
                         detectedCount = activeTab.detectedMedia.count {
                             it.meetsMinimumDuration(minimumMediaLengthSeconds)
                         },

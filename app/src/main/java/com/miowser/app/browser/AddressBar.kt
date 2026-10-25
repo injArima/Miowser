@@ -4,7 +4,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -32,9 +31,9 @@ import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Badge
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -59,6 +58,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
@@ -68,9 +69,9 @@ import kotlinx.coroutines.flow.collect
 
 /**
  * The browser's address bar: a single text field doubling as URL entry and search box (see
- * [UrlOrSearchResolver] for how input is disambiguated), a reload/stop button, a slim progress
- * indicator while a page is loading, and — when the grabber has found anything on this page —
- * a badged button opening the detected-media list.
+ * [UrlOrSearchResolver] for how input is disambiguated), a reload/stop button, an in-field loading
+ * indicator, and — when the grabber has found anything on this page — a badged button opening the
+ * detected-media list.
  */
 @Composable
 fun AddressBar(
@@ -83,7 +84,6 @@ fun AddressBar(
     onReload: () -> Unit,
     onStop: () -> Unit,
     isLoading: Boolean,
-    loadProgress: () -> Float,
     detectedCount: Int,
     onOpenDetected: () -> Unit,
     isBookmarked: Boolean,
@@ -144,13 +144,12 @@ fun AddressBar(
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
     ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
                 if (isPrivate) Icon(
                     Icons.Rounded.VisibilityOff,
                     contentDescription = "Private tab",
@@ -195,23 +194,33 @@ fun AddressBar(
                                 interactionSource = fieldInteraction,
                                 leadingIcon = {
                                     IconButton(onClick = onOpenSiteInfo) {
-                                        Icon(
-                                            imageVector = when (siteSecurity) {
-                                                SiteSecurity.SECURE -> Icons.Rounded.Lock
-                                                SiteSecurity.CERTIFICATE_ERROR,
-                                                SiteSecurity.CERTIFICATE_BYPASSED -> Icons.Outlined.WarningAmber
-                                                SiteSecurity.CHECKING, SiteSecurity.INSECURE,
-                                                SiteSecurity.OTHER -> Icons.Outlined.Info
-                                            },
-                                            contentDescription = "Site information: ${siteSecurity.label}",
-                                            tint = when (siteSecurity) {
-                                                SiteSecurity.SECURE -> secureIconColor
-                                                SiteSecurity.CERTIFICATE_ERROR,
-                                                SiteSecurity.CERTIFICATE_BYPASSED -> MaterialTheme.colorScheme.error
-                                                SiteSecurity.CHECKING, SiteSecurity.INSECURE,
-                                                SiteSecurity.OTHER -> MaterialTheme.colorScheme.onSurfaceVariant
-                                            }
-                                        )
+                                        if (isLoading) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(20.dp).semantics {
+                                                    contentDescription = "Loading page"
+                                                },
+                                                color = MaterialTheme.colorScheme.primary,
+                                                strokeWidth = 2.dp
+                                            )
+                                        } else {
+                                            Icon(
+                                                imageVector = when (siteSecurity) {
+                                                    SiteSecurity.SECURE -> Icons.Rounded.Lock
+                                                    SiteSecurity.CERTIFICATE_ERROR,
+                                                    SiteSecurity.CERTIFICATE_BYPASSED -> Icons.Outlined.WarningAmber
+                                                    SiteSecurity.CHECKING, SiteSecurity.INSECURE,
+                                                    SiteSecurity.OTHER -> Icons.Outlined.Info
+                                                },
+                                                contentDescription = "Site information: ${siteSecurity.label}",
+                                                tint = when (siteSecurity) {
+                                                    SiteSecurity.SECURE -> secureIconColor
+                                                    SiteSecurity.CERTIFICATE_ERROR,
+                                                    SiteSecurity.CERTIFICATE_BYPASSED -> MaterialTheme.colorScheme.error
+                                                    SiteSecurity.CHECKING, SiteSecurity.INSECURE,
+                                                    SiteSecurity.OTHER -> MaterialTheme.colorScheme.onSurfaceVariant
+                                                }
+                                            )
+                                        }
                                     }
                                 },
                                 placeholder = { Text(if (isPrivate) "Private search or address" else "Search or enter address") },
@@ -272,14 +281,6 @@ fun AddressBar(
                         contentDescription = if (isLoading) "Stop loading" else "Reload"
                     )
                 }
-            }
-            if (isLoading) {
-                LinearProgressIndicator(
-                    progress = loadProgress,
-                    modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
         }
     }
 }

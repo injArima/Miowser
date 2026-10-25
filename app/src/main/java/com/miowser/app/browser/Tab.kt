@@ -175,7 +175,6 @@ class Tab(
     var canGoBack by mutableStateOf(false)
     var canGoForward by mutableStateOf(false)
     var isLoading by mutableStateOf(false)
-    var loadProgress by mutableFloatStateOf(0f)
     var addressBarText by mutableStateOf(
         TextFieldValue(if (isBrowserHomeUrl(initialUrl)) "" else initialUrl)
     )
@@ -554,7 +553,6 @@ class Tab(
         // well so their timeout/navigation cannot fire after the owning page has failed.
         popupProxies.values.toList().forEach { it() }
         isLoading = false
-        loadProgress = 0f
         canGoBack = false
         canGoForward = false
         showJumpToTop = false
@@ -904,6 +902,7 @@ class Tab(
             val client = MiowserWebViewClient(
                 isPrivate = isPrivate,
                 onCertificateError = { target, handler, error ->
+                    isLoading = false
                     blockedPageInfo = null
                     certificateErrorUrl = target
                     certificateBypassed = false
@@ -946,6 +945,7 @@ class Tab(
                 onNewPageStarted = { clearDetections() },
                 onPageCommitted = { liveVideoTracker?.onPageCommitted() },
                 onPageStarted = {
+                    isLoading = true
                     pageError = null
                     blockedPageInfo = null
                     if (certificateErrorUrl?.let(com.miowser.app.adblock.SiteProtection::host) !=
@@ -956,8 +956,15 @@ class Tab(
                     lastFinishedUrl = null
                     if (routedPopupTarget == this@Tab.url) interceptingPopupUntil = 0L
                 },
-                onPageError = { message -> pageError = message; blockedPageInfo = null },
-                onMainFrameBlocked = { info -> blockedPageInfo = info },
+                onPageError = { message ->
+                    isLoading = false
+                    pageError = message
+                    blockedPageInfo = null
+                },
+                onMainFrameBlocked = { info ->
+                    isLoading = false
+                    blockedPageInfo = info
+                },
                 onRendererGone = ::handleRendererGone,
                 onExternalNavigation = onExternalNavigation,
                 onCandidateMediaUrl = { candidateUrl, guessedType, referer, origin ->
@@ -1003,6 +1010,7 @@ class Tab(
                     )
                 },
                 onPageLoadFinished = { loadedUrl, loadedTitle ->
+                    isLoading = false
                     liveVideoTracker?.onPageCommitted()
                     if (isDesktopMode && desktopViewportScript == null) {
                         view.applyDesktopViewportNow()
@@ -1096,12 +1104,6 @@ class Tab(
                     com.miowser.app.diagnostics.SafeLog.debug(CONSOLE_TAG,
                         "Page console ${consoleMessage.messageLevel()} at ${com.miowser.app.diagnostics.safeDiagnosticUrl(consoleMessage.sourceId())}:${consoleMessage.lineNumber()}")
                     return true
-                }
-
-                override fun onProgressChanged(view: WebView, newProgress: Int) {
-                    if (!alive.get()) return
-                    loadProgress = newProgress / 100f
-                    isLoading = newProgress < 100
                 }
 
                 override fun onReceivedTitle(view: WebView, title: String?) {
