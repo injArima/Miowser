@@ -152,22 +152,6 @@ fun AddressBar(
                     tint = MaterialTheme.colorScheme.onSecondaryContainer,
                     modifier = Modifier.padding(horizontal = 4.dp)
                 )
-                // Leftmost, ahead of the URL field itself — the detected-media badge stays
-                // clustered with reload/stop on the right instead.
-                IconButton(onClick = onToggleBookmark) {
-                    // Icons.Outlined.Star is NOT a hollow star — in this icon set "outlined" is
-                    // just a corner-rounding style, and the star glyph is solid-filled in every
-                    // one of Filled/Outlined/Rounded/Sharp/TwoTone (confirmed on-device: it
-                    // rendered as a fully solid star even when unbookmarked). The genuinely
-                    // hollow line-star is a separate glyph, StarBorder. Pairing that real shape
-                    // change with a color shift (the trick every favorite/save toggle uses, e.g.
-                    // a heart or star turning red/gold) makes "did that register?" obvious.
-                    Icon(
-                        imageVector = if (isBookmarked) Icons.Rounded.Star else Icons.Rounded.StarBorder,
-                        contentDescription = if (isBookmarked) "Remove bookmark" else "Add bookmark",
-                        tint = if (isBookmarked) MaterialTheme.colorScheme.primary else LocalContentColor.current
-                    )
-                }
                 Box(modifier = Modifier.weight(1f)) {
                     BasicTextField(
                         state = textState,
@@ -227,7 +211,18 @@ fun AddressBar(
                                         onSubmit = onSubmit,
                                         submitEnabled = textState.text.isNotBlank(),
                                         submitDescription = "Go to address or search"
-                                    )
+                                    ) else IconButton(onClick = onToggleBookmark) {
+                                        // StarBorder is the actual hollow bookmark state; the
+                                        // ordinary Star glyph is filled in every icon style.
+                                        Icon(
+                                            imageVector = if (isBookmarked) Icons.Rounded.Star
+                                                else Icons.Rounded.StarBorder,
+                                            contentDescription = if (isBookmarked) "Remove bookmark"
+                                                else "Add bookmark",
+                                            tint = if (isBookmarked) MaterialTheme.colorScheme.primary
+                                                else LocalContentColor.current
+                                        )
+                                    }
                                 },
                                 container = {
                                     OutlinedTextFieldDefaults.Container(
