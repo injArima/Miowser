@@ -27,7 +27,9 @@ data class DetectedMedia(
     val finalUrl: String? = null,
     val requestReferer: String? = null,
     val requestOrigin: String? = null,
-    val detectedAt: Long = System.currentTimeMillis()
+    val detectedAt: Long = System.currentTimeMillis(),
+    /** Absolute poster URL reported by the page's media element, when one exists. */
+    val posterUrl: String? = null
 ) {
     val sizeKind: MediaSizeKind
         get() = when {
@@ -74,7 +76,8 @@ internal fun mergeDetectedMedia(current: DetectedMedia, update: DetectedMedia): 
         finalUrl = usefulText(update.finalUrl) ?: usefulText(current.finalUrl),
         requestReferer = usefulText(update.requestReferer) ?: usefulText(current.requestReferer),
         requestOrigin = usefulText(update.requestOrigin) ?: usefulText(current.requestOrigin),
-        detectedAt = minOf(current.detectedAt, update.detectedAt)
+        detectedAt = minOf(current.detectedAt, update.detectedAt),
+        posterUrl = usefulText(update.posterUrl) ?: usefulText(current.posterUrl)
     )
 }
 

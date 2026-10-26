@@ -1354,7 +1354,9 @@ fun BrowserScreen(
             pageTitle = item.pageTitle?.takeIf { it.isNotBlank() && it != "New Tab" } ?: tab.title,
             videoName = item.responseFileName?.takeIf(String::isNotBlank)
                 ?: item.url.substringBefore('?').substringBefore('#').substringAfterLast('/')
-                    .takeIf(String::isNotBlank) ?: title
+                    .takeIf(String::isNotBlank) ?: title,
+            posterUrl = item.posterUrl,
+            posterCookies = item.posterUrl?.let { CookieManager.getInstance().getCookie(it) }
         )
     }
 

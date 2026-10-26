@@ -27,13 +27,14 @@ private const val VIDEO_SNIFFER_SCRIPT = """
             function report(el) {
                 var src = el.currentSrc || el.src;
                 if (!src || src.length > 8192 || location.href.length > 8192) return;
-                var key = src + '|' + el.duration;
+                var poster = el.tagName.toLowerCase() === 'video' ? (el.poster || '') : '';
+                var key = src + '|' + el.duration + '|' + poster;
                 if (reported.has(key)) return;
                 if (reported.size >= 256) reported.clear();
                 reported.add(key);
                 var duration = isFinite(el.duration) ? el.duration : -1;
                 bridge.reportVideoElementForDocument(token, src, duration, el.videoWidth || 0, el.videoHeight || 0,
-                    location.href, el.tagName.toLowerCase() === 'audio');
+                    location.href, poster, el.tagName.toLowerCase() === 'audio');
             }
 
             function watch(el) {
@@ -42,6 +43,7 @@ private const val VIDEO_SNIFFER_SCRIPT = """
                 watched.add(el);
                 el.addEventListener('loadedmetadata', function() { report(el); });
                 el.addEventListener('durationchange', function() { report(el); });
+                el.addEventListener('loadeddata', function() { report(el); });
                 function activity() {
                     if (!el.paused && !el.ended && (playing.has(el) || playing.size < 32)) playing.add(el);
                     else playing.delete(el);

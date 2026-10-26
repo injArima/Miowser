@@ -168,6 +168,7 @@ object MediaLibrary {
         if (index < 0) return
         val current = mutableRecords[index]
         if (current.thumbnailUrl == thumbnailUri) return
+        if (!LibraryThumbnailStore.shouldReplace(current.thumbnailUrl, thumbnailUri)) return
         mutableRecords[index] = current.copy(thumbnailUrl = thumbnailUri)
         persist(context, ProjectionChange.DETAIL)
     }

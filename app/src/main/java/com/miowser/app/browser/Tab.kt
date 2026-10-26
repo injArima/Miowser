@@ -755,7 +755,7 @@ class Tab(
             installRendererBlobFrameScript()
 
             addJavascriptInterface(
-                GrabberBridge(onActivity = { playing -> if (alive.get()) hasPlayingMedia = playing }) { src, duration, width, height, frameUrl, isAudio ->
+                GrabberBridge(onActivity = { playing -> if (alive.get()) hasPlayingMedia = playing }) { src, duration, width, height, frameUrl, posterUrl, isAudio ->
                     if (!alive.get()) return@GrabberBridge
                     val generation = detectionGeneration.get()
                     mainHandler.post {
@@ -795,7 +795,11 @@ class Tab(
                                 resolution = if (width > 0 && height > 0) "${width}x${height}" else null,
                                 isEncrypted = false,
                                 pageTitle = this@Tab.title,
-                                requestReferer = frameReferer.takeIf { rendererKind != null }
+                                requestReferer = frameReferer.takeIf { rendererKind != null },
+                                posterUrl = posterUrl.takeIf {
+                                    it.startsWith("https://", ignoreCase = true) ||
+                                        it.startsWith("http://", ignoreCase = true)
+                                }
                             )
                         )
                         if (firstSeen && rendererKind == null) {

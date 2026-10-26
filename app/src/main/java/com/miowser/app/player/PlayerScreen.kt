@@ -179,6 +179,8 @@ sealed class PlaybackRequest {
         val videoName: String? = null,
         val requestReferer: String? = null,
         val requestOrigin: String? = null,
+        val posterUrl: String? = null,
+        val posterCookies: String? = null,
         override val startPositionMs: Long = 0L
     ) : PlaybackRequest()
 
@@ -427,6 +429,7 @@ private fun PlayerContent(
     var playerView by remember(request) { mutableStateOf<PlayerView?>(null) }
     var pageSubtitleView by remember(request) { mutableStateOf<SubtitleView?>(null) }
     var midpointCaptureRequested by remember(request) { mutableStateOf(false) }
+    var localMidpointExtractionAttempted by remember(request) { mutableStateOf(false) }
     var fallbackCaptureRequested by remember(request) { mutableStateOf(false) }
     var leavingForSourcePage by remember(request) { mutableStateOf(false) }
     val libraryIdentityKey = remember(request) { request.toLibraryEntry().identityKey }
@@ -572,25 +575,33 @@ private fun PlayerContent(
         }
     }
 
-    DisposableEffect(exoPlayer, request) {
-        fun captureFallbackFrame() {
-            if (!recordInLibrary || fallbackCaptureRequested) return
-            val existing = MediaLibrary.entries.firstOrNull { it.identityKey == libraryIdentityKey }?.thumbnailUrl
-            if (LibraryThumbnailStore.isAvailable(existing)) return
-            val view = playerView ?: return
-            fallbackCaptureRequested = true
-            LibraryThumbnailStore.captureFirstFrame(context, view, libraryIdentityKey) { uri ->
-                if (uri != null) {
-                    val current = MediaLibrary.entries.firstOrNull { it.identityKey == libraryIdentityKey }?.thumbnailUrl
-                    if (!LibraryThumbnailStore.isMiddleFrame(current)) {
-                        MediaLibrary.updateThumbnail(context, libraryIdentityKey, uri)
-                    }
-                } else {
-                    fallbackCaptureRequested = false
+    fun captureFallbackFrame() {
+        if (!recordInLibrary || fallbackCaptureRequested) return
+        val existing = MediaLibrary.entries.firstOrNull { it.identityKey == libraryIdentityKey }?.thumbnailUrl
+        if (LibraryThumbnailStore.isAvailable(existing)) return
+        val view = playerView ?: return
+        fallbackCaptureRequested = true
+        LibraryThumbnailStore.captureFirstFrame(context, view, libraryIdentityKey) { uri ->
+            if (uri != null) {
+                val current = MediaLibrary.entries.firstOrNull { it.identityKey == libraryIdentityKey }?.thumbnailUrl
+                if (!LibraryThumbnailStore.isMiddleFrame(current)) {
+                    MediaLibrary.updateThumbnail(context, libraryIdentityKey, uri)
                 }
+            } else {
+                fallbackCaptureRequested = false
             }
         }
+    }
 
+    LaunchedEffect(request, hasRenderedFirstFrame, playerView) {
+        if (!hasRenderedFirstFrame || playerView == null) return@LaunchedEffect
+        // Avoid the decoder's first transitional/black frame. This uses the existing surface and
+        // is cancelled automatically when the playlist item changes.
+        delay(750)
+        captureFallbackFrame()
+    }
+
+    DisposableEffect(exoPlayer, request) {
         fun recordReadyMedia() {
             if (!recordInLibrary || leavingForSourcePage) return
             val readyDuration = exoPlayer.duration.takeIf { it != C.TIME_UNSET && it > 0L } ?: 0L
@@ -649,9 +660,6 @@ private fun PlayerContent(
             override fun onRenderedFirstFrame() {
                 hasRenderedFirstFrame = true
                 recordReadyMedia()
-                // Keep artwork available immediately. Midpoint extraction replaces this image
-                // when ready; an older valid thumbnail is left in place meanwhile.
-                captureFallbackFrame()
             }
 
             override fun onPlayerError(error: PlaybackException) {
@@ -672,6 +680,62 @@ private fun PlayerContent(
             exoPlayer.removeListener(listener)
             com.miowser.app.diagnostics.DevResourceDiagnostics.listenerRemoved()
             if (retainedSession == null) session.close()
+        }
+    }
+
+    // Prefer a lightweight page poster over an early playback frame. The poster is copied into
+    // Miowser's bounded cache; an eventual midpoint frame has higher replacement priority.
+    LaunchedEffect(request, libraryRecorded, recordInLibrary) {
+        val remote = request as? PlaybackRequest.Remote ?: return@LaunchedEffect
+        val poster = remote.posterUrl?.takeIf { it.startsWith("https://", true) || it.startsWith("http://", true) }
+            ?: return@LaunchedEffect
+        if (!recordInLibrary || !libraryRecorded) return@LaunchedEffect
+        val existing = MediaLibrary.entries.firstOrNull { it.identityKey == libraryIdentityKey }?.thumbnailUrl
+        if (LibraryThumbnailStore.isMiddleFrame(existing)) return@LaunchedEffect
+        val headers = buildMap {
+            put("User-Agent", remote.userAgent)
+            put("Referer", remote.requestReferer ?: remote.pageUrl)
+            remote.posterCookies?.takeIf(String::isNotBlank)?.let { put("Cookie", it) }
+        }
+        kotlinx.coroutines.suspendCancellableCoroutine<Unit> { continuation ->
+            val cancel = LibraryThumbnailStore.cachePoster(
+                context.applicationContext, poster, headers, libraryIdentityKey
+            ) { uri ->
+                if (continuation.isActive) {
+                    if (uri != null) MediaLibrary.updateThumbnail(context.applicationContext, libraryIdentityKey, uri)
+                    continuation.resumeWith(Result.success(Unit))
+                }
+            }
+            continuation.invokeOnCancellation { cancel() }
+        }
+    }
+
+    // Local files can be randomly accessed cheaply and reliably. Extract their exact midpoint on
+    // the artwork worker; if the platform extractor refuses the file, active-decoder capture below
+    // remains the fallback when playback reaches the middle.
+    LaunchedEffect(request, libraryRecorded, hasRenderedFirstFrame, recordInLibrary) {
+        val local = request as? PlaybackRequest.Local ?: return@LaunchedEffect
+        if (!recordInLibrary || !libraryRecorded || !hasRenderedFirstFrame || localMidpointExtractionAttempted)
+            return@LaunchedEffect
+        val existing = MediaLibrary.entries.firstOrNull { it.identityKey == libraryIdentityKey }?.thumbnailUrl
+        if (LibraryThumbnailStore.isMiddleFrame(existing)) return@LaunchedEffect
+        localMidpointExtractionAttempted = true
+        midpointCaptureRequested = true
+        delay(1_000)
+        kotlinx.coroutines.suspendCancellableCoroutine<Unit> { continuation ->
+            val cancel = LibraryThumbnailStore.captureLocalMiddleFrame(
+                context.applicationContext,
+                local.uri,
+                durationMs = exoPlayer.knownDurationMs(),
+                identityKey = libraryIdentityKey
+            ) { uri ->
+                if (continuation.isActive) {
+                    if (uri != null) MediaLibrary.updateThumbnail(context.applicationContext, libraryIdentityKey, uri)
+                    else midpointCaptureRequested = false
+                    continuation.resumeWith(Result.success(Unit))
+                }
+            }
+            continuation.invokeOnCancellation { cancel() }
         }
     }
 
@@ -774,8 +838,8 @@ private fun PlayerContent(
         }
     }
 
-    // Reuse the active decoder for every source, including local files and direct streams.
-    // Starting a second decoder for artwork competes for codecs, bandwidth and memory.
+    // Remote streams reuse the active decoder so artwork never starts another network stream or
+    // codec. Local files reach this only if their cheap exact-midpoint extractor failed.
     LaunchedEffect(exoPlayer, hasRenderedFirstFrame, playerView, midpointCaptureRequested, lifecycleOwner) {
         if (!recordInLibrary || !hasRenderedFirstFrame || midpointCaptureRequested)
             return@LaunchedEffect
@@ -787,14 +851,12 @@ private fun PlayerContent(
             observePlayerClock(exoPlayer, intervalMs = 500L) {
                 val duration = exoPlayer.knownDurationMs()
                 val midpoint = duration / 2L
-                if (!midpointCaptureRequested && duration > 0L &&
-                    exoPlayer.currentPosition in midpoint..(midpoint + 2_000L)) {
+                if (!midpointCaptureRequested && duration > 0L && exoPlayer.currentPosition >= midpoint) {
                     midpointCaptureRequested = true
                     LibraryThumbnailStore.captureFirstFrame(
                         context = context, playerView = view, identityKey = libraryIdentityKey, middle = true
                     ) { uri ->
                         if (uri != null) MediaLibrary.updateThumbnail(context, libraryIdentityKey, uri)
-                        else midpointCaptureRequested = false
                     }
                 }
             }

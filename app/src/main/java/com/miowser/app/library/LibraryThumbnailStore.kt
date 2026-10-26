@@ -19,6 +19,8 @@ import android.view.TextureView
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.AspectRatioFrameLayout
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import java.security.MessageDigest
 import java.util.Collections
 import java.util.concurrent.Executors
@@ -34,6 +36,13 @@ private const val THUMBNAIL_DIRECTORY = "library_thumbnails"
 private const val DOWNLOAD_THUMBNAIL_DIRECTORY = "download_thumbnails"
 private const val THUMBNAIL_CACHE_VERSION = "v3"
 private const val MEMORY_CACHE_KIB = 24 * 1024
+private const val MAX_POSTER_BYTES = 4L * 1024 * 1024
+
+internal enum class LibraryThumbnailKind(val fileLabel: String, val priority: Int) {
+    FALLBACK("fallback", 1),
+    POSTER("poster", 2),
+    MIDDLE("middle", 3)
+}
 
 /** Captures and owns persistent artwork generated from Media3's already-decoded video frame. */
 object LibraryThumbnailStore {
@@ -65,8 +74,14 @@ object LibraryThumbnailStore {
     fun peek(thumbnailUri: String?): Bitmap? = thumbnailUri?.let(memoryCache::get)
 
     fun isMiddleFrame(thumbnailUri: String?): Boolean =
-        isAvailable(thumbnailUri) && thumbnailUri
-            ?.substringAfterLast('/')?.startsWith("${THUMBNAIL_CACHE_VERSION}_middle_") == true
+        thumbnailKind(thumbnailUri) == LibraryThumbnailKind.MIDDLE
+
+    /** Prevents asynchronous fallback/poster jobs from replacing a better frame that won a race. */
+    fun shouldReplace(currentUri: String?, candidateUri: String): Boolean {
+        val candidate = thumbnailKind(candidateUri) ?: return false
+        val current = thumbnailKind(currentUri) ?: return true
+        return candidate.priority > current.priority
+    }
 
     /**
      * Fallback for streams that cannot be independently sought by the platform extractor.
@@ -116,7 +131,9 @@ object LibraryThumbnailStore {
                     capturesInFlight.remove(captureKey)
                     onComplete(null)
                 } else {
-                    storeAsync(context.applicationContext, identityKey, captureKey, bitmap, middle, sourceAspect, onComplete)
+                    storeAsync(context.applicationContext, identityKey, captureKey, bitmap,
+                        if (middle) LibraryThumbnailKind.MIDDLE else LibraryThumbnailKind.FALLBACK,
+                        sourceAspect, onComplete)
                 }
             }
 
@@ -124,7 +141,9 @@ object LibraryThumbnailStore {
                 val bitmap = Bitmap.createBitmap(captureWidth, captureHeight, Bitmap.Config.ARGB_8888)
                 PixelCopy.request(surface, bitmap, { result ->
                     if (result == PixelCopy.SUCCESS) {
-                        storeAsync(context.applicationContext, identityKey, captureKey, bitmap, middle, sourceAspect, onComplete)
+                        storeAsync(context.applicationContext, identityKey, captureKey, bitmap,
+                            if (middle) LibraryThumbnailKind.MIDDLE else LibraryThumbnailKind.FALLBACK,
+                            sourceAspect, onComplete)
                     } else {
                         bitmap.recycle()
                         capturesInFlight.remove(captureKey)
@@ -140,15 +159,18 @@ object LibraryThumbnailStore {
         }
     }
 
-    /** Fetches the frame nearest the exact midpoint without moving the visible player's playhead. */
-    fun captureMiddleFrame(
+    /** Extracts a local file's exact midpoint without moving the visible player's playhead. */
+    fun captureLocalMiddleFrame(
         context: Context,
         mediaUri: Uri,
-        headers: Map<String, String>?,
         durationMs: Long,
         identityKey: String,
         onComplete: (String?) -> Unit
     ): () -> Unit {
+        if (mediaUri.scheme?.lowercase() in setOf("http", "https")) {
+            onComplete(null)
+            return {}
+        }
         val captureKey = "$identityKey:middle"
         if (!capturesInFlight.add(captureKey)) {
             onComplete(null)
@@ -158,13 +180,14 @@ object LibraryThumbnailStore {
         val phase = java.util.concurrent.atomic.AtomicInteger(0) // queued/running/cancelled
         val task = java.util.concurrent.FutureTask<Unit> {
             if (phase.compareAndSet(0, 1)) {
-                val frame = extractFrame(context.applicationContext, mediaUri, headers, durationMs.takeIf { it > 0L })
+                val frame = extractFrame(context.applicationContext, mediaUri, null, durationMs.takeIf { it > 0L })
                 if (cancelled.get() || frame == null) {
                     frame?.recycle()
                     capturesInFlight.remove(captureKey)
                     if (!cancelled.get()) mainHandler.post { if (!cancelled.get()) onComplete(null) }
                 } else {
-                    storeAsync(context.applicationContext, identityKey, captureKey, frame, true, null) {
+                    storeAsync(context.applicationContext, identityKey, captureKey, frame,
+                        LibraryThumbnailKind.MIDDLE, null) {
                         if (!cancelled.get()) onComplete(it)
                     }
                 }
@@ -175,6 +198,52 @@ object LibraryThumbnailStore {
             cancelled.set(true)
             if (phase.compareAndSet(0, 2)) {
                 task.cancel(false)
+                executor.remove(task)
+                capturesInFlight.remove(captureKey)
+            }
+        }
+    }
+
+    /**
+     * Copies a page-provided poster into Miowser's bounded persistent artwork cache. The response
+     * is streamed to a temporary file so a large or dishonest image cannot occupy the app heap.
+     */
+    fun cachePoster(
+        context: Context,
+        posterUrl: String,
+        headers: Map<String, String>,
+        identityKey: String,
+        onComplete: (String?) -> Unit
+    ): () -> Unit {
+        val directory = File(context.filesDir, THUMBNAIL_DIRECTORY)
+        val target = File(directory, thumbnailCacheFileName(identityKey, LibraryThumbnailKind.POSTER))
+        target.takeIf { it.isFile && it.length() > 0L }?.let {
+            onComplete(Uri.fromFile(it).toString())
+            return {}
+        }
+        val captureKey = "$identityKey:poster"
+        if (!capturesInFlight.add(captureKey)) {
+            onComplete(null)
+            return {}
+        }
+        val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
+        val task = java.util.concurrent.FutureTask<Unit> {
+            val bitmap = downloadPoster(context.applicationContext, posterUrl, headers, cancelled)
+            if (bitmap == null || cancelled.get()) {
+                bitmap?.recycle()
+                capturesInFlight.remove(captureKey)
+                if (!cancelled.get()) mainHandler.post { onComplete(null) }
+            } else {
+                storeAsync(context.applicationContext, identityKey, captureKey, bitmap,
+                    LibraryThumbnailKind.POSTER, null) { uri ->
+                    if (!cancelled.get()) onComplete(uri)
+                }
+            }
+        }
+        executor.execute(task)
+        return {
+            cancelled.set(true)
+            if (task.cancel(false)) {
                 executor.remove(task)
                 capturesInFlight.remove(captureKey)
             }
@@ -331,6 +400,61 @@ object LibraryThumbnailStore {
         }
     }
 
+    private fun downloadPoster(
+        context: Context,
+        posterUrl: String,
+        headers: Map<String, String>,
+        cancelled: java.util.concurrent.atomic.AtomicBoolean
+    ): Bitmap? {
+        val uri = runCatching { Uri.parse(posterUrl) }.getOrNull() ?: return null
+        if (uri.scheme?.lowercase() !in setOf("http", "https")) return null
+        val temporary = runCatching { File.createTempFile("library-poster-", ".part", context.cacheDir) }
+            .getOrNull() ?: return null
+        var connection: HttpURLConnection? = null
+        return try {
+            connection = (URL(posterUrl).openConnection() as? HttpURLConnection)?.apply {
+                connectTimeout = 6_000
+                readTimeout = 8_000
+                instanceFollowRedirects = true
+                setRequestProperty("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
+                headers.forEach { (name, value) ->
+                    if (name.isNotBlank() && value.isNotBlank()) setRequestProperty(name, value)
+                }
+            } ?: return null
+            val response = connection.responseCode
+            if (response !in 200..299 || connection.contentLengthLong > MAX_POSTER_BYTES) return null
+            connection.inputStream.buffered().use { input ->
+                temporary.outputStream().buffered().use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    var total = 0L
+                    while (!cancelled.get()) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        total += read
+                        if (total > MAX_POSTER_BYTES) return null
+                        output.write(buffer, 0, read)
+                    }
+                    if (cancelled.get() || total == 0L) return null
+                }
+            }
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(temporary.absolutePath, bounds)
+            val width = bounds.outWidth
+            val height = bounds.outHeight
+            if (width <= 0 || height <= 0 || width > 32_768 || height > 32_768 ||
+                width.toLong() * height > 128L * 1024 * 1024) return null
+            var sample = 1
+            while (width / sample > MAX_CAPTURE_EDGE || height / sample > MAX_CAPTURE_EDGE) sample *= 2
+            BitmapFactory.decodeFile(temporary.absolutePath,
+                BitmapFactory.Options().apply { inSampleSize = sample })
+        } catch (_: Exception) {
+            null
+        } finally {
+            connection?.disconnect()
+            temporary.delete()
+        }
+    }
+
     fun isAvailable(thumbnailUri: String?): Boolean {
         if (thumbnailUri.isNullOrBlank()) return false
         val uri = runCatching { Uri.parse(thumbnailUri) }.getOrNull() ?: return false
@@ -387,16 +511,17 @@ object LibraryThumbnailStore {
         identityKey: String,
         captureKey: String,
         captured: Bitmap,
-        middle: Boolean,
+        kind: LibraryThumbnailKind,
         sourceAspectRatio: Float?,
         onComplete: (String?) -> Unit
     ) {
         executor.execute {
             val result = com.miowser.app.persistence.RestoreWriteFence.write { runCatching {
+                check(bitmapLooksUsable(captured)) { "Captured frame is blank" }
                 val thumbnail = fitInside16By9(captured, sourceAspectRatio)
                 val directory = File(context.filesDir, THUMBNAIL_DIRECTORY).apply { mkdirs() }
                 check(directory.isDirectory) { "Could not create thumbnail directory" }
-                val target = File(directory, thumbnailCacheFileName(identityKey, middle))
+                val target = File(directory, thumbnailCacheFileName(identityKey, kind))
                 val temporary = File(directory, "${target.name}.tmp")
                 val compressed = temporary.outputStream().buffered().use { output ->
                     thumbnail.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output)
@@ -442,10 +567,60 @@ internal fun thumbnailCaptureHasHeadroom(width: Int, height: Int, availableBytes
         availableBytes >= width.toLong() * height * 8 + 8L * 1024 * 1024
 
 internal fun thumbnailCacheFileName(identityKey: String, middle: Boolean = true): String {
+    return thumbnailCacheFileName(identityKey,
+        if (middle) LibraryThumbnailKind.MIDDLE else LibraryThumbnailKind.FALLBACK)
+}
+
+internal fun thumbnailCacheFileName(identityKey: String, kind: LibraryThumbnailKind): String {
     val digest = MessageDigest.getInstance("SHA-256")
         .digest(identityKey.toByteArray(Charsets.UTF_8))
         .joinToString("") { byte -> "%02x".format(byte) }
-    return "${THUMBNAIL_CACHE_VERSION}_${if (middle) "middle" else "fallback"}_$digest.jpg"
+    return "${THUMBNAIL_CACHE_VERSION}_${kind.fileLabel}_$digest.jpg"
+}
+
+private fun thumbnailKind(thumbnailUri: String?): LibraryThumbnailKind? {
+    if (!LibraryThumbnailStore.isAvailable(thumbnailUri)) return null
+    val name = thumbnailUri?.substringAfterLast('/') ?: return null
+    return thumbnailKindFromFileName(name)
+}
+
+internal fun thumbnailKindFromFileName(name: String): LibraryThumbnailKind? =
+    LibraryThumbnailKind.entries.firstOrNull {
+        name.startsWith("${THUMBNAIL_CACHE_VERSION}_${it.fileLabel}_")
+    }
+
+private fun bitmapLooksUsable(bitmap: Bitmap): Boolean {
+    if (bitmap.isRecycled || bitmap.width <= 0 || bitmap.height <= 0) return false
+    val columns = 12
+    val rows = 8
+    val samples = IntArray(columns * rows)
+    var index = 0
+    repeat(rows) { row ->
+        val y = ((row + 0.5f) * bitmap.height / rows).toInt().coerceIn(0, bitmap.height - 1)
+        repeat(columns) { column ->
+            val x = ((column + 0.5f) * bitmap.width / columns).toInt().coerceIn(0, bitmap.width - 1)
+            samples[index++] = bitmap.getPixel(x, y)
+        }
+    }
+    return thumbnailSamplesLookUsable(samples)
+}
+
+/** Rejects secure-surface/transition captures that are effectively transparent or solid black. */
+internal fun thumbnailSamplesLookUsable(samples: IntArray): Boolean {
+    if (samples.isEmpty()) return false
+    var visible = 0
+    var nonBlack = 0
+    samples.forEach { color ->
+        val alpha = color ushr 24 and 0xFF
+        if (alpha >= 32) {
+            visible++
+            val red = color ushr 16 and 0xFF
+            val green = color ushr 8 and 0xFF
+            val blue = color and 0xFF
+            if (maxOf(red, green, blue) >= 18) nonBlack++
+        }
+    }
+    return visible >= samples.size * 3 / 4 && nonBlack >= maxOf(4, samples.size / 12)
 }
 
 /** Bound the API-26 full-frame fallback to at most 4 MP (about 16 MiB in ARGB_8888). */

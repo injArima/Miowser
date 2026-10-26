@@ -50,4 +50,28 @@ class LibraryThumbnailStoreTest {
             thumbnailCacheFileName("LOCAL_FILE:content://downloads/two.mp4")
         )
     }
+
+    @Test fun generatedArtworkKindsHaveDeterministicPriority() {
+        val key = "REMOTE_STREAM:https://example.com/video.m3u8"
+        assertEquals(LibraryThumbnailKind.FALLBACK,
+            thumbnailKindFromFileName(thumbnailCacheFileName(key, LibraryThumbnailKind.FALLBACK)))
+        assertEquals(LibraryThumbnailKind.POSTER,
+            thumbnailKindFromFileName(thumbnailCacheFileName(key, LibraryThumbnailKind.POSTER)))
+        assertEquals(LibraryThumbnailKind.MIDDLE,
+            thumbnailKindFromFileName(thumbnailCacheFileName(key, LibraryThumbnailKind.MIDDLE)))
+        assertTrue(LibraryThumbnailKind.MIDDLE.priority > LibraryThumbnailKind.POSTER.priority)
+        assertTrue(LibraryThumbnailKind.POSTER.priority > LibraryThumbnailKind.FALLBACK.priority)
+    }
+
+    @Test fun blankAndTransparentCapturesAreRejected() {
+        assertFalse(thumbnailSamplesLookUsable(IntArray(96) { 0xFF000000.toInt() }))
+        assertFalse(thumbnailSamplesLookUsable(IntArray(96) { 0x00000000 }))
+    }
+
+    @Test fun aRealFrameWithDarkBordersIsAccepted() {
+        val samples = IntArray(96) { index ->
+            if (index % 5 == 0) 0xFF805020.toInt() else 0xFF050505.toInt()
+        }
+        assertTrue(thumbnailSamplesLookUsable(samples))
+    }
 }

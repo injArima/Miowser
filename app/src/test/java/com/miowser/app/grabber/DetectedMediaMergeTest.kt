@@ -20,7 +20,8 @@ class DetectedMediaMergeTest {
             isConfirmed = false,
             sizeBytes = null,
             durationSeconds = 123.5,
-            resolution = "1920x1080"
+            resolution = "1920x1080",
+            posterUrl = "https://example.com/poster.webp"
         )
 
         val merged = mergeDetectedMedia(network, element)
@@ -32,6 +33,7 @@ class DetectedMediaMergeTest {
         assertEquals("1920x1080", merged.resolution)
         assertEquals("movie.mp4", merged.responseFileName)
         assertEquals("video/mp4", merged.mimeType)
+        assertEquals("https://example.com/poster.webp", merged.posterUrl)
     }
 
     @Test
@@ -53,7 +55,8 @@ class DetectedMediaMergeTest {
         durationSeconds: Double? = null,
         resolution: String? = null,
         responseFileName: String? = null,
-        mimeType: String? = null
+        mimeType: String? = null,
+        posterUrl: String? = null
     ) = DetectedMedia(
         url = "https://example.com/movie.mp4",
         pageUrl = "https://example.com/watch",
@@ -67,6 +70,7 @@ class DetectedMediaMergeTest {
         isEncrypted = false,
         pageTitle = "Movie",
         responseFileName = responseFileName,
-        mimeType = mimeType
+        mimeType = mimeType,
+        posterUrl = posterUrl
     )
 }

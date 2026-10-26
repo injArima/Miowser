@@ -66,6 +66,8 @@ internal fun LibraryEntry.toPlaybackRequest(
         sourceLabel = sourceLabel,
         pageTitle = pageTitle,
         videoName = videoName,
+        posterUrl = null,
+        posterCookies = null,
         startPositionMs = libraryResumePosition(positionMs, durationMs),
         externalSubtitles = selectedSubtitle?.let { listOf(it.toDetectedMedia(pageTitle)) }.orEmpty(),
         preferredSubtitleUrl = selectedSubtitle?.url

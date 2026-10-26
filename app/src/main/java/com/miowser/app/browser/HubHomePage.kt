@@ -1661,9 +1661,9 @@ private fun ManagedLibraryCard(
             return@LaunchedEffect
         }
         kotlinx.coroutines.suspendCancellableCoroutine<Unit> { continuation ->
-            val cancel = LibraryThumbnailStore.captureMiddleFrame(
+            val cancel = LibraryThumbnailStore.captureLocalMiddleFrame(
                 context = context.applicationContext,
-                mediaUri = Uri.parse(entry.mediaUri), headers = null,
+                mediaUri = Uri.parse(entry.mediaUri),
                 durationMs = entry.durationMs, identityKey = entry.identityKey
             ) { uri ->
                 if (continuation.isActive) {
