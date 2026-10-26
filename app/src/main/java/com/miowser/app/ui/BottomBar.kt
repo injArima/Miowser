@@ -24,7 +24,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
-import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -51,6 +50,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import com.miowser.app.R
 import com.miowser.app.ui.icons.HotelClassRoundedOutline
+import com.miowser.app.ui.icons.HomeRoundedOutline
 import com.miowser.app.ui.theme.ExpressiveTokens
 
 /**
@@ -138,7 +138,7 @@ fun BottomBar(
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Rounded.Home, contentDescription = stringResource(R.string.nav_home))
+                Icon(HomeRoundedOutline, contentDescription = stringResource(R.string.nav_home))
             }
             Box(
                 modifier = Modifier
