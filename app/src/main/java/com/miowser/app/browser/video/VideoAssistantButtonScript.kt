@@ -1,6 +1,6 @@
 package com.miowser.app.browser.video
 
-/** Frame-local UI: a trusted DOM click can enter fullscreen without moving the media source. */
+/** Main-document bridge for the native screen-anchored action and its trusted fullscreen click. */
 internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
 (function () {
     'use strict';
@@ -8,7 +8,6 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         var policy = {enabled: false}, host = null, button = null, plate = null, icon = null, insetProbe = null;
         var selected = null, frame = null, animation = null, disposed = false, pending = false;
         var restore = null, entryTimeout = null;
-        var wakeTimer = null, layoutTimers = [], scrolling = false;
         var displayVersion = 0, displayKey = '', nativeReady = false, focused = false;
         var pressGuard = null, pressTimer = null;
         function cancelPress() {
@@ -58,22 +57,8 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             if (!policy.enabled || disposed) return;
             schedule();
         }
-        function scroll() {
-            layoutTimers.forEach(clearTimeout); layoutTimers = [];
-            if (wakeTimer !== null) clearTimeout(wakeTimer);
-            if (!policy.frameConstrained) {
-                wakeTimer = null; scrolling = false;
-                schedule(); return;
-            }
-            hide(); scrolling = true;
-            wakeTimer = setTimeout(function () {
-                wakeTimer = null; scrolling = false; schedule();
-            }, 200);
-        }
-        function layoutChanged() {
-            scroll();
-            if (policy.frameConstrained) [400, 600, 800, 1000].forEach(function (delay) { layoutTimers.push(setTimeout(schedule, delay)); });
-        }
+        function scroll() { schedule(); }
+        function layoutChanged() { scroll(); }
         function cancelEntryTimeout() {
             if (entryTimeout !== null) clearTimeout(entryTimeout);
             entryTimeout = null;
@@ -164,53 +149,18 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 height: visual ? visual.height : window.innerHeight,
                 scale: visual && visual.scale > 0 ? visual.scale : 1};
         }
-        function intersect(a, b) {
-            return {left: Math.max(a.left, b.left), top: Math.max(a.top, b.top),
-                right: Math.min(a.right, b.right), bottom: Math.min(a.bottom, b.bottom)};
-        }
-        function clip(record, view) {
-            var video = record.video, rect = video.getBoundingClientRect();
-            // The screen-anchored action remains available when its video scrolls away.
-            if (!policy.frameConstrained) return {left: rect.left, top: rect.top,
-                right: rect.left + rect.width, bottom: rect.top + rect.height};
-            var result = intersect({left: rect.left, top: rect.top, right: rect.left + rect.width,
-                bottom: rect.top + rect.height}, {left: view.left, top: view.top,
-                right: view.left + view.width, bottom: view.top + view.height});
-            // IntersectionObserver can account for clipping outside a cross-origin frame.
-            var seen = record.intersectionBounds, visible = record.intersectionRect;
-            if (visible && seen && Math.abs(seen.left - rect.left) < 1 && Math.abs(seen.top - rect.top) < 1 &&
-                Math.abs(seen.width - rect.width) < 1 && Math.abs(seen.height - rect.height) < 1) {
-                result = intersect(result, visible);
-            }
-            // Bound work to this video's ancestors; never scan the page for layout candidates.
-            var parent = video.parentElement;
-            for (var i = 0; parent && parent !== document.documentElement && i < 16; i++, parent = parent.parentElement) {
-                // Root/body overflow can be propagated to the viewport (CSS Overflow),
-                // even when BODY's own box has zero height, as on YouTube. The viewport
-                // intersection above already handles that scrollport; it is not a local clip.
-                if (parent === document.scrollingElement) continue;
-                var style = window.getComputedStyle(parent);
-                if (parent.tagName === 'BODY' && parent.parentElement === document.documentElement) {
-                    var rootStyle = window.getComputedStyle(document.documentElement);
-                    if (rootStyle.overflowX === 'visible' && rootStyle.overflowY === 'visible' &&
-                        (!rootStyle.contain || rootStyle.contain === 'none') &&
-                        (!style.contain || style.contain === 'none') && style.display !== 'none') continue;
-                }
-                var box = parent.getBoundingClientRect();
-                if (/hidden|clip|auto|scroll/.test(style.overflowX)) {
-                    result.left = Math.max(result.left, box.left); result.right = Math.min(result.right, box.right);
-                }
-                if (/hidden|clip|auto|scroll/.test(style.overflowY)) {
-                    result.top = Math.max(result.top, box.top); result.bottom = Math.min(result.bottom, box.bottom);
-                }
-            }
-            return result;
+        function clip(record) {
+            var rect = record.video.getBoundingClientRect();
+            // The screen-anchored action remains available when its qualified video scrolls away.
+            return {left: rect.left, top: rect.top, right: rect.left + rect.width, bottom: rect.top + rect.height};
         }
         function eligible(record) {
             var video = record.video;
+            // Mirror Samsung's inspected assistant gate: the selected media client must be
+            // actively playing and audible. Muted autoplay previews therefore never qualify.
             if (!video.isConnected || !(video.currentSrc || video.src || video.srcObject) ||
-                !(video.videoWidth > 0) || !(video.videoHeight > 0) || (policy.frameConstrained && record.ratio <= 0) ||
-                typeof video.requestFullscreen !== 'function') return false;
+                !(video.videoWidth > 0) || !(video.videoHeight > 0) || video.paused || video.ended ||
+                video.muted || !(video.volume > 0) || typeof video.requestFullscreen !== 'function') return false;
             var style = window.getComputedStyle(video);
             return style.display !== 'none' && style.visibility !== 'hidden' && style.visibility !== 'collapse' &&
                 Number(style.opacity) !== 0;
@@ -384,21 +334,20 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             frame = null;
             if (disposed || !policy.enabled || !api.bound() || document.visibilityState === 'hidden' ||
                 !document.fullscreenEnabled || document.fullscreenElement || pending) { hide(); return; }
-            if (scrolling) return;
-            var view = viewport(), best = null, bestBox = null, bestScore = -1, bestInteraction = -1;
+            var view = viewport(), best = null, bestScore = -1, bestInteraction = -1;
             api.records().forEach(function (record) {
                 if (!eligible(record)) return;
-                var box = clip(record, view), width = box.right - box.left, height = box.bottom - box.top;
+                var box = clip(record), width = box.right - box.left, height = box.bottom - box.top;
                 if (width * view.scale < 120 || height * view.scale < 80) return;
                 var interaction = record.lastInteraction || 0, score = width * height;
                 if (interaction > bestInteraction || (interaction === bestInteraction && score > bestScore)) {
-                    best = record; bestBox = box; bestScore = score; bestInteraction = interaction;
+                    best = record; bestScore = score; bestInteraction = interaction;
                 }
             });
             if (!best) { hide(); return; }
             makeButton();
             if (!host.isConnected) document.documentElement.appendChild(host);
-            var size = 60 / view.scale, gap = 8 / view.scale;
+            var size = 60 / view.scale;
             var insets = window.getComputedStyle(insetProbe);
             var left = view.left + (parseFloat(insets.paddingLeft) || 0);
             var top = view.top + (parseFloat(insets.paddingTop) || 0);
@@ -408,15 +357,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             if (right - left < size || bottom - top < size) { hide(); return; }
             var x = right - size - policy.screenRightInset / view.scale;
             var y = bottom - size - policy.screenBottomInset / view.scale;
-            if (policy.frameConstrained) {
-                // Embedded documents retain their reachable trusted-click fallback.
-                // Their local viewport cannot place a DOM target outside the iframe.
-                if (bestBox.right - bestBox.left < size + gap * 2 || bestBox.bottom - bestBox.top < size + gap * 2) {
-                    hide(); return;
-                }
-                x = Math.max(left, Math.min(bestBox.right - gap - size, right - size));
-                y = Math.max(top, bestBox.top + gap);
-            } else if (x < left || y < top) { hide(); return; }
+            if (x < left || y < top) { hide(); return; }
             var appearing = button.hidden;
             setStyles(button, {'left': x + 'px', 'top': y + 'px',
                 'width': size + 'px', 'height': size + 'px', 'color': policy.foreground,
@@ -490,7 +431,6 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                     foreground: next && /^#[0-9a-f]{6}$/i.test(next.foreground) ? next.foreground : '#FFFFFF',
                     reducedMotion: next && next.reducedMotion === true,
                     nativeDisplay: next && next.nativeDisplay === true,
-                    frameConstrained: next && next.frameConstrained === true,
                     screenRightInset: next && Number.isFinite(next.screenRightInset) && next.screenRightInset >= 0 && next.screenRightInset <= 256 ? next.screenRightInset : 10,
                     screenBottomInset: next && Number.isFinite(next.screenBottomInset) && next.screenBottomInset >= 0 && next.screenBottomInset <= 256 ? next.screenBottomInset : 70};
                 if (nativeBefore !== policy.nativeDisplay) {
@@ -499,8 +439,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 }
                 if (policy.enabled && !enabledBefore) wake();
                 if (!policy.enabled) {
-                    if (wakeTimer !== null) clearTimeout(wakeTimer); wakeTimer = null;
-                    layoutTimers.forEach(clearTimeout); layoutTimers = []; scrolling = false;
+                    cancelPress();
                 }
                 schedule();
             },
@@ -536,8 +475,6 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             },
             destroy: function () {
                 disposed = true;
-                if (wakeTimer !== null) clearTimeout(wakeTimer); wakeTimer = null;
-                layoutTimers.forEach(clearTimeout); layoutTimers = [];
                 cancelEntryTimeout();
                 if (frame !== null) window.cancelAnimationFrame(frame);
                 frame = null;

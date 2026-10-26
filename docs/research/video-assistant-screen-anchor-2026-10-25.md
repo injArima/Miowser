@@ -20,21 +20,21 @@ cannot fit, the video control hides rather than overlapping the reserved slot.
 
 Scrolling no longer hides and repositions the main-page button against the video.
 The button stays in the same screen slot while its selected video remains
-eligible. Existing video selection, visibility eligibility, single-tap action,
-native touch capture, auto-hide and fullscreen-entry recovery remain in place.
-User activity can renew the native presentation at most once per second; idle
-playback-clock updates still do not resend unchanged geometry. The native safety
-lease is 4.5 seconds so a renewed three-second activity timer can finish its fade
-before that lease expires.
+eligible. Existing video selection, single-tap action, native touch capture and
+fullscreen-entry recovery remain in place. Validated state updates renew the
+native presentation without resending unchanged geometry or adding another
+polling loop.
 
-## Existing embedded-frame boundary
+## Embedded-frame boundary
 
-The native prototype supports main-frame pages. Its pre-existing embedded-frame
-DOM fallback is retained to preserve that player's working trusted single-tap
-action. That fallback still lives inside its iframe and retains its previous
-placement. It is not a native screen overlay: moving it outside the iframe needs
-additional cross-frame input/coordinate routing, which this placement patch does
-not add.
+The native action supports qualified main-document videos. The old embedded-frame
+DOM fallback has been removed, so no assistant action is drawn inside a video or
+iframe. Embedded-frame playback can still be tracked, but it does not receive a
+button until a reliable native, screen-anchored trusted-input route exists.
+
+Visibility now follows Samsung Internet's inspected gate: active playback and
+audible media are required. This filters muted autoplay previews and also hides
+the action when the chosen video is paused, ended, or muted.
 
 ## Verification
 
@@ -50,6 +50,6 @@ User checks after building a fresh APK:
    align with a gap and neither touch target should overlap.
 3. Check the same slot while Jump to top is hidden, in landscape, after zooming,
    and after opening/closing the keyboard.
-4. Confirm single-tap player entry, drag/cancellation handling, auto-hide and
-   fullscreen playback continuity. An ineligible/offscreen video still hides
-   the control; screen anchoring does not change video-selection eligibility.
+4. Confirm single-tap player entry, drag/cancellation handling and fullscreen
+   playback continuity. Pausing, ending or muting the selected video hides the
+   control; scrolling a still-qualified video offscreen does not move it.

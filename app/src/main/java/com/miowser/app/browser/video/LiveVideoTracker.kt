@@ -14,6 +14,9 @@ import org.json.JSONObject
 import java.util.IdentityHashMap
 import java.util.UUID
 
+internal fun videoAssistantButtonEnabledForFrame(enabled: Boolean, mainFrame: Boolean): Boolean =
+    enabled && mainFrame
+
 /** Frame-bound telemetry, commands and recovery for the optional browser-backed player. */
 internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     initialButtonPolicy: VideoAssistantButtonPolicy = VideoAssistantButtonPolicy(),
@@ -274,11 +277,11 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
         }
     }
 
-    private fun policyJson(channel: Channel) = JSONObject().put("enabled", buttonPolicy.enabled)
+    private fun policyJson(channel: Channel) = JSONObject().put("enabled",
+        videoAssistantButtonEnabledForFrame(buttonPolicy.enabled, channel.mainFrame))
         .put("background", buttonPolicy.background).put("foreground", buttonPolicy.foreground)
         .put("reducedMotion", buttonPolicy.reducedMotion)
         .put("nativeDisplay", nativeDisplay != null && channel.mainFrame)
-        .put("frameConstrained", !channel.mainFrame)
         .put("screenRightInset", BrowserFloatingActionLayout.VIDEO_RIGHT_INSET_DP)
         .put("screenBottomInset", BrowserFloatingActionLayout.VIDEO_BOTTOM_INSET_DP)
 

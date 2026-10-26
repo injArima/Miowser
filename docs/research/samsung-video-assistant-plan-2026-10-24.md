@@ -16,19 +16,18 @@ at those earlier checkpoints; they do not claim validation of this cleanup.
   screen above the reserved Jump-to-top slot, with a 48 dp face, 60 dp touch
   target and 28 dp mark. The visible gap is 12 dp even when Jump to top is hidden.
   See [the placement checkpoint](video-assistant-screen-anchor-2026-10-25.md).
-- Visibility now follows detected usable video availability rather than activity:
-  no three-second auto-hide, including while paused, buffering or scrolled offscreen
-  on main-frame pages. Paused entry preserves pause. Hidden pages, fullscreen,
-  removed/unusable videos and a disabled assistant still hide the action. The
-  frame-local iframe fallback remains constrained by its visible frame area.
+- Visibility follows Samsung's inspected playback gate: the main-document video
+  must be actively playing and audible. Muted autoplay previews, paused/ended
+  videos, hidden pages, fullscreen, removed/unusable videos and a disabled
+  assistant hide the action. A qualified video may scroll offscreen without moving
+  the screen anchor. The former frame-local iframe fallback has been removed.
   Validated video-state messages renew the native safety lease without resending
   geometry, changing the gesture generation or adding another polling loop. Its
   15-second deadline allows the existing 10-second paused-video heartbeat to arrive;
   stale/disconnected pages still lose the native touch target.
 - The native layer owns the gesture and forwards the physical tap after the
-  bound document prepares its input guard. Entry stays single-tap. Cross-origin
-  embedded frames retain their frame-local DOM fallback; it cannot draw outside
-  the iframe through the current input route.
+  bound main document prepares its input guard. Entry stays single-tap. Embedded
+  frames remain tracked for playback state but do not render a second DOM button.
 - The rich browser overlay reuses the original player UI and exposes supported
   controls. Exact session/source ownership, gesture handling, control suppression,
   explicit PiP and bounded fullscreen-entry recovery remain necessary.
@@ -54,8 +53,8 @@ fixtures and build wiring. It removes:
   composables. The current subtitle page, inspector, styling and adjuster remain.
 - Unused/duplicate imports and duplicate message-validation, serialization and
   expiry-timer setup. The native button reuses its background and avoids redundant
-  layout/padding/tint assignments. Delayed layout corrections remain only for the
-  frame-constrained fallback.
+  layout/padding/tint assignments. Obsolete iframe clipping and delayed-layout
+  correction code was removed with the frame-local fallback.
 
 No feature modules were deleted merely to reduce file count. The earlier Video
 Lab build and rejected toolbar-arming route were already absent before this
@@ -67,10 +66,9 @@ emulator or device checks were run**, as requested. No app data was accessed.
 Runtime preservation is intended, not yet verified. User checks should cover:
 
 1. First-tap entry on YouTube and a normal video page; scrolling, zooming,
-   rotation and the screen anchor; embedded-frame fallback. Leave a detected video
-   paused for at least 30 seconds: the button must stay visible and respond to its
-   first tap while keeping playback paused. Remove the video or navigate away and
-   confirm the target disappears.
+   rotation and the screen anchor. Confirm muted autoplay previews and embedded
+   frame players never show a second in-frame button. Pause/mute/end the selected
+   video, remove it, or navigate away and confirm the target disappears.
 2. Fullscreen continuity and deliberate pause, seek/skip, speed and the 2× hold
    badge, mute, gestures, caption/audio selection and Fit/Zoom/Fill.
 3. PiP, background/return, tab navigation, source replacement, returning to the
