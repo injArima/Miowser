@@ -25,7 +25,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Home
-import androidx.compose.material.icons.rounded.HotelClass
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -51,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import com.miowser.app.R
+import com.miowser.app.ui.icons.HotelClassRoundedOutline
 import com.miowser.app.ui.theme.ExpressiveTokens
 
 /**
@@ -120,7 +120,7 @@ fun BottomBar(
                 Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = stringResource(R.string.nav_forward))
             }
             IconButton(onClick = onBookmarks, enabled = ready) {
-                Icon(Icons.Rounded.HotelClass, contentDescription = stringResource(R.string.nav_bookmarks), tint = MaterialTheme.colorScheme.primary)
+                Icon(HotelClassRoundedOutline, contentDescription = stringResource(R.string.nav_bookmarks), tint = MaterialTheme.colorScheme.primary)
             }
             Box(
                 modifier = Modifier
