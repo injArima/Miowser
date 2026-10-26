@@ -173,7 +173,10 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                     }, onStartHoldToSpeed = { speedHold.start(controller).also { holdingSpeed = it } },
                     onStopHoldToSpeed = { speedHold.stop(controller); holdingSpeed = false },
                     onSeekTo = { target -> controller.state.value.session?.state?.browserSeekWindow()?.let { window ->
-                        act { controller.seekTo(window.startMs + target) }
+                        // Gesture seeking has its own compact feedback. Do not wake the full
+                        // chrome; an ordinary single tap remains the explicit show/hide action.
+                        controller.clearMessage()
+                        controller.seekTo(window.startMs + target)
                     } }, onFeedback = { feedback = it; feedbackSequence++ },
                     onBrightnessCommitted = { PlayerDisplayPreferenceStore.saveBrightness(context, it) },
                     canSeek = state.canSeek, volumeEnabled = audio?.isVolumeFixed != true,
@@ -235,6 +238,10 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                     PlayerGestureFeedbackOverlay(it, when (it.kind) {
                         PlayerGestureKind.BRIGHTNESS -> Modifier.align(Alignment.CenterStart).padding(start = 28.dp)
                         PlayerGestureKind.VOLUME -> Modifier.align(Alignment.CenterEnd).padding(end = 28.dp)
+                        PlayerGestureKind.SEEK_BACKWARD,
+                        PlayerGestureKind.SEEK_FORWARD -> Modifier.align(Alignment.TopCenter)
+                            .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top))
+                            .padding(top = if (landscape) 64.dp else 100.dp)
                         else -> Modifier.align(Alignment.Center)
                     })
                 }

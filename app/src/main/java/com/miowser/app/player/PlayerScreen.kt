@@ -202,6 +202,9 @@ private val PlayerScaleMode.resizeMode: Int get() = when (this) {
 
 internal enum class PlayerGestureKind { SEEK_BACKWARD, SEEK_FORWARD, PLAY, PAUSE, BRIGHTNESS, VOLUME }
 
+internal val PLAYER_SEEK_BACKWARD_COLOR = Color(0xFFFFAAA5)
+internal val PLAYER_SEEK_FORWARD_COLOR = Color(0xFFA8E6B0)
+
 internal data class PlayerGestureFeedback(
     val kind: PlayerGestureKind,
     val label: String,
@@ -1711,6 +1714,7 @@ internal fun PlayerGestureFeedbackOverlay(
     when (feedback.kind) {
         PlayerGestureKind.SEEK_BACKWARD, PlayerGestureKind.SEEK_FORWARD -> {
             val deltaSeconds = ((feedback.seekDeltaMs ?: 0L) / 1_000f).roundToLong()
+            val backward = feedback.kind == PlayerGestureKind.SEEK_BACKWARD
             Row(
                 modifier = modifier,
                 verticalAlignment = Alignment.CenterVertically,
@@ -1720,9 +1724,8 @@ internal fun PlayerGestureFeedbackOverlay(
                     style = MaterialTheme.typography.titleMedium.copy(
                         shadow = Shadow(Color.Black, Offset.Zero, 8f)),
                     fontWeight = FontWeight.SemiBold)
-                Text("${if (deltaSeconds >= 0) "+" else ""}${deltaSeconds}s",
-                    color = if (deltaSeconds < 0) MaterialTheme.colorScheme.error
-                        else MaterialTheme.colorScheme.primary,
+                Text("${if (!backward && deltaSeconds >= 0) "+" else ""}${deltaSeconds}s",
+                    color = if (backward) PLAYER_SEEK_BACKWARD_COLOR else PLAYER_SEEK_FORWARD_COLOR,
                     style = MaterialTheme.typography.titleMedium.copy(
                         shadow = Shadow(Color.Black, Offset.Zero, 8f)),
                     fontWeight = FontWeight.Bold)
