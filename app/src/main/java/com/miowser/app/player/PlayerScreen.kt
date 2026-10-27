@@ -355,6 +355,7 @@ private fun PlayerContent(
     var playbackEnded by remember(request) { mutableStateOf(false) }
     var isScrubbing by remember(request) { mutableStateOf(false) }
     var playbackSpeed by remember(request) { mutableFloatStateOf(1f) }
+    var audioOnly by remember(request) { mutableStateOf(false) }
     var holdToSpeedActive by remember(request) { mutableStateOf(false) }
     var speedBeforeHold by remember(request) { mutableFloatStateOf(1f) }
     var wasPlayingBeforeHold by remember(request) { mutableStateOf(false) }
@@ -510,6 +511,12 @@ private fun PlayerContent(
     }
     LaunchedEffect(exoPlayer, request.title) {
         PlayerPlaybackService.updateTitle(exoPlayer, request.title)
+    }
+    LaunchedEffect(exoPlayer, audioOnly) {
+        exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters.buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, audioOnly)
+            .build()
+        PlayerPlaybackService.setAudioOnly(exoPlayer, audioOnly)
     }
     LaunchedEffect(inPip) {
         if (inPip) {
@@ -739,6 +746,7 @@ private fun PlayerContent(
         }
     }
 
+    val backgroundAudioOnly = rememberUpdatedState(audioOnly)
     DisposableEffect(lifecycleOwner, exoPlayer) {
         var resumeWhenActive = false
         var pauseControlRevision = 0L
@@ -747,9 +755,10 @@ private fun PlayerContent(
                 Lifecycle.Event.ON_PAUSE -> {
                     val enteringOrInPip = pipTransitionActive.value ||
                         (activity as? MainActivity)?.isInPictureInPictureMode == true
-                    resumeWhenActive = !enteringOrInPip && exoPlayer.playWhenReady
+                    val keepPlaying = enteringOrInPip || backgroundAudioOnly.value
+                    resumeWhenActive = !keepPlaying && exoPlayer.playWhenReady
                     pauseControlRevision = PlayerPlaybackService.externalControlRevision
-                    if (!enteringOrInPip) exoPlayer.pause()
+                    if (!keepPlaying) exoPlayer.pause()
                     saveLibraryProgress(true)
                 }
                 Lifecycle.Event.ON_RESUME -> {
@@ -985,9 +994,9 @@ private fun PlayerContent(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 PlayerView(ctx).apply {
-                    player = exoPlayer
+                    player = if (audioOnly) null else exoPlayer
                     useController = false
-                    keepScreenOn = exoPlayer.playWhenReady && playbackError == null
+                    keepScreenOn = !audioOnly && exoPlayer.playWhenReady && playbackError == null
                     resizeMode = scaleMode.resizeMode
                     applyPlayerSubtitleStyle(this, effectiveSubtitleStyle, subtitleTypeface)
                     overlayFrameLayout?.let { overlay ->
@@ -1011,17 +1020,17 @@ private fun PlayerContent(
             update = { view ->
                 view.importantForAccessibility = if (overlays.isPresent)
                     View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS else View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
-                view.player = exoPlayer
+                view.player = if (audioOnly) null else exoPlayer
                 view.resizeMode = scaleMode.resizeMode
                 applyPlayerSubtitleStyle(view, effectiveSubtitleStyle, subtitleTypeface)
                 view.subtitleView?.visibility = if (attachedExternalSubtitleUrl == null)
                     View.VISIBLE else View.INVISIBLE
                 pageSubtitleView?.visibility = if (attachedExternalSubtitleUrl == null)
                     View.GONE else View.VISIBLE
-                view.keepScreenOn = exoPlayer.playWhenReady && playbackError == null
+                view.keepScreenOn = !audioOnly && exoPlayer.playWhenReady && playbackError == null
             }
         )
-        ExternalSubtitleLayer(exoPlayer, pageSubtitleView, attachedExternalSubtitleUrl,
+        if (!audioOnly) ExternalSubtitleLayer(exoPlayer, pageSubtitleView, attachedExternalSubtitleUrl,
             externalSubtitleCues, effectiveSubtitleStyle, subtitleTypeface)
 
         if (!inPip) {
@@ -1104,7 +1113,7 @@ private fun PlayerContent(
                             }
                         },
                         onDownload = onDownload,
-                        onPip = if (playbackError == null && activity is MainActivity &&
+                        onPip = if (!audioOnly && playbackError == null && activity is MainActivity &&
                             context.packageManager.hasSystemFeature(
                                 android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)) ({
                             val host = activity
@@ -1115,6 +1124,12 @@ private fun PlayerContent(
                                 size.height.takeIf { it > 0 } ?: 9
                             )) pipTransitionActive.value = false
                         }) else null,
+                        audioOnly = audioOnly,
+                        onToggleAudioOnly = {
+                            audioOnly = !audioOnly
+                            controlsVisible = true
+                            controlsActivity++
+                        },
                         onOpenPlaylist = if (playlist.isNotEmpty() && onSelectPlaylistEntry != null) ({
                             trackPanel = null
                             openOverlay(PlayerOverlay.PLAYLIST)

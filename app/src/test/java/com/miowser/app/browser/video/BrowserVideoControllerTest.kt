@@ -118,6 +118,33 @@ class BrowserVideoControllerTest {
         assertEquals(4, sent.size)
     }
 
+    @Test fun audioOnlyIsOptimisticAndUsesAnExplicitPageCommand() {
+        val c = controller()
+        c.setAudioOnly(true)
+        assertTrue(c.state.value.audioOnly)
+        assertEquals(BrowserVideoAction.AUDIO_ONLY, sent.single().action)
+        assertEquals(1.0, sent.single().value!!, 0.0)
+        c.completed(BrowserVideoAction.AUDIO_ONLY, true)
+        assertTrue(c.state.value.audioOnly)
+        assertNull(c.state.value.message)
+    }
+
+    @Test fun failedAudioOnlyCommandRestoresVideoAndReportsRecovery() {
+        val c = controller()
+        c.setAudioOnly(true)
+        c.completed(BrowserVideoAction.AUDIO_ONLY, false)
+        assertFalse(c.state.value.audioOnly)
+        assertEquals("The website couldn't switch audio-only playback.", c.state.value.message)
+    }
+
+    @Test fun undeliveredAudioOnlyCommandDoesNotLeaveVideoHidden() {
+        val c = controller()
+        c.connect { false }
+        c.setAudioOnly(true)
+        assertFalse(c.state.value.audioOnly)
+        assertNotNull(c.state.value.message)
+    }
+
     @Test fun explicitPauseNeverTogglesToPlayDuringPipDismissal() {
         val c = controller()
         c.pause(); c.pause()
@@ -160,6 +187,17 @@ class BrowserVideoControllerTest {
         assertFalse(keepBrowserRendererForPip(owner, 1, 1, state.copy(session = state.session.copy(id = owner.id.copy(navigation = 99)))))
         assertFalse(keepBrowserRendererForPip(owner, 1, 1, state.copy(session = state.session.copy(id = owner.id.copy(elementId = "other")))))
         assertFalse(keepBrowserRendererForPip(owner, 1, 1, BrowserVideoPlaybackState()))
+    }
+
+    @Test fun audioOnlyRendererRequiresTheFullscreenOwningTabAndActiveSession() {
+        val active = controller().state.value.copy(audioOnly = true)
+        assertTrue(keepBrowserRendererForAudioOnly(true, 1, 1, active))
+        assertFalse(keepBrowserRendererForAudioOnly(false, 1, 1, active))
+        assertFalse(keepBrowserRendererForAudioOnly(true, null, 1, active))
+        assertFalse(keepBrowserRendererForAudioOnly(true, 2, 1, active))
+        assertFalse(keepBrowserRendererForAudioOnly(true, 1, 2, active))
+        assertFalse(keepBrowserRendererForAudioOnly(true, 1, 1, active.copy(audioOnly = false)))
+        assertFalse(keepBrowserRendererForAudioOnly(true, 1, 1, BrowserVideoPlaybackState(audioOnly = true)))
     }
 
     @Test fun suspendedControlsDoNotSendMediaActionsOrLeaveAPendingSeek() {

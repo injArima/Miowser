@@ -69,6 +69,11 @@
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
+        <service
+            android:name=".browser.video.BrowserPlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
         <receiver
             android:name=".downloader.DownloadNotificationDismissReceiver"
             android:exported="false" />

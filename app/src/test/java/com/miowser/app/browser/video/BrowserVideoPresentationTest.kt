@@ -44,6 +44,12 @@ class BrowserVideoPresentationTest {
         assertEquals("Failed", browserVideoPresentation(initial.copy(message = "Failed")).message)
     }
 
+    @Test fun audioOnlyStateReachesThePlayerChrome() {
+        val initial = state()
+        assertFalse(browserVideoPresentation(initial).audioOnly)
+        assertTrue(browserVideoPresentation(initial.copy(audioOnly = true)).audioOnly)
+    }
+
     @Test fun scrubPreviewIsSharedWithTheTimerAndClearedAfterRelease() {
         val interaction = BrowserVideoTimelineInteraction(); val initial = state()
         interaction.update(initial, 20_000); interaction.update(initial, 25_000)

@@ -9,7 +9,7 @@ internal data class BrowserVideoDetails(
 
 internal data class BrowserVideoPresentation(
     val owner: BrowserVideoPipOwner?, val video: BrowserVideoDetails?, val phase: BrowserVideoPhase,
-    val canSeek: Boolean, val seeking: Boolean, val message: String?
+    val canSeek: Boolean, val seeking: Boolean, val message: String?, val audioOnly: Boolean
 ) {
     val controlsEnabled: Boolean get() = owner != null && phase == BrowserVideoPhase.ACTIVE
 }
@@ -20,5 +20,5 @@ internal fun browserVideoPresentation(state: BrowserVideoPlaybackState): Browser
     return BrowserVideoPresentation(session?.let { BrowserVideoPipOwner(it.id, state.attempt) },
         video?.let { BrowserVideoDetails(it.playing, it.buffering, it.muted, it.speed,
             it.videoWidth, it.videoHeight, it.sourceRevision, it.scale, it.captions, it.audioTracks) },
-        state.phase, state.canSeek, state.pendingSeekMs != null, state.message)
+        state.phase, state.canSeek, state.pendingSeekMs != null, state.message, state.audioOnly)
 }

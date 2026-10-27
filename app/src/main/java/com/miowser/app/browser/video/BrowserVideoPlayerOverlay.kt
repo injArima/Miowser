@@ -46,7 +46,7 @@ import kotlinx.coroutines.flow.map
 /** Original player UI backed by the retained HTML video. This route never creates ExoPlayer. */
 @Composable
 internal fun BrowserVideoPlayerOverlay(controller: BrowserPlaybackControls, title: String,
-    onExit: () -> Unit, sourceLabel: String = "") {
+    onExit: () -> Unit, sourceLabel: String = "", onAudioOnlyChanged: (Boolean) -> Unit = {}) {
     val presentation = remember(controller) { controller.state.map(::browserVideoPresentation).distinctUntilChanged() }
     val state by presentation.collectAsState(browserVideoPresentation(controller.state.value))
     MiowserPlayerTheme(darkTheme = true) {
@@ -55,7 +55,9 @@ internal fun BrowserVideoPlayerOverlay(controller: BrowserPlaybackControls, titl
             if (host?.playerInPictureInPicture != true) BrowserVideoRecoveryBanner(
                 state.message ?: "The video connection is unavailable.", onExit)
         } else state.owner?.let { owner ->
-            key(owner) { BrowserVideoControlsContent(controller, state, title, sourceLabel, onExit) }
+            key(owner) {
+                BrowserVideoControlsContent(controller, state, title, sourceLabel, onExit, onAudioOnlyChanged)
+            }
         }
     }
 }
@@ -63,7 +65,7 @@ internal fun BrowserVideoPlayerOverlay(controller: BrowserPlaybackControls, titl
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
 private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, state: BrowserVideoPresentation,
-    title: String, sourceLabel: String, onExit: () -> Unit) {
+    title: String, sourceLabel: String, onExit: () -> Unit, onAudioOnlyChanged: (Boolean) -> Unit) {
     val video = state.video ?: return
     val owner = state.owner ?: return
     val context = LocalContext.current
@@ -94,6 +96,15 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
     var rotationLocked by remember { mutableStateOf(false) }
     var pendingRotation by remember { mutableStateOf<Boolean?>(null) }
     val modal = overlays.isPresent || adjustments || audioPanel
+    val latestAudioOnly by rememberUpdatedState(state.audioOnly)
+
+    LaunchedEffect(state.audioOnly) { onAudioOnlyChanged(state.audioOnly) }
+    DisposableEffect(controller, state.audioOnly, title) {
+        if (state.audioOnly) BrowserPlaybackService.attach(context.applicationContext, controller, title)
+        onDispose {
+            if (state.audioOnly) BrowserPlaybackService.detach(context.applicationContext, controller)
+        }
+    }
 
     DisposableEffect(controller, activity) {
         val original = activity?.requestedOrientation
@@ -107,6 +118,8 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
         controller.setRichUi(true)
         onDispose {
             speedHold.stop(controller)
+            if (latestAudioOnly) controller.setAudioOnly(false)
+            onAudioOnlyChanged(false)
             controller.setRichUi(false)
             if (activity != null && original != null) activity.requestedOrientation = original
             if (originalBrightness != null) activity.window.attributes = activity.window.attributes.apply { screenBrightness = originalBrightness }
@@ -200,11 +213,16 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                                         interaction++; pendingRotation = null; rotationLocked = !rotationLocked
                                         activity?.requestedOrientation = if (rotationLocked) ActivityInfo.SCREEN_ORIENTATION_LOCKED else ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
                                     }, onDownload = null,
-                                    onPip = if (supportsPip) ({
+                                    onPip = if (!state.audioOnly && supportsPip) ({
                                         closeMenus(); speedHold.stop(controller)
                                         if (host?.enterBrowserVideoPictureInPicture(owner, video.width, video.height) != true)
                                             Toast.makeText(activity, "Picture in picture is unavailable. Check the app's PiP permission.", Toast.LENGTH_SHORT).show()
                                     }) else null,
+                                    audioOnly = state.audioOnly,
+                                    onToggleAudioOnly = {
+                                        closeMenus()
+                                        act { controller.setAudioOnly(!state.audioOnly) }
+                                    },
                                     onOpenPlaylist = null, playlistFocus = playlistFocus, playlistPosition = 0, playlistSize = 0,
                                     onLock = { locked = true; closeMenus() }, onDismiss = onExit, modifier = Modifier.align(Alignment.TopCenter))
                                 PlayerCenterControls(video.playing, video.buffering, false, null, null,

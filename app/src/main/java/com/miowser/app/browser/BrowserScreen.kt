@@ -109,6 +109,7 @@ import com.miowser.app.browser.video.NativeVideoAssistantDisplay
 import com.miowser.app.browser.video.releaseVideoAssistantHost
 import com.miowser.app.browser.video.BrowserVideoPlayerOverlay
 import com.miowser.app.browser.video.BrowserVideoSurface
+import com.miowser.app.browser.video.keepBrowserRendererForAudioOnly
 import com.miowser.app.browser.video.keepBrowserRendererForPip
 import com.miowser.app.downloader.Download
 import com.miowser.app.downloader.DownloadConflictReason
@@ -299,8 +300,12 @@ fun BrowserScreen(
     var hubLibrarySort by rememberSaveable { mutableStateOf(initialHubSettings.librarySort) }
     var playbackRequest by remember { mutableStateOf<PlaybackRequest?>(null) }
     var fullscreenVideo by remember { mutableStateOf<WebFullscreenVideo?>(null) }
+    var browserVideoAudioOnly by remember { mutableStateOf(false) }
     fun exitWebFullscreen() {
         val current = fullscreenVideo ?: return
+        tabController.tabs.firstOrNull { it.id == current.tabId }
+            ?.browserVideoPlayer?.setAudioOnly(false)
+        browserVideoAudioOnly = false
         fullscreenVideo = null
         (context.findBrowserActivity() as? com.miowser.app.MainActivity)?.let { activity ->
             activity.browserVideoPipOwner?.takeIf { it.id.tabId == current.tabId }
@@ -3000,7 +3005,8 @@ fun BrowserScreen(
                     BrowserVideoSurface(fullscreen.view, tabs.firstOrNull { it.id == fullscreen.tabId }?.browserVideoPlayer)
                     tabs.firstOrNull { it.id == fullscreen.tabId }?.let { owner ->
                         BrowserVideoPlayerOverlay(owner.browserVideoPlayer, owner.title, ::exitWebFullscreen,
-                            sourceLabel = SiteProtection.host(owner.url).orEmpty())
+                            sourceLabel = SiteProtection.host(owner.url).orEmpty(),
+                            onAudioOnlyChanged = { browserVideoAudioOnly = it })
                     }
                 }
             }
@@ -3180,7 +3186,8 @@ fun BrowserScreen(
         app.registerComponentCallbacks(callbacks)
         onDispose { app.unregisterComponentCallbacks(callbacks) }
     }
-    DisposableEffect(lifecycleOwner, showingHub, playbackRequest, activeScreen, activeTabId, recordsReady) {
+    DisposableEffect(lifecycleOwner, showingHub, playbackRequest, activeScreen, activeTabId, recordsReady,
+        browserVideoAudioOnly) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_RESUME -> {
@@ -3196,9 +3203,11 @@ fun BrowserScreen(
                     if (!showingHub) tabs.firstOrNull { it.id == activeTabId }?.markActive()
                     val pipOwner = (context.findBrowserActivity() as? com.miowser.app.MainActivity)?.browserVideoPipOwner
                     tabs.forEach { tab ->
+                        val keepForAudio = keepBrowserRendererForAudioOnly(browserVideoAudioOnly,
+                            fullscreenVideo?.tabId, tab.id, tab.browserVideoPlayer.state.value)
                         val keepForPip = keepBrowserRendererForPip(pipOwner, fullscreenVideo?.tabId, tab.id, tab.browserVideoPlayer.state.value)
-                        tab.pauseBrowserVideoHost(keepForPip)
-                        if (keepForPip) {
+                        if (!keepForAudio) tab.pauseBrowserVideoHost(keepForPip)
+                        if (keepForPip || keepForAudio) {
                             tab.liveWebView?.onResume()
                         } else tab.liveWebView?.onPause()
                     }

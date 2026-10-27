@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.miowser.app.ui.MiowserDropdownMenu
 import com.miowser.app.ui.MiowserMenuItem
+import com.miowser.app.ui.icons.HeadphonesRoundedOutline
 import kotlin.math.roundToLong
 
 /** Shared original player controls. No playback engine or clock is created by this UI. */
@@ -77,6 +78,8 @@ internal fun PlayerTopBar(
     onToggleRotationLock: () -> Unit,
     onDownload: (() -> Unit)?,
     onPip: (() -> Unit)?,
+    audioOnly: Boolean,
+    onToggleAudioOnly: () -> Unit,
     onOpenPlaylist: (() -> Unit)?,
     playlistFocus: FocusRequester,
     playlistPosition: Int,
@@ -106,6 +109,13 @@ internal fun PlayerTopBar(
                 RoundPlayerButton(Icons.Rounded.PictureInPictureAlt, "Picture in picture", onPip)
                 Spacer(Modifier.width(gap))
             }
+            RoundPlayerButton(
+                HeadphonesRoundedOutline,
+                if (audioOnly) "Restore video" else "Play audio only",
+                onToggleAudioOnly,
+                selected = audioOnly
+            )
+            Spacer(Modifier.width(gap))
             RotationPlayerButton(
                 isLandscape = isLandscape,
                 locked = rotationLocked,
@@ -319,13 +329,14 @@ internal fun RoundPlayerButton(
     icon: ImageVector,
     contentDescription: String,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    selected: Boolean = false
 ) {
     Surface(
         onClick = onClick,
         enabled = LocalPlayerControlsActive.current,
         shape = CircleShape,
-        color = Color.Transparent,
+        color = if (selected) Color.White.copy(alpha = 0.22f) else Color.Transparent,
         contentColor = Color.White,
         modifier = modifier.size(48.dp)
     ) {

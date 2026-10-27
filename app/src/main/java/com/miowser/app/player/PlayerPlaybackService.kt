@@ -113,7 +113,7 @@ internal class PlayerPlaybackService : Service() {
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_monochrome)
             .setContentTitle(requestedTitle)
-            .setContentText("Miowser")
+            .setContentText(if (requestedAudioOnly) "Audio-only playback" else "Miowser")
             .setContentIntent(mainIntent)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
@@ -146,10 +146,12 @@ internal class PlayerPlaybackService : Service() {
         private var instance: PlayerPlaybackService? = null
         private var requestedPlayer: ExoPlayer? = null
         private var requestedTitle = "Video"
+        private var requestedAudioOnly = false
         var externalControlRevision = 0L
             private set
 
         fun attach(context: Context, player: ExoPlayer, title: String) {
+            if (requestedPlayer !== player) requestedAudioOnly = false
             requestedPlayer = player
             requestedTitle = title.ifBlank { "Video" }
             val service = instance
@@ -164,9 +166,16 @@ internal class PlayerPlaybackService : Service() {
             instance?.publish()
         }
 
+        fun setAudioOnly(player: ExoPlayer, enabled: Boolean) {
+            if (requestedPlayer !== player || requestedAudioOnly == enabled) return
+            requestedAudioOnly = enabled
+            instance?.publish()
+        }
+
         fun detach(context: Context, player: ExoPlayer) {
             if (requestedPlayer !== player) return
             requestedPlayer = null
+            requestedAudioOnly = false
             instance?.let { service ->
                 service.playerListener?.let { player.removeListener(it) }
                 service.playerListener = null
