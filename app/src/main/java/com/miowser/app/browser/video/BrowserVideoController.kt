@@ -8,7 +8,6 @@ internal enum class BrowserVideoAction(val wireName: String, val family: String)
     PLAY("play", "transport"), PAUSE("pause", "transport"), SEEK("seek", "seek"),
     SKIP("skip", "seek"), RATE("rate", "rate"), RICH_UI("richUi", "ui"),
     MUTE("mute", "mute"), SCALE("scale", "scale"), CAPTION("caption", "caption"), AUDIO("audio", "audio"),
-    AUDIO_ONLY("audioOnly", "audioOnly"),
     HOLD_RATE("holdRate", "rate"), RELEASE_RATE("releaseRate", "rate")
 }
 
@@ -64,7 +63,6 @@ internal class BrowserVideoController : BrowserPlaybackControls {
     override val state = mutable.asStateFlow()
     private var sender: ((BrowserVideoCommand) -> Boolean)? = null
     private var desiredPlaying: Boolean? = null
-    private var audioOnlyBeforeCommand: Boolean? = null
 
     fun connect(sender: (BrowserVideoCommand) -> Boolean) { this.sender = sender }
     fun attach(session: LiveVideoSession, attempt: Long) {
@@ -130,14 +128,8 @@ internal class BrowserVideoController : BrowserPlaybackControls {
     override fun endSpeedHold() { send(BrowserVideoAction.RELEASE_RATE) }
     override fun setMuted(muted: Boolean) { send(BrowserVideoAction.MUTE, if (muted) 1.0 else 0.0) }
     override fun setAudioOnly(enabled: Boolean) {
-        if (mutable.value.audioOnly == enabled) return
-        val previous = mutable.value.audioOnly
-        mutable.value = mutable.value.copy(audioOnly = enabled)
-        audioOnlyBeforeCommand = previous
-        if (!send(BrowserVideoAction.AUDIO_ONLY, if (enabled) 1.0 else 0.0)) {
-            mutable.value = mutable.value.copy(audioOnly = previous)
-            audioOnlyBeforeCommand = null
-        }
+        if (mutable.value.session == null || mutable.value.audioOnly == enabled) return
+        mutable.value = mutable.value.copy(audioOnly = enabled, message = null)
     }
     override fun setScale(scale: BrowserVideoScale) { send(BrowserVideoAction.SCALE, scale.ordinal.toDouble()) }
     override fun selectCaption(id: Long?) {
@@ -161,12 +153,6 @@ internal class BrowserVideoController : BrowserPlaybackControls {
     fun completed(action: BrowserVideoAction, ok: Boolean) {
         if (mutable.value.session == null) return
         if (action.family == "transport") desiredPlaying = null
-        if (action == BrowserVideoAction.AUDIO_ONLY) {
-            if (!ok) audioOnlyBeforeCommand?.let { previous ->
-                mutable.value = mutable.value.copy(audioOnly = previous)
-            }
-            audioOnlyBeforeCommand = null
-        }
         mutable.value = mutable.value.copy(
             pendingSeekMs = if (action.family == "seek") null else mutable.value.pendingSeekMs,
             message = if (ok) null else when (action.family) {
@@ -174,7 +160,6 @@ internal class BrowserVideoController : BrowserPlaybackControls {
                 "rate" -> "The website couldn't apply that playback speed."
                 "caption" -> "The website couldn't select that subtitle track."
                 "audio" -> "The website couldn't select that audio track."
-                "audioOnly" -> "The website couldn't switch audio-only playback."
                 "scale" -> "The website couldn't change the video size."
                 else -> "The website couldn't complete that player action."
             })

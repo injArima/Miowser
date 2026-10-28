@@ -217,6 +217,16 @@ fun SettingsPage(
                 }
             }
 
+            SettingsSection("Media") {
+                SettingRow(
+                    "Background playback",
+                    "Allow headphone mode to keep playing when Miowser is minimized or the screen is off.",
+                    settings.backgroundPlaybackEnabled
+                ) {
+                    onUpdate(settings.copy(backgroundPlaybackEnabled = it))
+                }
+            }
+
             SettingsSection("Advanced") {
                 SettingRow("JavaScript", "Run website scripts. Turning this off can break many sites.",
                     settings.javaScriptEnabled) {

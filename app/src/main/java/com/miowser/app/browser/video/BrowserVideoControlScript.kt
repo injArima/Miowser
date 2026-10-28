@@ -5,7 +5,7 @@ internal const val BROWSER_VIDEO_CONTROL_SCRIPT = """
 (function () {
     'use strict';
     window.__miowserCreateVideoControls = function (api) {
-        var lastCommand = 0, seekCleanup = null, disposed = false, heldRate = null, audioOnlyStyle = null;
+        var lastCommand = 0, seekCleanup = null, disposed = false, heldRate = null;
         function releaseRate() {
             var held = heldRate;
             heldRate = null;
@@ -15,29 +15,6 @@ internal const val BROWSER_VIDEO_CONTROL_SCRIPT = """
                 if (held.video.currentSrc === held.source && held.video.srcObject === held.object &&
                     Math.abs(held.video.playbackRate - 2) < 0.01) held.video.playbackRate = held.rate;
             } catch (ignored) {}
-        }
-        function restoreAudioOnly() {
-            var saved = audioOnlyStyle;
-            audioOnlyStyle = null;
-            if (!saved) return;
-            try {
-                [['opacity', saved.opacity], ['background-color', saved.background]].forEach(function (entry) {
-                    if (entry[1].value) saved.video.style.setProperty(entry[0], entry[1].value, entry[1].priority);
-                    else saved.video.style.removeProperty(entry[0]);
-                });
-            } catch (ignored) {}
-        }
-        function setAudioOnly(video, enabled) {
-            if (!enabled) { restoreAudioOnly(); return true; }
-            if (!audioOnlyStyle || audioOnlyStyle.video !== video) {
-                restoreAudioOnly();
-                audioOnlyStyle = {video: video,
-                    opacity: {value: video.style.getPropertyValue('opacity'), priority: video.style.getPropertyPriority('opacity')},
-                    background: {value: video.style.getPropertyValue('background-color'), priority: video.style.getPropertyPriority('background-color')}};
-            }
-            video.style.setProperty('opacity', '0', 'important');
-            video.style.setProperty('background-color', '#000000', 'important');
-            return window.getComputedStyle(video).opacity === '0';
         }
         function receive(command) {
             if (disposed || !Number.isSafeInteger(command.commandId) || command.commandId <= lastCommand) return;
@@ -52,7 +29,7 @@ internal const val BROWSER_VIDEO_CONTROL_SCRIPT = """
                 api.reply('controlAck', command, ok);
             }
             var value = command.value;
-            if (['play', 'pause', 'seek', 'skip', 'rate', 'richUi', 'mute', 'audioOnly', 'scale', 'caption', 'audio', 'holdRate', 'releaseRate'].indexOf(command.action) < 0) return;
+            if (['play', 'pause', 'seek', 'skip', 'rate', 'richUi', 'mute', 'scale', 'caption', 'audio', 'holdRate', 'releaseRate'].indexOf(command.action) < 0) return;
             lastCommand = command.commandId;
             // Pause intent wins even when a source revision makes the command stale.
             // A stale Play must not cancel recovery that is already trying to resume.
@@ -79,9 +56,6 @@ internal const val BROWSER_VIDEO_CONTROL_SCRIPT = """
                     case 'mute':
                         if (value !== 0 && value !== 1) { ack(false); return; }
                         video.muted = value === 1; ack(video.muted === (value === 1)); break;
-                    case 'audioOnly':
-                        if (value !== 0 && value !== 1) { ack(false); return; }
-                        ack(setAudioOnly(video, value === 1)); break;
                     case 'scale': {
                         if (!Number.isInteger(value) || value < 0 || value > 2) { ack(false); return; }
                         var fit = ['contain', 'cover', 'fill'][value];
@@ -115,7 +89,7 @@ internal const val BROWSER_VIDEO_CONTROL_SCRIPT = """
                         ack(Math.abs(video.playbackRate - value) < 0.01);
                         break;
                     case 'richUi':
-                        if (value !== 1) { releaseRate(); restoreAudioOnly(); }
+                        if (value !== 1) releaseRate();
                         ack(api.rich(command.elementId, command.attempt, value === 1)); break;
                     case 'seek': case 'skip': {
                         if (!Number.isFinite(value) || (command.action === 'skip' && Math.abs(value) > 60)) { ack(false); return; }
@@ -164,7 +138,6 @@ internal const val BROWSER_VIDEO_CONTROL_SCRIPT = """
         return {receive: receive, release: function () { releaseRate(); if (seekCleanup) seekCleanup(); }, destroy: function () {
             disposed = true;
             releaseRate();
-            restoreAudioOnly();
             if (seekCleanup) seekCleanup();
             seekCleanup = null;
         }};

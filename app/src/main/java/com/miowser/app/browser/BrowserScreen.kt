@@ -301,6 +301,7 @@ fun BrowserScreen(
     var playbackRequest by remember { mutableStateOf<PlaybackRequest?>(null) }
     var fullscreenVideo by remember { mutableStateOf<WebFullscreenVideo?>(null) }
     var browserVideoAudioOnly by remember { mutableStateOf(false) }
+    val backgroundPlaybackEnabled = AppSettings.current.backgroundPlaybackEnabled
     fun exitWebFullscreen() {
         val current = fullscreenVideo ?: return
         tabController.tabs.firstOrNull { it.id == current.tabId }
@@ -3006,6 +3007,7 @@ fun BrowserScreen(
                     tabs.firstOrNull { it.id == fullscreen.tabId }?.let { owner ->
                         BrowserVideoPlayerOverlay(owner.browserVideoPlayer, owner.title, ::exitWebFullscreen,
                             sourceLabel = SiteProtection.host(owner.url).orEmpty(),
+                            backgroundPlaybackEnabled = backgroundPlaybackEnabled,
                             onAudioOnlyChanged = { browserVideoAudioOnly = it })
                     }
                 }
@@ -3187,7 +3189,7 @@ fun BrowserScreen(
         onDispose { app.unregisterComponentCallbacks(callbacks) }
     }
     DisposableEffect(lifecycleOwner, showingHub, playbackRequest, activeScreen, activeTabId, recordsReady,
-        browserVideoAudioOnly) {
+        browserVideoAudioOnly, backgroundPlaybackEnabled) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_RESUME -> {
@@ -3203,7 +3205,7 @@ fun BrowserScreen(
                     if (!showingHub) tabs.firstOrNull { it.id == activeTabId }?.markActive()
                     val pipOwner = (context.findBrowserActivity() as? com.miowser.app.MainActivity)?.browserVideoPipOwner
                     tabs.forEach { tab ->
-                        val keepForAudio = keepBrowserRendererForAudioOnly(browserVideoAudioOnly,
+                        val keepForAudio = backgroundPlaybackEnabled && keepBrowserRendererForAudioOnly(browserVideoAudioOnly,
                             fullscreenVideo?.tabId, tab.id, tab.browserVideoPlayer.state.value)
                         val keepForPip = keepBrowserRendererForPip(pipOwner, fullscreenVideo?.tabId, tab.id, tab.browserVideoPlayer.state.value)
                         if (!keepForAudio) tab.pauseBrowserVideoHost(keepForPip)

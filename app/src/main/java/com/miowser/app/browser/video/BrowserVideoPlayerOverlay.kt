@@ -46,7 +46,8 @@ import kotlinx.coroutines.flow.map
 /** Original player UI backed by the retained HTML video. This route never creates ExoPlayer. */
 @Composable
 internal fun BrowserVideoPlayerOverlay(controller: BrowserPlaybackControls, title: String,
-    onExit: () -> Unit, sourceLabel: String = "", onAudioOnlyChanged: (Boolean) -> Unit = {}) {
+    onExit: () -> Unit, sourceLabel: String = "", backgroundPlaybackEnabled: Boolean = true,
+    onAudioOnlyChanged: (Boolean) -> Unit = {}) {
     val presentation = remember(controller) { controller.state.map(::browserVideoPresentation).distinctUntilChanged() }
     val state by presentation.collectAsState(browserVideoPresentation(controller.state.value))
     MiowserPlayerTheme(darkTheme = true) {
@@ -56,7 +57,8 @@ internal fun BrowserVideoPlayerOverlay(controller: BrowserPlaybackControls, titl
                 state.message ?: "The video connection is unavailable.", onExit)
         } else state.owner?.let { owner ->
             key(owner) {
-                BrowserVideoControlsContent(controller, state, title, sourceLabel, onExit, onAudioOnlyChanged)
+                BrowserVideoControlsContent(controller, state, title, sourceLabel, onExit,
+                    backgroundPlaybackEnabled, onAudioOnlyChanged)
             }
         }
     }
@@ -65,7 +67,8 @@ internal fun BrowserVideoPlayerOverlay(controller: BrowserPlaybackControls, titl
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
 private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, state: BrowserVideoPresentation,
-    title: String, sourceLabel: String, onExit: () -> Unit, onAudioOnlyChanged: (Boolean) -> Unit) {
+    title: String, sourceLabel: String, onExit: () -> Unit, backgroundPlaybackEnabled: Boolean,
+    onAudioOnlyChanged: (Boolean) -> Unit) {
     val video = state.video ?: return
     val owner = state.owner ?: return
     val context = LocalContext.current
@@ -99,10 +102,14 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
     val latestAudioOnly by rememberUpdatedState(state.audioOnly)
 
     LaunchedEffect(state.audioOnly) { onAudioOnlyChanged(state.audioOnly) }
-    DisposableEffect(controller, state.audioOnly, title) {
-        if (state.audioOnly) BrowserPlaybackService.attach(context.applicationContext, controller, title)
+    DisposableEffect(controller, state.audioOnly, title, backgroundPlaybackEnabled) {
+        if (state.audioOnly && backgroundPlaybackEnabled) {
+            BrowserPlaybackService.attach(context.applicationContext, controller, title)
+        }
         onDispose {
-            if (state.audioOnly) BrowserPlaybackService.detach(context.applicationContext, controller)
+            if (state.audioOnly && backgroundPlaybackEnabled) {
+                BrowserPlaybackService.detach(context.applicationContext, controller)
+            }
         }
     }
 
@@ -174,6 +181,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
         playerContent = {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val viewportHeight = maxHeight
+                if (state.audioOnly) Box(Modifier.fillMaxSize().background(Color.Black))
                 if (state.controlsEnabled) PlayerGestureSurface(locked, visible, landscape,
                     positionMs = { controller.state.value.let { s ->
                         val v = s.session?.state

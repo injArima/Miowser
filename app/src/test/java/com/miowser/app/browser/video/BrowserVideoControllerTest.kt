@@ -118,31 +118,14 @@ class BrowserVideoControllerTest {
         assertEquals(4, sent.size)
     }
 
-    @Test fun audioOnlyIsOptimisticAndUsesAnExplicitPageCommand() {
+    @Test fun audioOnlyIsOwnedByMiowserAndDoesNotMutateTheWebsitePlayer() {
         val c = controller()
         c.setAudioOnly(true)
         assertTrue(c.state.value.audioOnly)
-        assertEquals(BrowserVideoAction.AUDIO_ONLY, sent.single().action)
-        assertEquals(1.0, sent.single().value!!, 0.0)
-        c.completed(BrowserVideoAction.AUDIO_ONLY, true)
-        assertTrue(c.state.value.audioOnly)
-        assertNull(c.state.value.message)
-    }
-
-    @Test fun failedAudioOnlyCommandRestoresVideoAndReportsRecovery() {
-        val c = controller()
-        c.setAudioOnly(true)
-        c.completed(BrowserVideoAction.AUDIO_ONLY, false)
+        assertTrue(sent.isEmpty())
+        c.setAudioOnly(false)
         assertFalse(c.state.value.audioOnly)
-        assertEquals("The website couldn't switch audio-only playback.", c.state.value.message)
-    }
-
-    @Test fun undeliveredAudioOnlyCommandDoesNotLeaveVideoHidden() {
-        val c = controller()
-        c.connect { false }
-        c.setAudioOnly(true)
-        assertFalse(c.state.value.audioOnly)
-        assertNotNull(c.state.value.message)
+        assertTrue(sent.isEmpty())
     }
 
     @Test fun explicitPauseNeverTogglesToPlayDuringPipDismissal() {

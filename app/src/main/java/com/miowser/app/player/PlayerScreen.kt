@@ -356,6 +356,7 @@ private fun PlayerContent(
     var isScrubbing by remember(request) { mutableStateOf(false) }
     var playbackSpeed by remember(request) { mutableFloatStateOf(1f) }
     var audioOnly by remember(request) { mutableStateOf(false) }
+    val backgroundPlaybackEnabled = com.miowser.app.settings.AppSettings.current.backgroundPlaybackEnabled
     var holdToSpeedActive by remember(request) { mutableStateOf(false) }
     var speedBeforeHold by remember(request) { mutableFloatStateOf(1f) }
     var wasPlayingBeforeHold by remember(request) { mutableStateOf(false) }
@@ -747,6 +748,7 @@ private fun PlayerContent(
     }
 
     val backgroundAudioOnly = rememberUpdatedState(audioOnly)
+    val backgroundPlaybackAllowed = rememberUpdatedState(backgroundPlaybackEnabled)
     DisposableEffect(lifecycleOwner, exoPlayer) {
         var resumeWhenActive = false
         var pauseControlRevision = 0L
@@ -755,7 +757,8 @@ private fun PlayerContent(
                 Lifecycle.Event.ON_PAUSE -> {
                     val enteringOrInPip = pipTransitionActive.value ||
                         (activity as? MainActivity)?.isInPictureInPictureMode == true
-                    val keepPlaying = enteringOrInPip || backgroundAudioOnly.value
+                    val keepPlaying = enteringOrInPip ||
+                        (backgroundAudioOnly.value && backgroundPlaybackAllowed.value)
                     resumeWhenActive = !keepPlaying && exoPlayer.playWhenReady
                     pauseControlRevision = PlayerPlaybackService.externalControlRevision
                     if (!keepPlaying) exoPlayer.pause()

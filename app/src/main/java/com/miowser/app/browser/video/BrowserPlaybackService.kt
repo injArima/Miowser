@@ -63,11 +63,15 @@ internal class BrowserPlaybackService : Service() {
             })
             isActive = true
         }
+        // startForegroundService() must always be paired with startForeground(), even when the
+        // page rejects audio-only mode and Compose detaches the owner before onStartCommand runs.
+        startForeground(NOTIFICATION_ID, notification(false))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val requested = requestedControls
         if (requested == null) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -153,6 +157,7 @@ internal class BrowserPlaybackService : Service() {
         controls = null
         mediaSession.release()
         scope.cancel()
+        stopForeground(STOP_FOREGROUND_REMOVE)
         if (instance === this) instance = null
         super.onDestroy()
     }

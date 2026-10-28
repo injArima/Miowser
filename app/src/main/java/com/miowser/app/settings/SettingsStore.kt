@@ -19,6 +19,7 @@ private const val KEY_GRABBER_MINIMUM_DURATION_SECONDS = "grabber_minimum_durati
 private const val KEY_AUTO_DELETE_INACTIVE_TABS = "auto_delete_inactive_tabs"
 private const val KEY_INACTIVE_TAB_RETENTION = "inactive_tab_retention"
 private const val KEY_REDUCE_MOTION = "reduce_motion"
+private const val KEY_BACKGROUND_PLAYBACK_ENABLED = "background_playback_enabled"
 
 /** Thin SharedPreferences wrapper — one flat record, so plain typed keys rather than a codec. */
 object SettingsStore {
@@ -57,7 +58,10 @@ object SettingsStore {
                 KEY_GRABBER_MINIMUM_DURATION_SECONDS, defaults.grabberMinimumDurationSeconds
             ).coerceIn(0, 1_800),
             inactiveTabRetention = savedRetention ?: legacyRetention,
-            reduceMotion = prefs.getBoolean(KEY_REDUCE_MOTION, defaults.reduceMotion)
+            reduceMotion = prefs.getBoolean(KEY_REDUCE_MOTION, defaults.reduceMotion),
+            backgroundPlaybackEnabled = prefs.getBoolean(
+                KEY_BACKGROUND_PLAYBACK_ENABLED, defaults.backgroundPlaybackEnabled
+            )
         )
     }
 
@@ -80,6 +84,7 @@ object SettingsStore {
                 .putInt(KEY_GRABBER_MINIMUM_DURATION_SECONDS, settings.grabberMinimumDurationSeconds.coerceIn(0, 1_800))
                 .putString(KEY_INACTIVE_TAB_RETENTION, settings.inactiveTabRetention.name)
                 .putBoolean(KEY_REDUCE_MOTION, settings.reduceMotion)
+                .putBoolean(KEY_BACKGROUND_PLAYBACK_ENABLED, settings.backgroundPlaybackEnabled)
                 .commit()
         }
     }
