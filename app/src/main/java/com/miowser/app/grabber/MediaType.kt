@@ -3,6 +3,13 @@ package com.miowser.app.grabber
 enum class MediaType { HLS, DASH, MP4, WEBM, MATROSKA, AUDIO, SUBTITLE, UNKNOWN }
 enum class MediaSizeKind { EXACT, ESTIMATED, UNKNOWN }
 
+/** One independently detected HLS media playlist that belongs to an adaptive rendition group. */
+data class HlsRendition(
+    val url: String,
+    val resolution: String? = null,
+    val bitrateBitsPerSecond: Long? = null
+)
+
 /** One detected candidate. See [com.miowser.app.grabber.MediaProbe] for how [isConfirmed] is decided. */
 data class DetectedMedia(
     val url: String,
@@ -29,7 +36,9 @@ data class DetectedMedia(
     val requestOrigin: String? = null,
     val detectedAt: Long = System.currentTimeMillis(),
     /** Absolute poster URL reported by the page's media element, when one exists. */
-    val posterUrl: String? = null
+    val posterUrl: String? = null,
+    /** Empty for ordinary media and real master playlists; populated for grouped HLS leaf lists. */
+    val hlsRenditions: List<HlsRendition> = emptyList()
 ) {
     val sizeKind: MediaSizeKind
         get() = when {
@@ -77,7 +86,9 @@ internal fun mergeDetectedMedia(current: DetectedMedia, update: DetectedMedia): 
         requestReferer = usefulText(update.requestReferer) ?: usefulText(current.requestReferer),
         requestOrigin = usefulText(update.requestOrigin) ?: usefulText(current.requestOrigin),
         detectedAt = minOf(current.detectedAt, update.detectedAt),
-        posterUrl = usefulText(update.posterUrl) ?: usefulText(current.posterUrl)
+        posterUrl = usefulText(update.posterUrl) ?: usefulText(current.posterUrl),
+        hlsRenditions = if (update.hlsRenditions.isNotEmpty()) update.hlsRenditions
+            else current.hlsRenditions
     )
 }
 

@@ -7,6 +7,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.dash.DefaultDashChunkSource
@@ -59,30 +60,46 @@ internal class RemotePlayerTransport private constructor(
             }
             val uncached = ResolvingDataSource.Factory(playbackHttp, resolver)
             val prefetchUncached = ResolvingDataSource.Factory(prefetchHttp, resolver)
+            // Synthetic HLS masters use a data: URI. DefaultDataSource handles that locally and
+            // delegates each absolute HTTP leaf playlist to the authenticated resolver above.
+            val manifestUncached = DefaultDataSource.Factory(context, uncached)
             if (Uri.parse(request.url).scheme?.lowercase() !in setOf("http", "https")) {
                 return RemotePlayerTransport(DefaultMediaSourceFactory(uncached), null, null)
             }
-            val session = preparedSession
-                ?: return RemotePlayerTransport(DefaultMediaSourceFactory(uncached), null, null)
-            val cacheFactory = session.factory(playbackHttp)
-            val prefetchCacheFactory = session.factory(prefetchHttp)
-            val cached = ResolvingDataSource.Factory(cacheFactory, resolver)
             val type = when {
                 request.mediaType == MediaType.HLS || request.url.substringBefore('?').endsWith(".m3u8", true) -> MediaType.HLS
                 request.mediaType == MediaType.DASH || request.url.substringBefore('?').endsWith(".mpd", true) -> MediaType.DASH
                 else -> request.mediaType
             }
+            val session = preparedSession
+            if (session == null) {
+                val sourceFactory: MediaSource.Factory = when (type) {
+                    MediaType.HLS -> HlsMediaSource.Factory(HlsDataSourceFactory { dataType ->
+                        if (dataType == C.DATA_TYPE_MEDIA) uncached.createDataSource()
+                        else manifestUncached.createDataSource()
+                    })
+                    MediaType.DASH -> DashMediaSource.Factory(
+                        DefaultDashChunkSource.Factory(uncached), uncached)
+                    else -> DefaultMediaSourceFactory(uncached)
+                }
+                return RemotePlayerTransport(sourceFactory, null, null)
+            }
+            val cacheFactory = session.factory(playbackHttp)
+            val prefetchCacheFactory = session.factory(prefetchHttp)
+            val cached = ResolvingDataSource.Factory(cacheFactory, resolver)
             val sourceFactory: MediaSource.Factory = when (type) {
                 MediaType.HLS -> HlsMediaSource.Factory(HlsDataSourceFactory { dataType ->
                     if (dataType == C.DATA_TYPE_MEDIA) cached.createDataSource()
-                    else uncached.createDataSource()
+                    else manifestUncached.createDataSource()
                 })
                 MediaType.DASH -> DashMediaSource.Factory(
                     DefaultDashChunkSource.Factory(cached), uncached)
                 else -> DefaultMediaSourceFactory(cached)
             }
-            prefetcher = PlayerWindowPrefetcher(request.url, type, prefetchUncached,
-                prefetchCacheFactory, session, headersFor)
+            if (request.hlsRenditions.size < 2) {
+                prefetcher = PlayerWindowPrefetcher(request.url, type, prefetchUncached,
+                    prefetchCacheFactory, session, headersFor)
+            }
             return RemotePlayerTransport(sourceFactory, prefetcher, session)
         }
     }

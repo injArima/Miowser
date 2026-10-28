@@ -1,6 +1,7 @@
 package com.miowser.app.library
 
 import com.miowser.app.grabber.MediaType
+import com.miowser.app.grabber.HlsRendition
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -192,6 +193,20 @@ class LibraryCodecTest {
         val saved = remote().copy(selectedSubtitle = subtitle)
         assertEquals(saved, LibraryCodec.decode(LibraryCodec.encode(listOf(saved))).single())
         assertEquals(subtitle, mergeOpened(saved, remote()).selectedSubtitle)
+    }
+
+    @Test
+    fun `adaptive HLS renditions survive restart and reopening`() {
+        val renditions = listOf(
+            HlsRendition("https://cdn.example.com/1080/index.m3u8", "1920x1080", 5_000_000),
+            HlsRendition("https://cdn.example.com/720/index.m3u8", "1280x720", 2_500_000)
+        )
+        val saved = remote().copy(hlsRenditions = renditions)
+        assertEquals(saved, LibraryCodec.decode(LibraryCodec.encode(listOf(saved))).single())
+        assertEquals(renditions, mergeOpened(saved, remote()).hlsRenditions)
+
+        val previousRecord = LibraryCodec.encode(listOf(saved)).split('\t').take(24).joinToString("\t")
+        assertTrue(LibraryCodec.decode(previousRecord).single().hlsRenditions.isEmpty())
     }
 
     @Test

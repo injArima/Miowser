@@ -82,6 +82,7 @@ object MediaLibrary {
                 pageTitle = entry.pageTitle ?: existing.pageTitle,
                 videoName = entry.videoName ?: existing.videoName,
                 pageUrl = entry.pageUrl ?: existing.pageUrl,
+                hlsRenditions = entry.hlsRenditions.ifEmpty { existing.hlsRenditions },
                 explicitlySaved = true
             )
             if (refreshed != existing) {
@@ -401,6 +402,7 @@ fun mergeOpened(existing: LibraryEntry?, incoming: LibraryEntry): LibraryEntry {
         explicitlySaved = incoming.explicitlySaved || existing.explicitlySaved,
         qualityHeight = incoming.qualityHeight ?: existing.qualityHeight,
         selectedSubtitle = incoming.selectedSubtitle ?: existing.selectedSubtitle,
+        hlsRenditions = incoming.hlsRenditions.ifEmpty { existing.hlsRenditions },
         // The handoff's actual start point is authoritative: opening from a Library card passes
         // its resume point, while intentionally starting the same URL elsewhere passes zero and
         // correctly resets the watched-progress bar instead of leaving stale progress visible.

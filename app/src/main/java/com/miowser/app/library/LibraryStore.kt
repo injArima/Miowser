@@ -3,6 +3,8 @@ package com.miowser.app.library
 import android.content.Context
 import com.miowser.app.persistence.Persistence
 import com.miowser.app.grabber.MediaType
+import com.miowser.app.grabber.HlsRendition
+import java.util.Base64
 
 private const val PREFS_NAME = "media_library"
 private const val KEY_ENTRIES = "entries"
@@ -10,7 +12,7 @@ private const val FIELD_DELIMITER = '\t'
 private const val RECORD_DELIMITER = '\n'
 private const val LEGACY_FIELD_COUNT = 11
 private const val PREVIOUS_FIELD_COUNT = 14
-private const val FIELD_COUNT = 24
+private const val FIELD_COUNT = 25
 
 enum class LibrarySourceKind { REMOTE_STREAM, LOCAL_FILE }
 
@@ -43,7 +45,8 @@ data class LibraryEntry(
     val requestOrigin: String? = null,
     val selectedSubtitle: LibrarySubtitle? = null,
     val manualFolder: Boolean = false,
-    val explicitlySaved: Boolean = true
+    val explicitlySaved: Boolean = true,
+    val hlsRenditions: List<HlsRendition> = emptyList()
 ) {
     val identityKey: String get() = "${sourceKind.name}:$mediaUri"
 }
@@ -76,7 +79,8 @@ object LibraryCodec {
                 entry.selectedSubtitle?.requestReferer?.let(::sanitize) ?: "",
                 entry.selectedSubtitle?.requestOrigin?.let(::sanitize) ?: "",
                 entry.manualFolder.toString(),
-                entry.explicitlySaved.toString()
+                entry.explicitlySaved.toString(),
+                encodeHlsRenditions(entry.hlsRenditions)
             ).joinToString(FIELD_DELIMITER.toString())
         }
 
@@ -87,7 +91,7 @@ object LibraryCodec {
 
     private fun decodeLine(line: String): LibraryEntry? {
         val parts = line.split(FIELD_DELIMITER)
-        if (parts.size !in setOf(LEGACY_FIELD_COUNT, PREVIOUS_FIELD_COUNT, 15, 17, 22, 23, FIELD_COUNT) || parts[0].isBlank()) return null
+        if (parts.size !in setOf(LEGACY_FIELD_COUNT, PREVIOUS_FIELD_COUNT, 15, 17, 22, 23, 24, FIELD_COUNT) || parts[0].isBlank()) return null
         return runCatching {
             LibraryEntry(
                 mediaUri = parts[0],
@@ -120,13 +124,40 @@ object LibraryCodec {
                 // videos pinned rather than unexpectedly moving them when rules are introduced.
                 manualFolder = parts.getOrNull(22)?.toBooleanStrictOrNull()
                     ?: (parts.size < 23 && parts.getOrNull(13)?.isNotBlank() == true),
-                explicitlySaved = parts.getOrNull(23)?.toBooleanStrictOrNull() ?: true
+                explicitlySaved = parts.getOrNull(23)?.toBooleanStrictOrNull() ?: true,
+                hlsRenditions = decodeHlsRenditions(parts.getOrNull(24).orEmpty())
             )
         }.getOrNull()
     }
 
     private fun sanitize(value: String): String =
         value.replace(FIELD_DELIMITER, ' ').replace(RECORD_DELIMITER, ' ')
+
+    private fun encodeHlsRenditions(renditions: List<HlsRendition>): String = renditions
+        .distinctBy(HlsRendition::url)
+        .joinToString(",") { rendition ->
+            val value = listOf(
+                rendition.url,
+                rendition.resolution.orEmpty(),
+                rendition.bitrateBitsPerSecond?.toString().orEmpty()
+            ).joinToString("\u0000")
+            Base64.getUrlEncoder().withoutPadding().encodeToString(value.toByteArray(Charsets.UTF_8))
+        }
+
+    private fun decodeHlsRenditions(encoded: String): List<HlsRendition> = encoded
+        .split(',')
+        .mapNotNull { record ->
+            if (record.isBlank()) return@mapNotNull null
+            runCatching {
+                val parts = String(Base64.getUrlDecoder().decode(record), Charsets.UTF_8).split('\u0000')
+                val url = parts.getOrNull(0)?.takeIf(String::isNotBlank) ?: return@runCatching null
+                HlsRendition(
+                    url = url,
+                    resolution = parts.getOrNull(1)?.ifBlank { null },
+                    bitrateBitsPerSecond = parts.getOrNull(2)?.toLongOrNull()?.takeIf { it > 0L }
+                )
+            }.getOrNull()
+        }
 }
 
 object LibraryStore {

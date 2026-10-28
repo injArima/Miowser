@@ -15,11 +15,12 @@ class P2LibraryRetentionTest {
     @Test fun savedVideo501AndLegacyRecordsSurviveRoundTripAndRetention() {
         val records = (0..500).map { item(it, saved = true) }
         assertEquals(records, retainLibraryRecords(LibraryCodec.decode(LibraryCodec.encode(records))))
-        val legacy = LibraryCodec.encode(listOf(item(9))).substringBeforeLast('\t')
+        val legacy = LibraryCodec.encode(listOf(item(9))).split('\t').take(23).joinToString("\t")
         assertTrue(LibraryCodec.decode(legacy).single().explicitlySaved)
     }
     @Test fun migrationDoesNotTurnP1AutomaticFolderPlacementsIntoManualMoves() {
-        val legacy = LibraryCodec.encode(listOf(item(9).copy(folderId = "rule"))).substringBeforeLast('\t')
+        val legacy = LibraryCodec.encode(listOf(item(9).copy(folderId = "rule")))
+            .split('\t').take(23).joinToString("\t")
         assertFalse(LibraryCodec.decode(legacy).single().manualFolder)
     }
     @Test fun reorganizationsRespectManualPlacementsAndParentScope() {

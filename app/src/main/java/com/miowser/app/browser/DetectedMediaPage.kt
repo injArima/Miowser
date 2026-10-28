@@ -63,6 +63,7 @@ import com.miowser.app.downloader.rendererResourceKind
 import com.miowser.app.grabber.DetectedMedia
 import com.miowser.app.grabber.DiscoveryProgress
 import com.miowser.app.grabber.MediaType
+import com.miowser.app.grabber.groupHlsRenditions
 import com.miowser.app.grabber.meetsMinimumDuration
 import com.miowser.app.ui.ExpressiveEmptyState
 import com.miowser.app.ui.SimplePageScaffold
@@ -93,10 +94,11 @@ fun DetectedMediaPage(
     var selectedCategory by remember { mutableStateOf<DetectorCategory?>(null) }
     var selectedSubtitle by remember { mutableStateOf<DetectedMedia?>(null) }
 
-    val visibleItems = items.filter { it.meetsMinimumDuration(minimumDurationSeconds) }
+    val durationFilteredItems = items.filter { it.meetsMinimumDuration(minimumDurationSeconds) }
+    val visibleItems = groupHlsRenditions(durationFilteredItems)
     val groups = detectorGroups(visibleItems)
     val activeCategory = selectedCategory?.takeIf { groups.containsKey(it) }
-    val hiddenCount = items.size - visibleItems.size
+    val hiddenCount = items.size - durationFilteredItems.size
 
     SimplePageScaffold(
         title = "Detected media",
@@ -176,7 +178,8 @@ fun DetectedMediaPage(
                                     },
                                     onDownload = onDownload,
                                     onAddToLibrary = onAddToLibrary,
-                                    isSaved = item.url in savedMediaUrls,
+                                    isSaved = item.url in savedMediaUrls ||
+                                        item.hlsRenditions.any { it.url in savedMediaUrls },
                                     canSaveToLibrary = canSaveToLibrary
                                 )
                             }

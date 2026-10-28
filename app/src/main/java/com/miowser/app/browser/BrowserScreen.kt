@@ -1362,7 +1362,8 @@ fun BrowserScreen(
                 ?: item.url.substringBefore('?').substringBefore('#').substringAfterLast('/')
                     .takeIf(String::isNotBlank) ?: title,
             posterUrl = item.posterUrl,
-            posterCookies = item.posterUrl?.let { CookieManager.getInstance().getCookie(it) }
+            posterCookies = item.posterUrl?.let { CookieManager.getInstance().getCookie(it) },
+            hlsRenditions = item.hlsRenditions
         )
     }
 

@@ -139,6 +139,7 @@ import androidx.media3.ui.SubtitleView
 import com.miowser.app.grabber.MediaType
 import com.miowser.app.R
 import com.miowser.app.grabber.DetectedMedia
+import com.miowser.app.grabber.HlsRendition
 import com.miowser.app.browser.SubtitleViewer
 import com.miowser.app.browser.loadSubtitleForPlayback
 import com.miowser.app.library.MediaLibrary
@@ -181,6 +182,7 @@ sealed class PlaybackRequest {
         val requestOrigin: String? = null,
         val posterUrl: String? = null,
         val posterCookies: String? = null,
+        val hlsRenditions: List<HlsRendition> = emptyList(),
         override val startPositionMs: Long = 0L
     ) : PlaybackRequest()
 
@@ -1412,7 +1414,7 @@ private fun PlayerSubtitleNotice(message: String, modifier: Modifier = Modifier)
 
 internal fun remotePlayerMediaItem(request: PlaybackRequest.Remote): MediaItem =
     MediaItem.Builder()
-        .setUri(request.url)
+        .setUri(syntheticHlsMasterDataUri(request.hlsRenditions) ?: request.url)
         .setMimeType(request.mediaType.toExoMimeTypeHint())
         .build()
 

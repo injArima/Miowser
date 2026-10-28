@@ -13,7 +13,7 @@ import java.util.Locale
 internal enum class PlayerTrackKind(val media3Type: Int, val title: String) {
     SUBTITLE(C.TRACK_TYPE_TEXT, "Subtitles"),
     AUDIO(C.TRACK_TYPE_AUDIO, "Audio"),
-    VIDEO(C.TRACK_TYPE_VIDEO, "Sources")
+    VIDEO(C.TRACK_TYPE_VIDEO, "Quality")
 }
 
 internal enum class PlayerTrackMode { AUTO, OFF, SPECIFIC }
@@ -83,12 +83,12 @@ internal fun playerTrackButtonLabel(
         ?: when (kind) {
             PlayerTrackKind.SUBTITLE -> "Subs"
             PlayerTrackKind.AUDIO -> "Audio"
-            PlayerTrackKind.VIDEO -> "Sources"
+            PlayerTrackKind.VIDEO -> "Quality"
         }
     PlayerTrackMode.AUTO -> when (kind) {
         PlayerTrackKind.SUBTITLE -> "Subs"
         PlayerTrackKind.AUDIO -> "Audio"
-        PlayerTrackKind.VIDEO -> "Sources"
+        PlayerTrackKind.VIDEO -> "Quality"
     }
 }
 

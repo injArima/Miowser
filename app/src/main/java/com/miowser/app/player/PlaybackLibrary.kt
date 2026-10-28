@@ -28,7 +28,8 @@ internal fun PlaybackRequest.toLibraryEntry(
         durationMs = durationMs.coerceAtLeast(0L),
         pageTitle = pageTitle,
         videoName = videoName,
-        selectedSubtitle = externalSubtitles.firstOrNull { it.url == preferredSubtitleUrl }?.toLibrarySubtitle()
+        selectedSubtitle = externalSubtitles.firstOrNull { it.url == preferredSubtitleUrl }?.toLibrarySubtitle(),
+        hlsRenditions = hlsRenditions
     )
 
     is PlaybackRequest.Local -> LibraryEntry(
@@ -70,7 +71,8 @@ internal fun LibraryEntry.toPlaybackRequest(
         posterCookies = null,
         startPositionMs = libraryResumePosition(positionMs, durationMs),
         externalSubtitles = selectedSubtitle?.let { listOf(it.toDetectedMedia(pageTitle)) }.orEmpty(),
-        preferredSubtitleUrl = selectedSubtitle?.url
+        preferredSubtitleUrl = selectedSubtitle?.url,
+        hlsRenditions = hlsRenditions
     )
 
     LibrarySourceKind.LOCAL_FILE -> PlaybackRequest.Local(

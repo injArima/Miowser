@@ -39,7 +39,7 @@ class PlayerTrackControlsTest {
     fun `button label reflects off auto and pinned quality states`() {
         val video = PlayerTrackOption("1080", PlayerTrackKind.VIDEO, 0, 0, "1080p", "5 Mbps")
         val snapshot = PlayerTrackSnapshot(video = listOf(video))
-        assertEquals("Sources", playerTrackButtonLabel(PlayerTrackKind.VIDEO, PlayerTrackSelection(), snapshot))
+        assertEquals("Quality", playerTrackButtonLabel(PlayerTrackKind.VIDEO, PlayerTrackSelection(), snapshot))
         assertEquals(
             "1080p",
             playerTrackButtonLabel(
