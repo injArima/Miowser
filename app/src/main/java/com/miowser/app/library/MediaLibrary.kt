@@ -228,6 +228,79 @@ object MediaLibrary {
         if (mutableRecords.removeAll { it.identityKey in keys }) { persist(context); scheduleCleanup(context) }
     }
 
+    /** Drop stale private thumbnail references; cards/player can generate fresh frames later. */
+    fun clearThumbnails(context: Context, identityKeys: Set<String>): Int {
+        Persistence.requireOwner()
+        if (identityKeys.isEmpty()) return 0
+        var changed = 0
+        mutableRecords.indices.forEach { index ->
+            val entry = mutableRecords[index]
+            if (entry.identityKey in identityKeys && entry.thumbnailUrl != null) {
+                mutableRecords[index] = entry.copy(thumbnailUrl = null)
+                changed++
+            }
+        }
+        if (changed > 0) {
+            persist(context, ProjectionChange.DETAIL)
+            scheduleCleanup(context)
+        }
+        return changed
+    }
+
+    /** Recover records that reference a folder which no longer exists. */
+    fun moveOrphanedEntriesToUnfiled(context: Context, validFolderIds: Set<String>): Int {
+        Persistence.requireOwner()
+        var changed = 0
+        mutableRecords.indices.forEach { index ->
+            val entry = mutableRecords[index]
+            if (entry.folderId != null && entry.folderId !in validFolderIds) {
+                mutableRecords[index] = entry.copy(folderId = null, manualFolder = true)
+                changed++
+            }
+        }
+        if (changed > 0) persist(context)
+        return changed
+    }
+
+    /**
+     * Exact identity duplicates can only come from legacy/corrupt persisted data. Keep the most
+     * useful record and return every removed record so the UI can offer a non-destructive Undo.
+     */
+    fun consolidateExactDuplicates(context: Context): List<LibraryEntry> {
+        Persistence.requireOwner()
+        val groups = mutableRecords.withIndex().groupBy { it.value.identityKey }
+        val keep = groups.values.mapTo(HashSet()) { group ->
+            group.maxWithOrNull(compareBy<IndexedValue<LibraryEntry>>(
+                { it.value.explicitlySaved },
+                { it.value.manualFolder },
+                { it.value.thumbnailUrl != null },
+                { it.value.durationMs > 0L },
+                { it.value.lastPlayedAt },
+                { -it.index }
+            ))!!.index
+        }
+        val removed = mutableRecords.withIndex().filter { it.index !in keep }.map { it.value }
+        if (removed.isEmpty()) return emptyList()
+        val retained = mutableRecords.withIndex().filter { it.index in keep }.map { it.value }
+            .sortedByDescending { it.lastPlayedAt }
+        mutableRecords.clear()
+        mutableRecords.addAll(retained)
+        persist(context)
+        scheduleCleanup(context)
+        return removed
+    }
+
+    /** Restores only duplicate records removed by Library Health without overwriting newer edits. */
+    fun restoreDuplicateRecords(context: Context, removed: Collection<LibraryEntry>) {
+        Persistence.requireOwner()
+        if (removed.isEmpty()) return
+        mutableRecords.addAll(removed)
+        val ordered = mutableRecords.sortedByDescending { it.lastPlayedAt }
+        mutableRecords.clear()
+        mutableRecords.addAll(ordered)
+        persist(context)
+    }
+
     fun clear(context: Context) {
         Persistence.requireOwner()
         mutableRecords.clear()

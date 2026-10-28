@@ -56,6 +56,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.HealthAndSafety
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
@@ -227,6 +228,7 @@ fun HubHomePage(
     var librarySearchQuery by rememberSaveable { mutableStateOf("") }
     var librarySortMenuExpanded by remember { mutableStateOf(false) }
     var showClearLibraryConfirmation by remember { mutableStateOf(false) }
+    var libraryHealthVisible by rememberSaveable { mutableStateOf(false) }
     var hubMenuExpanded by remember { mutableStateOf(false) }
     var viewMenuExpanded by remember { mutableStateOf(false) }
     val viewPrefs = remember(context) { context.getSharedPreferences("hub_library_view", android.content.Context.MODE_PRIVATE) }
@@ -306,6 +308,17 @@ fun HubHomePage(
                 importSnackbar.showSnackbar(message)
             }
         }
+    }
+    if (libraryHealthVisible) {
+        LibraryHealthPage(
+            entries = libraryEntries.toList(),
+            folders = LibraryFolders.entries.toList(),
+            onBack = { libraryHealthVisible = false },
+            onLocate = onRelinkLibraryEntry,
+            onRemove = onRemoveLibraryEntry,
+            onOpenSource = { url -> onOpenRecordInBrowser(url, false) }
+        )
+        return
     }
     BackHandler(enabled = uiVisible && selectedSection == HubSection.LIBRARY &&
         (activeFolderId != UNFILED_FOLDER_ID || folderHistory.isNotEmpty())) {
@@ -425,6 +438,16 @@ fun HubHomePage(
                                         }
                                     } else {
                                     MiowserMenuItem(text = { Text("View as") }, onClick = { viewMenuExpanded = true })
+                                    MiowserMenuItem(
+                                        text = { Text("Library health") },
+                                        leadingIcon = {
+                                            Icon(Icons.Rounded.HealthAndSafety, contentDescription = null)
+                                        },
+                                        onClick = {
+                                            hubMenuExpanded = false
+                                            libraryHealthVisible = true
+                                        }
+                                    )
                                     MiowserMenuItem(
                                         text = { Text("Clear Library") },
                                         leadingIcon = {
