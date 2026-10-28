@@ -2491,7 +2491,10 @@ fun BrowserScreen(
                                 context,
                                 videoName = entry?.videoName ?: request.videoName ?: request.title,
                                 pageTitle = entry?.pageTitle ?: request.pageTitle ?: request.title,
-                                pageUrl = request.pageUrl
+                                pageUrl = request.pageUrl,
+                                folderId = entry?.folderId,
+                                manualFolder = entry?.manualFolder == true,
+                                explicitlySaved = entry?.explicitlySaved == true
                             )
                             if (entry != null) MediaLibrary.remove(context, entry)
                         }

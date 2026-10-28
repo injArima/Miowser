@@ -9,9 +9,16 @@ class FailedVideoCodecTest {
     @Test fun `log preserves all copyable details`() {
         val record = FailedVideoRecord(
             "one", "clip.m3u8", "Episode 1 日本語", "example.com",
-            "https://example.com/watch?x=1&y=2", 1_000L
+            "https://example.com/watch?x=1&y=2", 1_000L,
+            folderId = "anime", manualFolder = true, explicitlySaved = true
         )
         assertEquals(listOf(record), FailedVideoCodec.decode(FailedVideoCodec.encode(listOf(record))))
+    }
+
+    @Test fun `old six field records remain readable without placement`() {
+        val record = FailedVideoRecord("one", "clip", "Page", "example.com", "https://example.com", 1L)
+        val legacy = FailedVideoCodec.encode(listOf(record)).split('\t').take(6).joinToString("\t")
+        assertEquals(record, FailedVideoCodec.decode(legacy).single())
     }
 
     @Test fun `copy action timestamp extends the ninety day lifetime`() {
@@ -59,5 +66,56 @@ class FailedVideoCodecTest {
         assertEquals("example.com", record.domain)
         assertEquals(entry.pageUrl, record.pageUrl)
         assertEquals(100L, record.lastActionAt)
+    }
+
+    @Test fun `replacement selection uses the same page and strongest media identity`() {
+        val first = FailedVideoRecord("one", "episode-1.m3u8", "Episode 1", "example.com",
+            "https://example.com/watch/1", 1L, folderId = "anime")
+        val other = FailedVideoRecord("two", "trailer.m3u8", "Trailer", "example.com",
+            "https://example.com/watch/1", 2L, folderId = "trailers")
+        val incoming = LibraryEntry(
+            mediaUri = "https://cdn.example.com/renewed.m3u8",
+            pageUrl = "https://example.com/watch/1#player",
+            title = "Episode 1",
+            sourceLabel = "example.com",
+            sourceKind = LibrarySourceKind.REMOTE_STREAM,
+            mediaType = null,
+            userAgent = null,
+            thumbnailUrl = null,
+            lastPlayedAt = 3L,
+            positionMs = 0L,
+            durationMs = 0L,
+            pageTitle = "Episode 1",
+            videoName = "episode-1.m3u8"
+        )
+        assertEquals(first, selectFailedVideoReplacement(listOf(other, first), incoming))
+        assertNull(selectFailedVideoReplacement(listOf(first, first.copy(id = "duplicate")), incoming))
+    }
+
+    @Test fun `replacement inherits valid manual folder and saved state`() {
+        val incoming = LibraryEntry(
+            mediaUri = "https://cdn.example.com/new.m3u8",
+            pageUrl = "https://example.com/watch/1",
+            title = "Episode",
+            sourceLabel = "example.com",
+            sourceKind = LibrarySourceKind.REMOTE_STREAM,
+            mediaType = null,
+            userAgent = null,
+            thumbnailUrl = null,
+            lastPlayedAt = 1L,
+            positionMs = 0L,
+            durationMs = 0L,
+            explicitlySaved = false
+        )
+        val placement = FailedVideoPlacement("anime", manualFolder = true, explicitlySaved = true)
+        val (restored, preserved) = applyFailedVideoPlacement(incoming, placement, setOf("anime"))
+        assertTrue(preserved)
+        assertEquals("anime", restored.folderId)
+        assertTrue(restored.manualFolder)
+        assertTrue(restored.explicitlySaved)
+
+        val (fallback, missingPreserved) = applyFailedVideoPlacement(incoming, placement, emptySet())
+        assertTrue(!missingPreserved)
+        assertNull(fallback.folderId)
     }
 }

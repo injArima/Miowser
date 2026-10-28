@@ -54,8 +54,15 @@ object MediaLibrary {
         Persistence.requireOwner()
         val existingIndex = mutableRecords.indexOfFirst { it.identityKey == incoming.identityKey }
         val existing = mutableRecords.getOrNull(existingIndex)
-        val merged = mergeOpened(existing, incoming).let { entry ->
-            if (existing == null && entry.folderId == null) {
+        val placement = if (existing == null && incoming.sourceKind == LibrarySourceKind.REMOTE_STREAM) {
+            FailedVideoLog.claimReplacement(context, incoming)
+        } else null
+        if (placement != null) LibraryFolders.restore(context)
+        val (placedIncoming, preservedPlacement) = if (placement == null) incoming to false else {
+            applyFailedVideoPlacement(incoming, placement, LibraryFolders.entries.map { it.id }.toSet())
+        }
+        val merged = mergeOpened(existing, placedIncoming).let { entry ->
+            if (existing == null && entry.folderId == null && !preservedPlacement) {
                 entry.copy(folderId = LibraryFolders.routeNewVideo(context, entry))
             } else if (existing != null && !existing.manualFolder &&
                 (existing.videoName != entry.videoName || existing.pageTitle != entry.pageTitle ||

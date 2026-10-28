@@ -2,6 +2,7 @@ package com.miowser.app.library
 
 import android.content.Context
 import java.util.Base64
+import java.util.Locale
 import java.util.UUID
 
 private const val RETENTION_MS = 90L * 24L * 60L * 60L * 1_000L
@@ -12,7 +13,16 @@ data class FailedVideoRecord(
     val pageTitle: String,
     val domain: String,
     val pageUrl: String,
-    val lastActionAt: Long
+    val lastActionAt: Long,
+    val folderId: String? = null,
+    val manualFolder: Boolean = false,
+    val explicitlySaved: Boolean = false
+)
+
+internal data class FailedVideoPlacement(
+    val folderId: String?,
+    val manualFolder: Boolean,
+    val explicitlySaved: Boolean
 )
 
 /** Kept in a separate preference so opening the Library never decodes this optional log. */
@@ -29,17 +39,23 @@ object FailedVideoCodec {
             encoded(record.pageTitle),
             encoded(record.domain),
             encoded(record.pageUrl),
-            record.lastActionAt.toString()
+            record.lastActionAt.toString(),
+            record.folderId?.let(::encoded).orEmpty(),
+            record.manualFolder.toString(),
+            record.explicitlySaved.toString()
         ).joinToString("\t")
     }
 
     fun decode(raw: String): List<FailedVideoRecord> = raw.lineSequence().mapNotNull { line ->
         val fields = line.split('\t')
-        if (fields.size != 6 || fields[0].isBlank()) return@mapNotNull null
+        if (fields.size !in setOf(6, 9) || fields[0].isBlank()) return@mapNotNull null
         runCatching {
             FailedVideoRecord(
                 fields[0], decoded(fields[1]), decoded(fields[2]), decoded(fields[3]),
-                decoded(fields[4]), fields[5].toLong()
+                decoded(fields[4]), fields[5].toLong(),
+                folderId = fields.getOrNull(6)?.takeIf(String::isNotBlank)?.let(::decoded),
+                manualFolder = fields.getOrNull(7)?.toBooleanStrictOrNull() ?: false,
+                explicitlySaved = fields.getOrNull(8)?.toBooleanStrictOrNull() ?: false
             )
         }.getOrNull()
     }.toList()
@@ -97,6 +113,9 @@ object FailedVideoLog {
         videoName: String,
         pageTitle: String,
         pageUrl: String,
+        folderId: String? = null,
+        manualFolder: Boolean = false,
+        explicitlySaved: Boolean = false,
         now: Long = System.currentTimeMillis()
     ) = synchronized(lock) {
         val current = loadLocked(context, now)
@@ -106,9 +125,21 @@ object FailedVideoLog {
             pageTitle = pageTitle.ifBlank { "Unknown page" },
             domain = libraryDomain(pageUrl) ?: "Unknown website",
             pageUrl = pageUrl,
-            lastActionAt = now
+            lastActionAt = now,
+            folderId = folderId,
+            manualFolder = manualFolder,
+            explicitlySaved = explicitlySaved
         )
         persist(context, listOf(record) + current)
+    }
+
+    /** Claims the original placement only after a refreshed source has become playable. */
+    internal fun claimReplacement(context: Context, incoming: LibraryEntry,
+        now: Long = System.currentTimeMillis()): FailedVideoPlacement? = synchronized(lock) {
+        val current = loadLocked(context, now)
+        val record = selectFailedVideoReplacement(current, incoming) ?: return@synchronized null
+        persist(context, current.filterNot { it.id == record.id })
+        FailedVideoPlacement(record.folderId, record.manualFolder, record.explicitlySaved)
     }
 
     fun touch(context: Context, id: String, now: Long = System.currentTimeMillis()) = synchronized(lock) {
@@ -175,5 +206,46 @@ internal fun savedReferenceFromLibrary(entry: LibraryEntry, now: Long): FailedVi
     pageTitle = entry.pageTitle?.takeIf(String::isNotBlank) ?: entry.title.ifBlank { "Unknown page" },
     domain = libraryDomain(entry.pageUrl) ?: if (entry.sourceKind == LibrarySourceKind.LOCAL_FILE) "Local file" else "Unknown website",
     pageUrl = entry.pageUrl.orEmpty(),
-    lastActionAt = now
+    lastActionAt = now,
+    folderId = entry.folderId,
+    manualFolder = entry.manualFolder,
+    explicitlySaved = entry.explicitlySaved
 )
+
+internal fun selectFailedVideoReplacement(
+    records: List<FailedVideoRecord>,
+    incoming: LibraryEntry
+): FailedVideoRecord? {
+    val page = normalizedReplacementUrl(incoming.pageUrl) ?: return null
+    val names = listOfNotNull(incoming.videoName, incoming.title).map(::normalizedReplacementText).toSet()
+    val titles = listOfNotNull(incoming.pageTitle, incoming.title).map(::normalizedReplacementText).toSet()
+    val candidates = records.filter { normalizedReplacementUrl(it.pageUrl) == page }.map { record ->
+        val score = (if (normalizedReplacementText(record.videoName) in names) 4 else 0) +
+            (if (normalizedReplacementText(record.pageTitle) in titles) 2 else 0)
+        record to score
+    }.sortedByDescending { it.second }
+    if (candidates.size == 1) return candidates.single().first
+    val best = candidates.firstOrNull() ?: return null
+    if (best.second <= 0 || candidates.getOrNull(1)?.second == best.second) return null
+    return best.first
+}
+
+private fun normalizedReplacementText(value: String): String = value.trim().lowercase(Locale.ROOT)
+
+private fun normalizedReplacementUrl(value: String?): String? = value?.trim()?.takeIf(String::isNotEmpty)
+    ?.substringBefore('#')?.trimEnd('/')
+
+internal fun applyFailedVideoPlacement(
+    incoming: LibraryEntry,
+    placement: FailedVideoPlacement,
+    validFolderIds: Set<String>
+): Pair<LibraryEntry, Boolean> {
+    val folder = placement.folderId?.takeIf { it in validFolderIds }
+    val canPreserve = placement.folderId == null || folder != null
+    if (!canPreserve) return incoming to false
+    return incoming.copy(
+        folderId = folder,
+        manualFolder = folder != null && placement.manualFolder,
+        explicitlySaved = incoming.explicitlySaved || placement.explicitlySaved
+    ) to true
+}
