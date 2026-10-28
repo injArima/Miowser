@@ -190,8 +190,6 @@ fun HubHomePage(
     onSectionSelected: (HubSection) -> Unit,
     selectedDownloadSection: HubDownloadSection,
     onDownloadSectionSelected: (HubDownloadSection) -> Unit,
-    librarySort: HubLibrarySort,
-    onLibrarySortSelected: (HubLibrarySort) -> Unit,
     libraryEntries: List<LibraryEntry>,
     onPlayLibraryEntry: (LibraryEntry, List<LibraryEntry>) -> Unit,
     onRelinkLibraryEntry: (LibraryEntry) -> Unit,
@@ -239,6 +237,13 @@ fun HubHomePage(
     // Older saved state may still contain null from the removed All view.
     var selectedFolderId by rememberSaveable { mutableStateOf<String?>(UNFILED_FOLDER_ID) }
     val activeFolderId = selectedFolderId ?: UNFILED_FOLDER_ID
+    var librarySort by remember(activeFolderId) {
+        mutableStateOf(HubSettingsStore.loadLibrarySort(context, activeFolderId))
+    }
+    val selectLibrarySort: (HubLibrarySort) -> Unit = { sort ->
+        librarySort = sort
+        HubSettingsStore.saveLibrarySort(context, activeFolderId, sort)
+    }
     var folderHistory by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var importParentId by rememberSaveable { mutableStateOf<String?>(null) }
     var importLocationVisible by remember { mutableStateOf(false) }
@@ -383,7 +388,7 @@ fun HubHomePage(
                                                 if (option != librarySort) {
                                                     view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
                                                 }
-                                                onLibrarySortSelected(option)
+                                                selectLibrarySort(option)
                                             },
                                             trailingIcon = {
                                                 if (option == librarySort) {
@@ -576,7 +581,7 @@ fun HubHomePage(
                 selectedSection = selectedSection,
                 activeDownloadCount = downloads.count { it.status.isHubActiveDownload() },
                 librarySort = librarySort,
-                onLibrarySortSelected = onLibrarySortSelected,
+                onLibrarySortSelected = selectLibrarySort,
                 onOpenRecordInBrowser = onOpenRecordInBrowser,
                 onSectionSelected = onSectionSelected,
                 modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged {
@@ -805,7 +810,7 @@ private fun HubBottomNavigation(
             ExpressiveSheetHeading("Library settings")
             ExpressiveChoiceSetting(
                 title = "Library order",
-                description = "Choose how videos are arranged when the Library opens."
+                description = "Choose how videos are arranged in this folder."
             ) {
                 HubLibrarySort.entries.forEach { option ->
                     FilterChip(

@@ -2224,17 +2224,6 @@ fun BrowserScreen(
                         )
                     )
                 },
-                librarySort = hubLibrarySort,
-                onLibrarySortSelected = { sort ->
-                    hubLibrarySort = sort
-                    HubSettingsStore.save(
-                        context,
-                        HubSettings(
-                            librarySort = sort,
-                            defaultDownloadSection = hubDownloadSection
-                        )
-                    )
-                },
                 libraryEntries = MediaLibrary.entries,
                 onPlayLibraryEntry = { entry, visibleEntries ->
                     playLibraryEntry(entry, LibraryPlaybackQueue.fromVisible(visibleEntries))
