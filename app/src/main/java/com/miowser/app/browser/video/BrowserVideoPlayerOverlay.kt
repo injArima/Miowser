@@ -13,16 +13,22 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.LockOpen
+import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -84,6 +90,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
     var scaleMenu by remember { mutableStateOf(false) }
     var adjustments by remember { mutableStateOf(false) }
     var audioPanel by remember { mutableStateOf(false) }
+    var guidanceVisible by remember { mutableStateOf(false) }
     val overlays = remember { PlayerOverlayState() }
     val subtitleFocus = remember { FocusRequester() }
     val playlistFocus = remember { FocusRequester() }
@@ -98,7 +105,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
     var interaction by remember { mutableIntStateOf(0) }
     var rotationLocked by remember { mutableStateOf(false) }
     var pendingRotation by remember { mutableStateOf<Boolean?>(null) }
-    val modal = overlays.isPresent || adjustments || audioPanel
+    val modal = overlays.isPresent || adjustments || audioPanel || guidanceVisible
     val latestAudioOnly by rememberUpdatedState(state.audioOnly)
 
     LaunchedEffect(state.audioOnly) { onAudioOnlyChanged(state.audioOnly) }
@@ -147,8 +154,10 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
         }
     }
     BackHandler(enabled = locked && !inPip && state.controlsEnabled && !modal) { locked = false; visible = true }
+    BackHandler(enabled = guidanceVisible) { guidanceVisible = false }
     LaunchedEffect(state.phase, video.sourceRevision, inPip) {
         speedMenu = false; scaleMenu = false; adjustments = false; audioPanel = false
+        guidanceVisible = false
         overlays.clear(); scrubbing = false; feedback = null; speedHold.stop(controller); holdingSpeed = false
         if (!state.controlsEnabled) locked = false
     }
@@ -157,6 +166,12 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
         if (video.audioTracks.size <= 1) audioPanel = false
     }
     LaunchedEffect(feedbackSequence) { if (feedback != null) { delay(1_000); feedback = null } }
+    LaunchedEffect(guidanceVisible) {
+        if (guidanceVisible) {
+            delay(7_000)
+            guidanceVisible = false
+        }
+    }
     LaunchedEffect(visible, video.playing, video.buffering, speedMenu, scaleMenu, modal, scrubbing,
         state.seeking, state.message, interaction, state.phase) {
         if (!locked && (!video.playing || state.message != null)) visible = true
@@ -221,6 +236,12 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                                         interaction++; pendingRotation = null; rotationLocked = !rotationLocked
                                         activity?.requestedOrientation = if (rotationLocked) ActivityInfo.SCREEN_ORIENTATION_LOCKED else ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
                                     }, onDownload = null,
+                                    onCaution = {
+                                        closeMenus()
+                                        visible = true
+                                        interaction++
+                                        guidanceVisible = true
+                                    },
                                     onPip = if (!state.audioOnly && supportsPip) ({
                                         closeMenus(); speedHold.stop(controller)
                                         if (host?.enterBrowserVideoPictureInPicture(owner, video.width, video.height) != true)
@@ -279,6 +300,19 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                 if (state.phase == BrowserVideoPhase.RECONNECTING) BrowserVideoRecoveryBanner("Reconnecting player controls…", onExit)
             }
         }, overlayContent = {
+            if (guidanceVisible) {
+                val bubbleInteraction = remember { MutableInteractionSource() }
+                Box(Modifier.fillMaxSize().clickable(
+                    interactionSource = bubbleInteraction,
+                    indication = null
+                ) { guidanceVisible = false })
+                BrowserPlayerGuidanceBubble(
+                    Modifier.align(Alignment.TopEnd)
+                        .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top))
+                        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                        .padding(top = 62.dp, end = 16.dp)
+                )
+            }
             if (adjustments && state.controlsEnabled) PlayerAdjustmentsSheet(activity, { adjustments = false },
                 volumeEnabled = audio?.isVolumeFixed != true,
                 onVolumeInteraction = { if (controller.state.value.session?.state?.muted == true) controller.setMuted(false) })
@@ -315,6 +349,42 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                     })
             }
         })
+}
+
+@Composable
+private fun BrowserPlayerGuidanceBubble(modifier: Modifier = Modifier) {
+    val interaction = remember { MutableInteractionSource() }
+    Surface(
+        modifier = modifier.widthIn(max = 360.dp).clickable(
+            interactionSource = interaction,
+            indication = null,
+            onClick = {}
+        ),
+        shape = RoundedCornerShape(18.dp),
+        color = Color(0xFF2D291E).copy(alpha = 0.96f),
+        contentColor = Color.White,
+        border = BorderStroke(1.dp, Color(0xFFFFD875).copy(alpha = 0.72f)),
+        shadowElevation = 8.dp
+    ) {
+        Row(
+            Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            Icon(
+                Icons.Rounded.WarningAmber,
+                contentDescription = null,
+                tint = Color(0xFFFFD875),
+                modifier = Modifier.size(24.dp)
+            )
+            Text(
+                "For the best Miowser experience, open this video from the Media page and play it " +
+                    "with the rich player. DRM-protected videos must remain in the WebView player.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White
+            )
+        }
+    }
 }
 
 @Composable

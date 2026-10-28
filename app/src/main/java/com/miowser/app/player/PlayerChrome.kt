@@ -77,6 +77,7 @@ internal fun PlayerTopBar(
     onRotate: () -> Unit,
     onToggleRotationLock: () -> Unit,
     onDownload: (() -> Unit)?,
+    onCaution: (() -> Unit)? = null,
     onPip: (() -> Unit)?,
     audioOnly: Boolean,
     onToggleAudioOnly: () -> Unit,
@@ -103,6 +104,15 @@ internal fun PlayerTopBar(
             Spacer(Modifier.weight(1f))
             if (onDownload != null) {
                 RoundPlayerButton(Icons.Rounded.Download, "Download video", onDownload)
+                Spacer(Modifier.width(gap))
+            }
+            if (onCaution != null) {
+                RoundPlayerButton(
+                    Icons.Rounded.WarningAmber,
+                    "About WebView playback",
+                    onCaution,
+                    contentColor = Color(0xFFFFD875)
+                )
                 Spacer(Modifier.width(gap))
             }
             if (onPip != null) {
@@ -330,14 +340,15 @@ internal fun RoundPlayerButton(
     contentDescription: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    selected: Boolean = false
+    selected: Boolean = false,
+    contentColor: Color = Color.White
 ) {
     Surface(
         onClick = onClick,
         enabled = LocalPlayerControlsActive.current,
         shape = CircleShape,
         color = if (selected) Color.White.copy(alpha = 0.22f) else Color.Transparent,
-        contentColor = Color.White,
+        contentColor = contentColor,
         modifier = modifier.size(48.dp)
     ) {
         Box(contentAlignment = Alignment.Center) {
