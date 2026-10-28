@@ -9,5 +9,9 @@ class MiowserApplication : Application() {
         // Normally just checks for the private journal. Exceptional interrupted-restore recovery
         // must precede Activity, service and WorkManager repository reads.
         BackupEngine.recoverInterruptedRestore(this)
+        com.miowser.app.diagnostics.CrashDiagnostics.install(
+            this,
+            com.miowser.app.settings.SettingsStore.crashDiagnosticsEnabled(this)
+        )
     }
 }

@@ -59,6 +59,7 @@ fun SettingsPage(
     onOpenBrowsingData: () -> Unit,
     onOpenSitePermissions: () -> Unit,
     onOpenBackupRestore: () -> Unit,
+    onOpenCrashReports: () -> Unit,
     onBack: () -> Unit
 ) {
     var homePageDraft by remember(settings.homePageUrl) { mutableStateOf(settings.homePageUrl) }
@@ -236,6 +237,21 @@ fun SettingsPage(
             SettingsSection("Data") {
                 NavigationRow("Backup & restore", "Save your browser data or restore a previous backup.",
                     onClick = onOpenBackupRestore)
+            }
+            SettingsSection("Diagnostics") {
+                SettingRow(
+                    "Save crash diagnostics",
+                    "Keep redacted crash reports locally. Nothing is uploaded automatically, and sharing always requires your action.",
+                    settings.crashDiagnosticsEnabled
+                ) {
+                    onUpdate(settings.copy(crashDiagnosticsEnabled = it))
+                }
+                SectionDivider()
+                NavigationRow(
+                    "Crash reports",
+                    "View, copy, share, or clear reports stored on this device.",
+                    onClick = onOpenCrashReports
+                )
             }
             SettingsSection("Accessibility") {
                 SettingRow("Reduce motion", "Use simpler transitions. Android's remove-animations setting is always respected.",

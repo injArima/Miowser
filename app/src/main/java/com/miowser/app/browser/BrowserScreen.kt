@@ -147,6 +147,7 @@ import com.miowser.app.ui.BookmarksPage
 import com.miowser.app.ui.AdBlockPage
 import com.miowser.app.ui.BottomBar
 import com.miowser.app.ui.BrowsingDataPage
+import com.miowser.app.ui.CrashDiagnosticsPage
 import com.miowser.app.ui.HistoryPage
 import com.miowser.app.ui.LinkContextMenu
 import com.miowser.app.ui.MiowserSnackbarHost
@@ -302,6 +303,16 @@ fun BrowserScreen(
     var fullscreenVideo by remember { mutableStateOf<WebFullscreenVideo?>(null) }
     var browserVideoAudioOnly by remember { mutableStateOf(false) }
     val backgroundPlaybackEnabled = AppSettings.current.backgroundPlaybackEnabled
+    LaunchedEffect(showingHub, hubSection, playbackRequest != null, fullscreenVideo != null, activeScreen) {
+        val area = when {
+            playbackRequest != null -> "rich_player"
+            fullscreenVideo != null -> "web_player"
+            activeScreen != null -> "page_${activeScreen!!.name.lowercase()}"
+            showingHub -> "hub_${hubSection.name.lowercase()}"
+            else -> "browser"
+        }
+        com.miowser.app.diagnostics.CrashDiagnostics.setActiveArea(area)
+    }
     fun exitWebFullscreen() {
         val current = fullscreenVideo ?: return
         tabController.tabs.firstOrNull { it.id == current.tabId }
@@ -1540,7 +1551,8 @@ fun BrowserScreen(
                 libraryPlaybackQueue = null
             }
             BrowserBackAction.CLOSE_INTERNAL_PAGE -> activeScreen =
-                if (activeScreen == Screen.CLEAR_DATA || activeScreen == Screen.SITE_PERMISSIONS) Screen.SETTINGS else null
+                if (activeScreen == Screen.CLEAR_DATA || activeScreen == Screen.SITE_PERMISSIONS ||
+                    activeScreen == Screen.CRASH_DIAGNOSTICS) Screen.SETTINGS else null
             BrowserBackAction.WEB_HISTORY -> goBack()
             BrowserBackAction.CLOSE_CHILD_TAB -> activeTab?.let { closeTab(it.id) }
             BrowserBackAction.SHOW_HUB -> showingHub = true
@@ -2153,6 +2165,7 @@ fun BrowserScreen(
                 onOpenBrowsingData = { activeScreen = Screen.CLEAR_DATA },
                 onOpenSitePermissions = { activeScreen = Screen.SITE_PERMISSIONS },
                 onOpenBackupRestore = { showBackupRestore = true },
+                onOpenCrashReports = { activeScreen = Screen.CRASH_DIAGNOSTICS },
                 onBack = { activeScreen = null }
             )
             Screen.CLEAR_DATA -> BrowsingDataPage(
@@ -2170,6 +2183,9 @@ fun BrowserScreen(
                     SitePermissionStore.set(context, item.origin, item.resource, SiteDecision.ASK)
                     sitePermissionRevision++
                 },
+                onBack = { activeScreen = Screen.SETTINGS }
+            )
+            Screen.CRASH_DIAGNOSTICS -> CrashDiagnosticsPage(
                 onBack = { activeScreen = Screen.SETTINGS }
             )
             null -> Unit

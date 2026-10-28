@@ -70,7 +70,8 @@ data class Settings(
     val grabberMinimumDurationSeconds: Int = 0,
     val inactiveTabRetention: InactiveTabRetention = InactiveTabRetention.DAYS_30,
     val reduceMotion: Boolean = false,
-    val backgroundPlaybackEnabled: Boolean = true
+    val backgroundPlaybackEnabled: Boolean = true,
+    val crashDiagnosticsEnabled: Boolean = false
 ) {
     val autoDeleteInactiveTabs: Boolean get() = inactiveTabRetention != InactiveTabRetention.NEVER
     val searchUrlTemplate: String get() = if (searchEngine == SearchEngine.CUSTOM) customSearchUrl

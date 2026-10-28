@@ -20,6 +20,7 @@ private const val KEY_AUTO_DELETE_INACTIVE_TABS = "auto_delete_inactive_tabs"
 private const val KEY_INACTIVE_TAB_RETENTION = "inactive_tab_retention"
 private const val KEY_REDUCE_MOTION = "reduce_motion"
 private const val KEY_BACKGROUND_PLAYBACK_ENABLED = "background_playback_enabled"
+private const val KEY_CRASH_DIAGNOSTICS_ENABLED = "crash_diagnostics_enabled"
 
 /** Thin SharedPreferences wrapper — one flat record, so plain typed keys rather than a codec. */
 object SettingsStore {
@@ -61,6 +62,9 @@ object SettingsStore {
             reduceMotion = prefs.getBoolean(KEY_REDUCE_MOTION, defaults.reduceMotion),
             backgroundPlaybackEnabled = prefs.getBoolean(
                 KEY_BACKGROUND_PLAYBACK_ENABLED, defaults.backgroundPlaybackEnabled
+            ),
+            crashDiagnosticsEnabled = prefs.getBoolean(
+                KEY_CRASH_DIAGNOSTICS_ENABLED, defaults.crashDiagnosticsEnabled
             )
         )
     }
@@ -85,7 +89,13 @@ object SettingsStore {
                 .putString(KEY_INACTIVE_TAB_RETENTION, settings.inactiveTabRetention.name)
                 .putBoolean(KEY_REDUCE_MOTION, settings.reduceMotion)
                 .putBoolean(KEY_BACKGROUND_PLAYBACK_ENABLED, settings.backgroundPlaybackEnabled)
+                .putBoolean(KEY_CRASH_DIAGNOSTICS_ENABLED, settings.crashDiagnosticsEnabled)
                 .commit()
         }
     }
+
+    /** Minimal startup read used before the full settings repository is restored. */
+    fun crashDiagnosticsEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_CRASH_DIAGNOSTICS_ENABLED, false)
 }

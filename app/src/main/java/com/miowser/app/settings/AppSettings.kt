@@ -23,13 +23,18 @@ object AppSettings {
         com.miowser.app.persistence.Persistence.requireOwner()
         if (loaded) return
         val settings = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { SettingsStore.load(context) }
-        if (!loaded) { current = settings; loaded = true }
+        if (!loaded) {
+            current = settings
+            com.miowser.app.diagnostics.CrashDiagnostics.setEnabled(settings.crashDiagnosticsEnabled)
+            loaded = true
+        }
     }
 
     fun load(context: Context) {
         com.miowser.app.persistence.Persistence.requireOwner()
         if (loaded) return
         current = SettingsStore.load(context)
+        com.miowser.app.diagnostics.CrashDiagnostics.setEnabled(current.crashDiagnosticsEnabled)
         loaded = true
     }
 
@@ -37,6 +42,7 @@ object AppSettings {
         load(context)
         val updated = transform(current)
         current = updated
+        com.miowser.app.diagnostics.CrashDiagnostics.setEnabled(updated.crashDiagnosticsEnabled)
         SettingsStore.save(context.applicationContext, updated)
     }
 }

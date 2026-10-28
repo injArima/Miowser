@@ -1,6 +1,6 @@
 # Miowser privacy policy
 
-Last updated: 13 October 2026. Publisher: 1nja. Privacy contact: injamamul2k@gmail.com.
+Last updated: 29 October 2026. Publisher: 1nja. Privacy contact: injamamul2k@gmail.com.
 
 # What Miowser does
 
@@ -9,6 +9,8 @@ Miowser is a web browser with media detection, playback, downloads, bookmarks, a
 # Information on your device
 
 Miowser stores browser settings, site permissions, normal browsing history and tabs, bookmarks, speed dials, media and download references, playback progress, chosen subtitle files, filter settings, and related artwork on your device. Websites may store cookies and other web data through Android WebView. Private tabs are excluded from normal history and tab restoration, but they use the same underlying WebView storage while open; they are not a separate anonymous browser profile. Miowser clears shared private-session data when the private session ends or is recovered after interruption.
+
+Crash diagnostics are disabled by default. If you enable them, Miowser may keep up to five redacted crash reports in app-private storage. Reports can include an exception stack trace, Android and device model information, memory statistics, the active app area, and a short trail of controlled app events. Miowser excludes URLs, local paths, page titles, searches, and browsing history from that trail and redacts URL- or path-shaped text in exception details. Reports are never uploaded automatically. You choose whether to copy or share one, and you can clear them in Settings.
 
 # Network activity
 
