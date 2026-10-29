@@ -120,7 +120,10 @@ fun BottomBar(
                 Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = stringResource(R.string.nav_forward))
             }
             IconButton(onClick = onBookmarks, enabled = ready) {
-                Icon(HotelClassRoundedOutline, contentDescription = stringResource(R.string.nav_bookmarks), tint = MaterialTheme.colorScheme.primary)
+                Icon(
+                    HotelClassRoundedOutline,
+                    contentDescription = stringResource(R.string.nav_bookmarks)
+                )
             }
             Box(
                 modifier = Modifier
