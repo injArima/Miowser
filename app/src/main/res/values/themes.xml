@@ -5,4 +5,8 @@
     <style name="Theme.Miowser" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">#F7FAFD</item>
     </style>
+
+    <style name="Theme.Miowser.ProcessText" parent="Theme.Miowser">
+        <item name="android:windowNoDisplay">true</item>
+    </style>
 </resources>

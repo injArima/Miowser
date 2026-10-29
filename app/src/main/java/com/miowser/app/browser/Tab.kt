@@ -122,6 +122,7 @@ class Tab(
     private val onWebPermissionCanceled: (PermissionRequest) -> Unit,
     private val onGeolocationRequested: (String, GeolocationPermissions.Callback) -> Unit,
     private val onGeolocationCanceled: () -> Unit,
+    private val onSearchSelectedText: (String) -> Unit,
     private val onExternalNavigation: (String) -> Unit,
     private val onRendererUnavailable: (Long) -> Unit
 ) {
@@ -714,7 +715,7 @@ class Tab(
     private fun createWebView(initialTarget: String): WebView {
         // A retained WebView keeps its actual scale across navigation; a newly created one does not.
         pageZoomFactor = 1f
-        val view = WebView(tabContext)
+        val view = MiowserWebView(tabContext, onSearchSelectedText)
         val alive = AtomicBoolean(true)
         val permissionRequests = mutableSetOf<PermissionRequest>()
         return try { view.apply {

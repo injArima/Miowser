@@ -702,6 +702,16 @@ fun BrowserScreen(
             onWebPermissionCanceled = ::cancelWebPermission,
             onGeolocationRequested = { origin, callback -> handleGeolocation(origin, callback, privateTab, tabId) },
             onGeolocationCanceled = { cancelGeolocation(tabId) },
+            onSearchSelectedText = { selected ->
+                val searchTab = createAndInsertTab(
+                    AppSettings.current.searchUrl(selected),
+                    tabId,
+                    privateTab = privateTab
+                )
+                activeScreen = null
+                showingHub = false
+                activeTabId = searchTab.id
+            },
             onExternalNavigation = { url -> pendingExternalUrl = url },
             onRendererUnavailable = ::handleRendererUnavailable
         )
@@ -950,6 +960,15 @@ fun BrowserScreen(
                     onWebPermissionCanceled = ::cancelWebPermission,
                     onGeolocationRequested = { origin, callback -> handleGeolocation(origin, callback, false, restoredTabId) },
                     onGeolocationCanceled = { cancelGeolocation(restoredTabId) },
+                    onSearchSelectedText = { selected ->
+                        val searchTab = createAndInsertTab(
+                            AppSettings.current.searchUrl(selected),
+                            restoredTabId
+                        )
+                        activeScreen = null
+                        showingHub = false
+                        activeTabId = searchTab.id
+                    },
                     onExternalNavigation = { url -> pendingExternalUrl = url },
                     onRendererUnavailable = ::handleRendererUnavailable
                 )
@@ -987,6 +1006,9 @@ fun BrowserScreen(
                 activeTabId = createAndInsertTab(configuredBrowserHomeTarget(), null).id
             Intent.ACTION_VIEW -> request.url?.let { url ->
                 activeTabId = createAndInsertTab(url, null).id
+            }
+            com.miowser.app.TextSearchActions.SEARCH_SELECTED_TEXT -> request.query?.let { query ->
+                activeTabId = createAndInsertTab(AppSettings.current.searchUrl(query), null).id
             }
         }
         activeScreen = null

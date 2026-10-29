@@ -5,6 +5,7 @@
     <string name="shortcut_browser_long">Open browser</string>
     <string name="shortcut_new_tab">New tab</string>
     <string name="shortcut_new_tab_long">Open a new browser tab</string>
+    <string name="search_with_miowser">Search with Miowser</string>
     <string name="nav_back">Back</string>
     <string name="nav_forward">Forward</string>
     <string name="nav_bookmarks">Bookmarks</string>

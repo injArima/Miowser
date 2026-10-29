@@ -120,6 +120,15 @@ class MainActivity : ComponentActivity() {
                     !uri.host.isNullOrBlank()
             }?.toString() ?: return
             shortcutRequest = LauncherShortcutRequest(++shortcutSequence, Intent.ACTION_VIEW, url)
+        } else if (action == TextSearchActions.SEARCH_SELECTED_TEXT) {
+            val query = TextSearchActions.normalizedQuery(
+                intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)
+            ) ?: return
+            shortcutRequest = LauncherShortcutRequest(
+                sequence = ++shortcutSequence,
+                action = TextSearchActions.SEARCH_SELECTED_TEXT,
+                query = query
+            )
         }
     }
 }

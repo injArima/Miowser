@@ -20,4 +20,9 @@ internal object LauncherShortcuts {
     }
 }
 
-data class LauncherShortcutRequest(val sequence: Long, val action: String, val url: String? = null)
+data class LauncherShortcutRequest(
+    val sequence: Long,
+    val action: String,
+    val url: String? = null,
+    val query: String? = null
+)

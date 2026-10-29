@@ -200,7 +200,7 @@ internal fun AddressBar(
                                 if (!selection.collapsed) {
                                     val selected = textState.text.substring(selection.min, selection.max).trim()
                                     if (selected.isNotEmpty()) {
-                                        item(key = "address-web-search", label = "Web search") {
+                                        item(key = "address-web-search", label = "Search with Miowser") {
                                             close()
                                             onSearchSelection(selected)
                                         }
