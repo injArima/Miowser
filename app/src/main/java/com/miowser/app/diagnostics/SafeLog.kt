@@ -15,11 +15,9 @@ internal object SafeLog {
         if (error != null) debug(tag, error.message.orEmpty())
     }
     fun info(tag: String, message: String) {
-        CrashDiagnostics.recordLog(tag, "info", null)
         Log.i(tag, redactDiagnostic(message))
     }
     fun debug(tag: String, message: String, error: Throwable? = null) {
-        CrashDiagnostics.recordLog(tag, "debug", error?.javaClass?.simpleName)
         if (BuildConfig.DEBUG) Log.d(tag, redactDiagnostic(message) + (error?.let { " (${it.javaClass.simpleName})" } ?: ""))
     }
 }

@@ -11,6 +11,7 @@ import java.io.FileOutputStream
 import java.io.OutputStreamWriter
 import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.locks.ReentrantLock
 
 private const val MAX_EVENTS = 40
 private const val MAX_REPORTS = 5
@@ -41,7 +42,9 @@ private data class DiagnosticEvent(
 )
 
 private object DiagnosticTrail {
-    private val lock = Any()
+    // Browser and player callbacks must never wait for optional diagnostics. If another thread is
+    // touching the tiny trail, dropping one breadcrumb is preferable to stalling a WebView.
+    private val lock = ReentrantLock()
     private val events = ArrayDeque<DiagnosticEvent>(MAX_EVENTS)
     @Volatile var area: String = "startup"
         private set
@@ -53,19 +56,30 @@ private object DiagnosticTrail {
         add("entered $safe")
     }
 
-    fun add(description: String) = synchronized(lock) {
-        if (!CrashDiagnostics.enabled) return@synchronized
-        if (events.size == MAX_EVENTS) events.removeFirst()
-        events.addLast(DiagnosticEvent(
-            wallTime = System.currentTimeMillis(),
-            elapsedTime = SystemClock.elapsedRealtime(),
-            area = area,
-            description = description.take(96)
-        ))
+    fun add(description: String) {
+        if (!CrashDiagnostics.enabled || !lock.tryLock()) return
+        try {
+            if (events.size == MAX_EVENTS) events.removeFirst()
+            events.addLast(DiagnosticEvent(
+                wallTime = System.currentTimeMillis(),
+                elapsedTime = SystemClock.elapsedRealtime(),
+                area = area,
+                description = description.take(96)
+            ))
+        } finally {
+            lock.unlock()
+        }
     }
 
-    fun snapshot(): List<DiagnosticEvent> = synchronized(lock) { events.toList() }
-    fun clear() = synchronized(lock) { events.clear() }
+    fun snapshot(): List<DiagnosticEvent> {
+        if (!lock.tryLock()) return emptyList()
+        return try { events.toList() } finally { lock.unlock() }
+    }
+
+    fun clear() {
+        lock.lock()
+        try { events.clear() } finally { lock.unlock() }
+    }
 }
 
 object CrashReportStore {
@@ -178,9 +192,13 @@ object CrashDiagnostics {
 
     fun setActiveArea(area: String) = DiagnosticTrail.setArea(area)
 
-    /** Records only controlled labels—never the log message, URL, title, or search text. */
+    /**
+     * Records only uncommon warning/error labels—never messages, URLs, titles or search text.
+     * Info/debug logs are deliberately excluded because chatty pages can produce them at frame
+     * rate and diagnostics must not participate in browser performance.
+     */
     internal fun recordLog(tag: String, level: String, errorType: String?) {
-        if (!enabled) return
+        if (!enabled || (level != "warning" && level != "error")) return
         val safeTag = tag.filter { it.isLetterOrDigit() || it in "._-" }.take(40).ifBlank { "app" }
         val safeType = errorType?.filter { it.isLetterOrDigit() || it in "._$" }?.take(48)
         DiagnosticTrail.add(buildString {

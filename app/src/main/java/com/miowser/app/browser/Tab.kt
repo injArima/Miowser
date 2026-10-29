@@ -64,7 +64,6 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicBoolean
 
-private const val CONSOLE_TAG = "Miowser/Console"
 
 data class SiteProtectionStats(
     val blockedRequests: Int,
@@ -1104,9 +1103,9 @@ class Tab(
                 }
 
                 override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
-                    // Page-supplied text can contain tokens or personal data. Log location only.
-                    com.miowser.app.diagnostics.SafeLog.debug(CONSOLE_TAG,
-                        "Page console ${consoleMessage.messageLevel()} at ${com.miowser.app.diagnostics.safeDiagnosticUrl(consoleMessage.sourceId())}:${consoleMessage.lineNumber()}")
+                    // Some sites emit thousands of console messages per second. Consuming them
+                    // without formatting or logging keeps this WebView callback allocation-free;
+                    // page console output is not actionable app diagnostics and may contain data.
                     return true
                 }
 
