@@ -197,7 +197,7 @@ sealed class PlaybackRequest {
     ) : PlaybackRequest()
 }
 
-@androidx.annotation.OptIn(markerClass = [UnstableApi::class])
+@get:UnstableApi
 private val PlayerScaleMode.resizeMode: Int get() = when (this) {
     PlayerScaleMode.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
     PlayerScaleMode.ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM

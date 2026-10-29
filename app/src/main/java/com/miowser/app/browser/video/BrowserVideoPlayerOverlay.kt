@@ -46,16 +46,14 @@ import com.miowser.app.ui.theme.MiowserPlayerTheme
 import com.miowser.app.ui.theme.MotionTokens
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 
 /** Original player UI backed by the retained HTML video. This route never creates ExoPlayer. */
 @Composable
 internal fun BrowserVideoPlayerOverlay(controller: BrowserPlaybackControls, title: String,
     onExit: () -> Unit, sourceLabel: String = "", backgroundPlaybackEnabled: Boolean = true,
     onAudioOnlyChanged: (Boolean) -> Unit = {}) {
-    val presentation = remember(controller) { controller.state.map(::browserVideoPresentation).distinctUntilChanged() }
-    val state by presentation.collectAsState(browserVideoPresentation(controller.state.value))
+    val browserState by controller.state.collectAsState()
+    val state = remember(browserState) { browserVideoPresentation(browserState) }
     MiowserPlayerTheme(darkTheme = true) {
         if (state.phase == BrowserVideoPhase.UNAVAILABLE) {
             val host = LocalContext.current.videoActivity() as? MainActivity

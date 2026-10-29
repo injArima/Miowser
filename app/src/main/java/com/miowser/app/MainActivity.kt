@@ -7,6 +7,7 @@ import android.app.PictureInPictureParams
 import android.util.Rational
 import android.content.res.Configuration
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,7 +26,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.semantics
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -138,7 +138,7 @@ private fun MiowserApp(
     shortcutRequest: LauncherShortcutRequest?,
     onShortcutHandled: () -> Unit
 ) {
-    val activity = LocalContext.current as? ComponentActivity
+    val activity = LocalActivity.current as? ComponentActivity
     val systemDark = isSystemInDarkTheme()
     val dark = when (AppThemePreference.mode) {
         AppThemeMode.SYSTEM -> systemDark
