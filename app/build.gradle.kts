@@ -34,6 +34,13 @@ android {
     }
 
     buildTypes {
+        getByName("debug") {
+            // Never let an Android Studio/debug certificate occupy the permanent release package.
+            // This keeps development installs side-by-side with the signed public application and
+            // prevents a retained debug install in another Android profile from blocking release.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             if (releaseSigningConfigured) signingConfig = signingConfigs.getByName("publisher")
             isMinifyEnabled = true
