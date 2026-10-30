@@ -117,6 +117,13 @@ private data class SuggestionResult(
     val items: List<String>
 )
 
+private data class LocalSuggestionResult(
+    val input: String,
+    val bookmarkRevision: Int,
+    val historyRevision: Int,
+    val items: List<BrowserSuggestion>
+)
+
 internal enum class BrowserSuggestionKind { BOOKMARK, HISTORY, SEARCH }
 
 internal data class BrowserSuggestion(
@@ -225,6 +232,34 @@ private fun rememberRemoteSearchSuggestions(
     }
 }
 
+/**
+ * History can contain thousands of rows. Matching and sorting all of them for every key press on
+ * the Compose/main thread made the omnibox itself hesitate before it could accept the next edit.
+ * Snapshot the small immutable references only when either source changes, then rank them on a
+ * computation worker. A generation-keyed result prevents a cancelled older query flashing back.
+ */
+@Composable
+private fun rememberLocalPageSuggestions(input: String, focused: Boolean): List<BrowserSuggestion> {
+    val bookmarkRevision = BookmarkList.revision
+    val historyRevision = HistoryLog.revision
+    val bookmarks = remember(bookmarkRevision) { BookmarkList.bookmarks.toList() }
+    val history = remember(historyRevision) { HistoryLog.entries.toList() }
+    var result by remember {
+        mutableStateOf(LocalSuggestionResult("", bookmarkRevision, historyRevision, emptyList()))
+    }
+    LaunchedEffect(input, focused, bookmarkRevision, historyRevision) {
+        if (!focused || input.isBlank()) return@LaunchedEffect
+        val submittedInput = input
+        val items = withContext(Dispatchers.Default) {
+            localPageSuggestions(submittedInput, bookmarks, history)
+        }
+        result = LocalSuggestionResult(submittedInput, bookmarkRevision, historyRevision, items)
+    }
+    return if (focused && result.input == input &&
+        result.bookmarkRevision == bookmarkRevision && result.historyRevision == historyRevision
+    ) result.items else emptyList()
+}
+
 @Composable
 internal fun rememberBrowserSuggestions(
     input: String,
@@ -232,11 +267,8 @@ internal fun rememberBrowserSuggestions(
     focused: Boolean
 ): List<BrowserSuggestion> {
     val remote = rememberRemoteSearchSuggestions(input, engine, focused)
+    val local = rememberLocalPageSuggestions(input, focused)
     if (!focused || input.isBlank()) return emptyList()
-
-    // These are snapshot-backed lists; reading them here updates open suggestion popups when a
-    // bookmark is toggled or history is cleared without maintaining a second cache.
-    val local = localPageSuggestions(input, BookmarkList.bookmarks, HistoryLog.entries)
     val localValues = local.mapTo(HashSet()) { it.value.lowercase(Locale.ROOT) }
     val remoteItems = remote.asSequence()
         .filterNot { it.lowercase(Locale.ROOT) in localValues }

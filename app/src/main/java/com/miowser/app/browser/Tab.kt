@@ -913,7 +913,10 @@ class Tab(
                     pageError = "This site's security certificate could not be verified."
                     onCertificateErrorRequested(this@Tab.id, target, handler, error)
                 },
-                onInsecureNavigationRequested = { target -> onInsecureNavigationRequested(this@Tab.id, target) },
+                onInsecureNavigationRequested = { target ->
+                    isLoading = false
+                    onInsecureNavigationRequested(this@Tab.id, target)
+                },
                 shouldBlockCompanionNavigation = ::shouldBlockCompanionNavigation,
                 onRequestBlocked = { requestUrl ->
                     blockedRequests.incrementAndGet()
@@ -970,7 +973,10 @@ class Tab(
                     blockedPageInfo = info
                 },
                 onRendererGone = ::handleRendererGone,
-                onExternalNavigation = onExternalNavigation,
+                onExternalNavigation = { target ->
+                    isLoading = false
+                    onExternalNavigation(target)
+                },
                 onCandidateMediaUrl = { candidateUrl, guessedType, referer, origin ->
                     if (!alive.get()) return@MiowserWebViewClient
                     val browserReferer = referer?.takeIf {
@@ -1000,6 +1006,7 @@ class Tab(
                     }
                 },
                 onLikelyDownloadNavigation = { downloadUrl ->
+                    isLoading = false
                     onDownloadRequested(
                         WebDownloadRequest(
                             originatingTabId = this@Tab.id,
@@ -1194,7 +1201,12 @@ class Tab(
                 } else {
                     val state = controller.takeNavigation(this@Tab.id)
                     val restored = state?.let { runCatching { restoreState(it) }.getOrNull() }
-                    if (restored == null) loadUrl(initialTarget)
+                    if (restored == null) {
+                        // Publish feedback in the same frame that accepted the navigation. Waiting
+                        // for Chromium's onPageStarted callback made a successful search look idle.
+                        isLoading = true
+                        loadUrl(initialTarget)
+                    }
                     else {
                         this@Tab.canGoBack = canGoBack()
                         this@Tab.canGoForward = canGoForward()
@@ -1228,12 +1240,14 @@ class Tab(
         isAddressBarFocused = false
         isShowingHome = isBrowserHomeUrl(targetUrl)
         if (isShowingHome) {
+            isLoading = false
             title = "Home"
             url = BROWSER_HOME_URL
             addressBarText = TextFieldValue("")
         }
         url = targetUrl
         addressBarText = TextFieldValue(if (isShowingHome) "" else targetUrl)
+        if (!isShowingHome) isLoading = true
         val engine = liveWebView
         if (engine != null) engine.loadUrl(targetUrl)
         else if (!isShowingHome) ensureWebView()

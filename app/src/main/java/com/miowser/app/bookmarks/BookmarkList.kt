@@ -2,12 +2,17 @@ package com.miowser.app.bookmarks
 
 import android.content.Context
 import com.miowser.app.persistence.Persistence
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /** The bookmark list — mirrors DownloadQueue/HistoryLog's singleton-object pattern. */
 object BookmarkList {
     private val mutableRecords = mutableStateListOf<Bookmark>()
     val bookmarks: List<Bookmark> get() = mutableRecords
+    var revision by mutableIntStateOf(0)
+        private set
 
     @Volatile private var restored = false
 
@@ -17,6 +22,7 @@ object BookmarkList {
         val records = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BookmarkStore.load(context) }
         if (restored) return
         mutableRecords.addAll(records)
+        revision++
         restored = true
     }
 
@@ -24,6 +30,7 @@ object BookmarkList {
         Persistence.requireOwner()
         if (restored) return
         mutableRecords.addAll(BookmarkStore.load(context))
+        revision++
         restored = true
     }
 
@@ -44,14 +51,17 @@ object BookmarkList {
         } else {
             mutableRecords.add(0, Bookmark(url = url, title = title.ifBlank { url }, addedAt = System.currentTimeMillis()))
         }
+        revision++
         persist(context)
         return nowBookmarked
     }
 
     fun remove(context: Context, bookmark: Bookmark) {
         Persistence.requireOwner()
-        mutableRecords.remove(bookmark)
-        persist(context)
+        if (mutableRecords.remove(bookmark)) {
+            revision++
+            persist(context)
+        }
     }
 
     private fun persist(context: Context) {

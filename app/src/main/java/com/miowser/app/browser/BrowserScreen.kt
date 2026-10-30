@@ -3144,7 +3144,10 @@ fun BrowserScreen(
     LaunchedEffect(activeTabId, showingHub, playbackRequest, startupReady, activeScreen,
         activeTab?.isShowingHome, activeTab?.rendererUnavailable, rendererTransferActivity) {
         if (startupReady && !showingHub && activeScreen == null && playbackRequest == null &&
-            activeTab?.isShowingHome == false && !activeTab.rendererUnavailable) {
+            activeTab != null && !activeTab.rendererUnavailable) {
+            // Acquire the active Home tab's renderer before the user submits its first search.
+            // Creating and wiring a WebView after the tap put that setup cost directly between the
+            // gesture and loadUrl(); a warm blank renderer keeps the actual navigation immediate.
             try { activeTab.ensureWebView() }
             catch (_: Exception) { startupReady = false; browserStartupError = true; return@LaunchedEffect }
         }
