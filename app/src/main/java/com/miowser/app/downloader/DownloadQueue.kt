@@ -10,6 +10,9 @@ import androidx.compose.runtime.mutableStateListOf
 import com.miowser.app.library.LibraryThumbnailStore
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private const val MAX_AUTOMATIC_DOWNLOAD_RETRIES = 3
 private const val RETRY_WAIT_SLICE_MS = 200L
@@ -47,6 +50,47 @@ object DownloadQueue {
             DownloadedFileInspector.forget(it)
             com.miowser.app.library.MediaLibrary.relinkLocal(context, it.toString(), uri.toString())
         }
+    }
+
+    /** Reconnects unavailable completed records to same-named files in the configured folder. */
+    suspend fun relinkConfiguredDownloads(context: Context): Int {
+        Persistence.requireOwner()
+        val app = context.applicationContext
+        val targets = mutableDownloads.filter { it.status == DownloadStatus.COMPLETED }
+            .map { Triple(it.id, it.displayName, it.savedUri) }
+        if (targets.isEmpty()) return 0
+        val replacements = withContext(Dispatchers.IO) {
+            val available = runCatching { DownloadDirectoryStore.availableFiles(app) }.getOrDefault(emptyMap())
+            if (available.isEmpty()) emptyMap() else buildMap {
+                targets.forEach { (id, name, current) ->
+                    val readable = current?.let { uri -> isReadableDownload(app, uri) } == true
+                    if (!readable) available[name.trim().lowercase()]?.let { put(id, it) }
+                }
+            }
+        }
+        if (replacements.isEmpty()) return 0
+        var linked = 0
+        replacements.forEach { (id, uri) ->
+            val download = mutableDownloads.firstOrNull { it.id == id && it.status == DownloadStatus.COMPLETED }
+                ?: return@forEach
+            val old = download.savedUri
+            download.savedUri = uri
+            DownloadedFileInspector.forget(uri)
+            old?.let {
+                DownloadedFileInspector.forget(it)
+                com.miowser.app.library.MediaLibrary.relinkLocal(context, it.toString(), uri.toString())
+            }
+            linked++
+        }
+        if (linked > 0) persist(context)
+        return linked
+    }
+
+    private fun isReadableDownload(context: Context, uri: Uri): Boolean = when (uri.scheme) {
+        "file" -> uri.path?.let { File(it).isFile } == true
+        else -> runCatching {
+            context.contentResolver.openFileDescriptor(uri, "r")?.use { true } == true
+        }.getOrDefault(false)
     }
 
     @Volatile private var restored = false
@@ -430,6 +474,11 @@ object DownloadQueue {
             context,
             mutableDownloads.filter { it.status == DownloadStatus.COMPLETED }.mapNotNull(Download::savedUri)
         )
+        if (DownloadDirectoryStore.load(context) != null) {
+            com.miowser.app.startup.AppStartup.scope.launch {
+                runCatching { relinkConfiguredDownloads(context.applicationContext) }
+            }
+        }
     }
 
     fun replaceAndRestart(

@@ -127,7 +127,7 @@ object HlsDownloader {
             download.checkTransferActive()
             val uri = MediaStoreOutput.publishFile(context, muxedFile, finalFileName, "video/mp4", download::checkTransferActive)
                 ?: return fail(download, "Could not create output file")
-            MediaStoreOutput.legacyFileName(uri)?.let { download.displayName = it }
+            MediaStoreOutput.actualFileName(context, uri)?.let { download.displayName = it }
             download.savedUri = uri
             download.status = DownloadStatus.COMPLETED
             DownloadRecoveryStore.clear(context, download.id)

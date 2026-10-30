@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.provider.DocumentsContract
 import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
@@ -22,11 +23,11 @@ import java.nio.channels.FileChannel
 private const val TAG = "Miowser/Downloader"
 
 /**
- * Writes finished downloads into the public Downloads collection under a "Miowser" subfolder —
- * visible in the user's file manager / Downloads app / other apps, not hidden in this app's
- * private storage, which is the whole point of a downloader. Uses MediaStore.Downloads (API 29+)
- * since scoped storage forbids direct File access to public directories on this project's
- * targetSdk 37.
+ * Writes finished downloads to the user's configured public destination. The default is the
+ * Downloads collection under a "Miowser" subfolder; a custom folder uses its persisted Storage
+ * Access Framework tree grant. Files remain visible in file managers and other apps rather than
+ * being hidden in app-private storage. The default path uses MediaStore.Downloads (API 29+), since
+ * scoped storage forbids direct File access to public directories on this project's targetSdk 37.
  *
  * minSdk is 26, so pre-Q devices fall back to a direct File write into the legacy public
  * Downloads dir. Two things the Q+ path gets for free that the legacy path has to do itself:
@@ -52,6 +53,14 @@ object MediaStoreOutput {
     fun legacyFileName(uri: Uri): String? =
         uri.takeIf { it.scheme == "file" }?.path?.let { File(it).name }
 
+    fun actualFileName(context: Context, uri: Uri): String? {
+        legacyFileName(uri)?.let { return it }
+        return runCatching {
+            context.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME),
+                null, null, null)?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+        }.getOrNull()
+    }
+
     /**
      * A position-addressable handle on the same output location [open] would give a plain
      * OutputStream — for the multi-threaded downloader, where several threads write different
@@ -70,6 +79,7 @@ object MediaStoreOutput {
 
     fun open(context: Context, fileName: String, mimeType: String): Opened? {
         if (!OutputFileIdentity.validFileName(fileName) || !OutputFileIdentity.validMimeType(mimeType)) return null
+        if (DownloadDirectoryStore.isCustom(context)) return openViaDocumentTree(context, fileName, mimeType)
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             openViaMediaStore(context, fileName, mimeType)
         } else {
@@ -79,6 +89,7 @@ object MediaStoreOutput {
 
     fun openRandomAccess(context: Context, fileName: String, mimeType: String): OpenedRandomAccess? {
         if (!OutputFileIdentity.validFileName(fileName) || !OutputFileIdentity.validMimeType(mimeType)) return null
+        if (DownloadDirectoryStore.isCustom(context)) return openRandomAccessViaDocumentTree(context, fileName, mimeType)
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             openRandomAccessViaMediaStore(context, fileName, mimeType)
         } else {
@@ -117,7 +128,9 @@ object MediaStoreOutput {
      * used on the pre-Q path; Q+ already recorded it at insert time.
      */
     fun finish(context: Context, uri: Uri, mimeType: String) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (DocumentsContract.isDocumentUri(context, uri)) {
+            // SAF documents are visible as soon as their stream closes.
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             context.contentResolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
         } else {
             uri.path?.let { path ->
@@ -128,7 +141,9 @@ object MediaStoreOutput {
 
     /** Deletes a partial/canceled/failed download's output rather than leaving a pending ghost entry. */
     fun abandon(context: Context, uri: Uri) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (DocumentsContract.isDocumentUri(context, uri)) {
+            runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             context.contentResolver.delete(uri, null, null)
         } else {
             uri.path?.let { path ->
@@ -198,6 +213,18 @@ object MediaStoreOutput {
         }
     }
 
+    private fun openViaDocumentTree(context: Context, fileName: String, mimeType: String): Opened? {
+        val uri = DownloadDirectoryStore.createCustomDocument(context, fileName, mimeType) ?: return null
+        return try {
+            val stream = context.contentResolver.openOutputStream(uri, "w")
+                ?: run { DocumentsContract.deleteDocument(context.contentResolver, uri); return null }
+            Opened(uri, stream)
+        } catch (error: Exception) {
+            runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) }
+            throw error
+        }
+    }
+
     // "rw" (not "rwt"): mode is passed straight to ContentResolver.openFileDescriptor, which
     // treats it as the standard ParcelFileDescriptor mode string — "rwt" would truncate on open,
     // fighting every thread that opens its own descriptor onto the same already-inserted entry.
@@ -229,6 +256,25 @@ object MediaStoreOutput {
         } catch (e: Exception) {
             file.delete()
             throw e
+        }
+    }
+
+    private fun openRandomAccessViaDocumentTree(
+        context: Context,
+        fileName: String,
+        mimeType: String
+    ): OpenedRandomAccess? {
+        val uri = DownloadDirectoryStore.createCustomDocument(context, fileName, mimeType) ?: return null
+        var pfd: android.os.ParcelFileDescriptor? = null
+        return try {
+            pfd = context.contentResolver.openFileDescriptor(uri, "rw")
+                ?: run { DocumentsContract.deleteDocument(context.contentResolver, uri); return null }
+            val stream = FileOutputStream(pfd.fileDescriptor)
+            OpenedRandomAccess(uri, stream.channel, listOf(stream, pfd))
+        } catch (error: Exception) {
+            runCatching { pfd?.close() }
+            runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) }
+            throw error
         }
     }
 }

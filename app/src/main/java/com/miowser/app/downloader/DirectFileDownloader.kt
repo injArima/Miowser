@@ -298,7 +298,7 @@ object DirectFileDownloader {
         download.checkTransferActive()
         val uri = MediaStoreOutput.publishFile(context, payload, fileName, mimeType, download::checkTransferActive)
             ?: return fail(download, "Could not create output file")
-        MediaStoreOutput.legacyFileName(uri)?.let { download.displayName = it }
+        MediaStoreOutput.actualFileName(context, uri)?.let { download.displayName = it }
         download.savedUri = uri
         download.bytesDownloaded = download.totalBytes.takeIf { it >= 0L } ?: payload.length()
         download.status = DownloadStatus.COMPLETED

@@ -120,6 +120,8 @@ import com.miowser.app.downloader.FileOpenResult
 import com.miowser.app.downloader.DownloadKind
 import com.miowser.app.downloader.DownloadQueue
 import com.miowser.app.downloader.DownloadStatus
+import com.miowser.app.downloader.DownloadDirectoryMode
+import com.miowser.app.downloader.DownloadDirectoryStore
 import com.miowser.app.downloader.copyForQueue
 import com.miowser.app.downloader.findDownloadConflict
 import com.miowser.app.downloader.renamedDownloadCopy
@@ -349,6 +351,19 @@ fun BrowserScreen(
     val fileSelection = remember(tabController) { BrowserFileSelection() }
     var pendingRelinkDownload by remember { mutableStateOf<Download?>(null) }
     var pendingRelinkLibraryEntry by remember { mutableStateOf<LibraryEntry?>(null) }
+    var downloadDirectory by remember { mutableStateOf(DownloadDirectoryStore.load(context)) }
+    var showDownloadDirectoryChoice by remember { mutableStateOf(false) }
+    var pendingDownloadDirectoryAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var offeredDownloadFolderReconnect by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(downloadDirectory, DownloadQueue.downloads.size) {
+        val directory = downloadDirectory
+        if (!offeredDownloadFolderReconnect && directory?.mode == DownloadDirectoryMode.CUSTOM &&
+            DownloadQueue.downloads.any { it.status == DownloadStatus.COMPLETED } &&
+            !DownloadDirectoryStore.hasCustomAccess(context, directory)) {
+            offeredDownloadFolderReconnect = true
+            showDownloadDirectoryChoice = true
+        }
+    }
     var libraryPlaybackQueue by remember { mutableStateOf<LibraryPlaybackQueue?>(null) }
     var libraryPlayRequestId by remember { mutableIntStateOf(0) }
     var pendingWebPermission by remember { mutableStateOf<PermissionRequest?>(null) }
@@ -394,6 +409,28 @@ fun BrowserScreen(
             snackbarHostState.showSnackbar("Storage access is needed to save downloads. Tap Download to retry.")
         }
     }
+    val customDownloadFolderLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        val deferred = pendingDownloadDirectoryAction
+        pendingDownloadDirectoryAction = null
+        if (uri != null) coroutineScope.launch {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                DownloadDirectoryStore.useCustom(context, uri)
+            }.onSuccess { selected ->
+                downloadDirectory = selected
+                val linked = DownloadQueue.relinkConfiguredDownloads(context)
+                snackbarHostState.showSnackbar(if (linked > 0) {
+                    "Download folder selected; reconnected $linked ${if (linked == 1) "file" else "files"}"
+                } else "Download folder selected")
+                deferred?.invoke()
+            }.onFailure {
+                snackbarHostState.showSnackbar("Could not keep access to this folder")
+            }
+        }
+    }
     fun requestNotificationForDownload() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
@@ -405,7 +442,17 @@ fun BrowserScreen(
         }
     }
     fun ensureDownloadPermission(retry: () -> Unit): Boolean {
+        val selected = downloadDirectory ?: DownloadDirectoryStore.load(context).also {
+            downloadDirectory = it
+        }
+        if (selected == null || (selected.mode == DownloadDirectoryMode.CUSTOM &&
+                !DownloadDirectoryStore.hasCustomAccess(context, selected))) {
+            pendingDownloadDirectoryAction = retry
+            showDownloadDirectoryChoice = true
+            return false
+        }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+            selected.mode == DownloadDirectoryMode.DEFAULT &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
                 PackageManager.PERMISSION_GRANTED) {
             waitingForStorage.addLast(retry)
@@ -2348,6 +2395,36 @@ fun BrowserScreen(
                 },
                 onOpenBrowser = { showingHub = false },
                 onOpenBackupRestore = { showBackupRestore = true },
+                downloadDirectory = downloadDirectory,
+                customDownloadDirectoryAccessible = downloadDirectory?.let { directory ->
+                    directory.mode != DownloadDirectoryMode.CUSTOM ||
+                        DownloadDirectoryStore.hasCustomAccess(context, directory)
+                } ?: false,
+                onUseDefaultDownloadDirectory = {
+                    downloadDirectory = DownloadDirectoryStore.useDefault(context)
+                    coroutineScope.launch {
+                        val linked = DownloadQueue.relinkConfiguredDownloads(context)
+                        showActionSnackbar(if (linked > 0) {
+                            "Using Downloads/Miowser; reconnected $linked ${if (linked == 1) "file" else "files"}"
+                        } else "Using Downloads/Miowser")
+                    }
+                },
+                onChooseCustomDownloadDirectory = {
+                    pendingDownloadDirectoryAction = null
+                    customDownloadFolderLauncher.launch(downloadDirectory?.treeUri)
+                },
+                onRelinkConfiguredDownloads = {
+                    val directory = downloadDirectory
+                    if (directory?.mode == DownloadDirectoryMode.CUSTOM &&
+                        !DownloadDirectoryStore.hasCustomAccess(context, directory)) {
+                        pendingDownloadDirectoryAction = null
+                        customDownloadFolderLauncher.launch(directory.treeUri)
+                    } else coroutineScope.launch {
+                        val linked = DownloadQueue.relinkConfiguredDownloads(context)
+                        showActionSnackbar(if (linked == 0) "No unavailable downloads matched this folder"
+                            else "Reconnected $linked ${if (linked == 1) "download" else "downloads"}")
+                    }
+                },
                 onOpenRecordInBrowser = { value, search ->
                     val target = if (search) {
                         AppSettings.current.searchUrl(value)
@@ -2834,6 +2911,38 @@ fun BrowserScreen(
                             tab.navigateTo(pending.url)
                         }
                     }, ConfirmationTone.CAUTION)
+                )
+            )
+        }
+
+        if (showDownloadDirectoryChoice) {
+            MiowserConfirmationDialog(
+                title = if (downloadDirectory?.mode == DownloadDirectoryMode.CUSTOM) {
+                    "Reconnect download folder"
+                } else "Choose download folder",
+                message = "Use Downloads/Miowser, or grant Miowser access to a folder you choose. " +
+                    "The saved folder lets restored download records reconnect to files that are still on this device.",
+                onDismiss = {
+                    showDownloadDirectoryChoice = false
+                    pendingDownloadDirectoryAction = null
+                },
+                actions = listOf(
+                    ConfirmationAction("Default folder", {
+                        val deferred = pendingDownloadDirectoryAction
+                        pendingDownloadDirectoryAction = null
+                        showDownloadDirectoryChoice = false
+                        downloadDirectory = DownloadDirectoryStore.useDefault(context)
+                        coroutineScope.launch {
+                            val linked = DownloadQueue.relinkConfiguredDownloads(context)
+                            if (linked > 0) showActionSnackbar(
+                                "Reconnected $linked ${if (linked == 1) "download" else "downloads"}")
+                            deferred?.invoke()
+                        }
+                    }),
+                    ConfirmationAction("Custom folder", {
+                        showDownloadDirectoryChoice = false
+                        customDownloadFolderLauncher.launch(downloadDirectory?.treeUri)
+                    })
                 )
             )
         }

@@ -400,7 +400,7 @@ private fun statusLabel(download: Download, includeProgress: Boolean): String {
     }
     DownloadStatus.MUXING -> "Combining into final file…"
     DownloadStatus.COMPLETED -> if (!download.recordSaved) "Saving download record…"
-        else "Done — saved to Downloads/Miowser"
+        else "Done"
     DownloadStatus.FAILED -> "Failed" + (download.errorMessage?.let { ": $it" } ?: "")
     DownloadStatus.CANCELED -> "Canceled"
     }

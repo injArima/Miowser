@@ -108,7 +108,7 @@ class RendererResourceDownloader(context: Context) {
             fail(download, "Could not create output file")
             return
         }
-        MediaStoreOutput.legacyFileName(opened.uri)?.let { download.displayName = it }
+        MediaStoreOutput.actualFileName(appContext, opened.uri)?.let { download.displayName = it }
         try {
             opened.stream.use { output ->
                 var offset = 0
@@ -226,7 +226,7 @@ class RendererResourceDownloader(context: Context) {
                 session.download.displayName = identity.fileName
                 session.opened = MediaStoreOutput.open(appContext, identity.fileName, identity.mimeType)
                     ?: return failSession(session, "Could not create output file")
-                MediaStoreOutput.legacyFileName(session.opened!!.uri)?.let {
+                MediaStoreOutput.actualFileName(appContext, session.opened!!.uri)?.let {
                     session.download.displayName = it
                 }
             }

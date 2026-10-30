@@ -171,7 +171,7 @@ fun BackupRestorePage(activeDownloads: Boolean, onBack: () -> Unit) {
             }, enabled = settings.treeUri != null && !busy) { Text("Back up now") }
 
             Text("Restore", style = MaterialTheme.typography.titleMedium)
-            Text("Restore replaces saved app data. Public Downloads/Miowser files stay on the device. After reinstalling, Android may require you to locate a downloaded file again before Miowser can play it.",
+            Text("Restore replaces saved app data. Downloaded files stay on the device. Miowser reconnects restored records by filename in the saved download folder; Android will ask you to grant a custom folder again after reinstalling.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (activeDownloads) Text("Finish or pause active downloads before restoring.",

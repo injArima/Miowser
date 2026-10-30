@@ -141,6 +141,8 @@ import com.miowser.app.downloader.ApkIconLoader
 import com.miowser.app.downloader.DownloadedFileType
 import com.miowser.app.downloader.DownloadedFileInspector
 import com.miowser.app.downloader.DownloadStatus
+import com.miowser.app.downloader.DownloadDirectory
+import com.miowser.app.downloader.DownloadDirectoryMode
 import com.miowser.app.library.LibraryEntry
 import com.miowser.app.library.LibraryFolder
 import com.miowser.app.library.LibraryFolders
@@ -208,6 +210,11 @@ fun HubHomePage(
     onRelinkDownload: (Download) -> Unit,
     onOpenBrowser: () -> Unit,
     onOpenBackupRestore: () -> Unit,
+    downloadDirectory: DownloadDirectory?,
+    customDownloadDirectoryAccessible: Boolean,
+    onUseDefaultDownloadDirectory: () -> Unit,
+    onChooseCustomDownloadDirectory: () -> Unit,
+    onRelinkConfiguredDownloads: () -> Unit,
     onOpenRecordInBrowser: (String, Boolean) -> Unit,
     uiVisible: Boolean = true,
     onLibraryIdleChanged: (Boolean) -> Unit = {},
@@ -597,8 +604,6 @@ fun HubHomePage(
                             modifier = Modifier.fillMaxSize()
                         )
                         HubSection.MORE -> HubMoreContent(
-                            defaultDownloadSection = selectedDownloadSection,
-                            onDefaultDownloadSectionSelected = onDownloadSectionSelected,
                             onOpenBackupRestore = onOpenBackupRestore,
                             modifier = Modifier.fillMaxSize()
                         )
@@ -610,6 +615,13 @@ fun HubHomePage(
                 activeDownloadCount = downloads.count { it.status.isHubActiveDownload() },
                 librarySort = librarySort,
                 onLibrarySortSelected = selectLibrarySort,
+                selectedDownloadSection = selectedDownloadSection,
+                onDownloadSectionSelected = onDownloadSectionSelected,
+                downloadDirectory = downloadDirectory,
+                customDownloadDirectoryAccessible = customDownloadDirectoryAccessible,
+                onUseDefaultDownloadDirectory = onUseDefaultDownloadDirectory,
+                onChooseCustomDownloadDirectory = onChooseCustomDownloadDirectory,
+                onRelinkConfiguredDownloads = onRelinkConfiguredDownloads,
                 onOpenRecordInBrowser = onOpenRecordInBrowser,
                 onSectionSelected = onSectionSelected,
                 modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged {
@@ -691,12 +703,20 @@ private fun HubBottomNavigation(
     activeDownloadCount: Int,
     librarySort: HubLibrarySort,
     onLibrarySortSelected: (HubLibrarySort) -> Unit,
+    selectedDownloadSection: HubDownloadSection,
+    onDownloadSectionSelected: (HubDownloadSection) -> Unit,
+    downloadDirectory: DownloadDirectory?,
+    customDownloadDirectoryAccessible: Boolean,
+    onUseDefaultDownloadDirectory: () -> Unit,
+    onChooseCustomDownloadDirectory: () -> Unit,
+    onRelinkConfiguredDownloads: () -> Unit,
     onOpenRecordInBrowser: (String, Boolean) -> Unit,
     onSectionSelected: (HubSection) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val motion = LocalMotionPolicy.current
     var librarySettingsExpanded by remember { mutableStateOf(false) }
+    var downloadSettingsExpanded by remember { mutableStateOf(false) }
     var failedVideoLogExpanded by remember { mutableStateOf(false) }
     val view = LocalView.current
     val labels = mapOf(
@@ -795,18 +815,21 @@ private fun HubBottomNavigation(
                                     }
                                     onSectionSelected(section)
                                 },
-                                onLongClick = if (section == HubSection.LIBRARY) {
-                                    {
+                                onLongClick = when (section) {
+                                    HubSection.LIBRARY -> ({
                                         view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                                         librarySettingsExpanded = true
-                                    }
-                                } else {
-                                    null
+                                    })
+                                    HubSection.DOWNLOADS -> ({
+                                        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                        downloadSettingsExpanded = true
+                                    })
+                                    HubSection.MORE -> null
                                 },
-                                longClickLabel = if (section == HubSection.LIBRARY) {
-                                    openLibrarySettings
-                                } else {
-                                    null
+                                longClickLabel = when (section) {
+                                    HubSection.LIBRARY -> openLibrarySettings
+                                    HubSection.DOWNLOADS -> "Open Downloads settings"
+                                    HubSection.MORE -> null
                                 },
                                 label = label,
                                 spokenLabel = if (section == HubSection.DOWNLOADS && activeDownloadCount > 0) {
@@ -888,6 +911,74 @@ private fun HubBottomNavigation(
                 onOpenRecordInBrowser(value, search)
             }
         )
+    }
+    if (downloadSettingsExpanded) {
+        ExpressiveBottomSheet(onDismissRequest = { downloadSettingsExpanded = false }) {
+            ExpressiveSheetHeading("Downloads settings")
+            ExpressiveChoiceSetting(
+                title = "Open Downloads on",
+                description = "Choose which list is shown first when you open Downloads."
+            ) {
+                HubDownloadSection.entries.forEach { option ->
+                    FilterChip(
+                        selected = option == selectedDownloadSection,
+                        onClick = { onDownloadSectionSelected(option) },
+                        label = { Text(if (option == HubDownloadSection.DOWNLOADING) "Downloading" else "Downloaded") }
+                    )
+                }
+            }
+            ExpressiveChoiceSetting(
+                title = "Download folder",
+                description = when {
+                    downloadDirectory == null ->
+                        "No folder selected. Your next download will ask where to save files."
+                    downloadDirectory.mode == DownloadDirectoryMode.CUSTOM && !customDownloadDirectoryAccessible ->
+                        "${downloadDirectory.label} needs permission again before Miowser can use or reconnect its files."
+                    else -> "Files are saved in ${downloadDirectory.label}."
+                }
+            ) {
+                FilterChip(
+                    selected = downloadDirectory?.mode == DownloadDirectoryMode.DEFAULT,
+                    onClick = {
+                        downloadSettingsExpanded = false
+                        onUseDefaultDownloadDirectory()
+                    },
+                    label = { Text("Default") }
+                )
+                FilterChip(
+                    selected = downloadDirectory?.mode == DownloadDirectoryMode.CUSTOM,
+                    onClick = {
+                        downloadSettingsExpanded = false
+                        onChooseCustomDownloadDirectory()
+                    },
+                    label = { Text(if (downloadDirectory?.mode == DownloadDirectoryMode.CUSTOM) "Change custom" else "Custom") }
+                )
+            }
+            Surface(
+                onClick = {
+                    downloadSettingsExpanded = false
+                    onRelinkConfiguredDownloads()
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Rounded.FolderOpen, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary)
+                    Column {
+                        Text("Reconnect downloaded files", style = MaterialTheme.typography.titleSmall)
+                        Text("Match saved records to files in this folder",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -979,12 +1070,9 @@ private fun HubNavigationLabel(label: String, opacity: State<Float>, color: Stat
 
 @Composable
 private fun HubMoreContent(
-    defaultDownloadSection: HubDownloadSection,
-    onDefaultDownloadSectionSelected: (HubDownloadSection) -> Unit,
     onOpenBackupRestore: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val view = LocalView.current
     Column(
         modifier = modifier.testTag("hub_more").verticalScroll(rememberScrollState())
             .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 88.dp),
@@ -1039,25 +1127,6 @@ private fun HubMoreContent(
             }
         }
 
-        ExpressiveChoiceSetting(
-            title = "Default Downloads section",
-            description = "Choose which download list opens first."
-        ) {
-            HubDownloadSection.entries.forEach { option ->
-                FilterChip(
-                    selected = option == defaultDownloadSection,
-                    onClick = {
-                        if (option != defaultDownloadSection) {
-                            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                            onDefaultDownloadSectionSelected(option)
-                        }
-                    },
-                    label = {
-                        Text(if (option == HubDownloadSection.DOWNLOADING) "Downloading" else "Downloaded")
-                    }
-                )
-            }
-        }
         androidx.compose.material3.OutlinedButton(onClick = onOpenBackupRestore) {
             Text("Backup & restore")
         }
