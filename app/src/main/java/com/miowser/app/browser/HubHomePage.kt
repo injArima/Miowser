@@ -72,7 +72,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarResult
@@ -158,6 +157,7 @@ import com.miowser.app.ui.ExpressiveSheetHeading
 import com.miowser.app.ui.ConfirmationAction
 import com.miowser.app.ui.ConfirmationTone
 import com.miowser.app.ui.MiowserConfirmationDialog
+import com.miowser.app.ui.MiowserSnackbarHost
 import com.miowser.app.ui.theme.ExpressiveTokens
 import com.miowser.app.ui.theme.AppThemeMode
 import com.miowser.app.ui.theme.AppThemePreference
@@ -353,7 +353,12 @@ fun HubHomePage(
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(importSnackbar, Modifier.padding(bottom = hubBottomBarHeight + 8.dp)) },
+        snackbarHost = {
+            MiowserSnackbarHost(
+                hostState = importSnackbar,
+                modifier = Modifier.padding(bottom = hubBottomBarHeight + 8.dp)
+            )
+        },
         topBar = {
             Column {
                 TopAppBar(

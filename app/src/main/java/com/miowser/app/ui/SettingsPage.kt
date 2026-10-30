@@ -41,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import com.miowser.app.BuildConfig
 import com.miowser.app.settings.DownloadThreadCount
 import com.miowser.app.settings.HomePageMode
 import com.miowser.app.settings.InactiveTabRetention
@@ -257,6 +258,22 @@ fun SettingsPage(
                 SettingRow("Reduce motion", "Use simpler transitions. Android's remove-animations setting is always respected.",
                     settings.reduceMotion) {
                     onUpdate(settings.copy(reduceMotion = it))
+                }
+            }
+            SettingsSection("About") {
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text("Version", style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.weight(1f))
+                    Text(
+                        "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
             Spacer(Modifier.height(12.dp))

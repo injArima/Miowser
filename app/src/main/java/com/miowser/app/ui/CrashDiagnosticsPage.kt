@@ -27,7 +27,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
@@ -98,7 +97,10 @@ fun CrashDiagnosticsPage(onBack: () -> Unit) {
                     }
                 }
             }
-            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(16.dp))
+            MiowserSnackbarHost(
+                hostState = snackbar,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)
+            )
         }
     }
 

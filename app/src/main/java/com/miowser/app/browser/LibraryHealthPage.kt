@@ -28,7 +28,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
@@ -58,6 +57,7 @@ import com.miowser.app.library.MediaLibrary
 import com.miowser.app.ui.ConfirmationAction
 import com.miowser.app.ui.ConfirmationTone
 import com.miowser.app.ui.MiowserConfirmationDialog
+import com.miowser.app.ui.MiowserSnackbarHost
 import com.miowser.app.ui.SimplePageScaffold
 import kotlinx.coroutines.launch
 
@@ -185,7 +185,7 @@ internal fun LibraryHealthPage(
                     }
                 }
             }
-            SnackbarHost(
+            MiowserSnackbarHost(
                 hostState = snackbar,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)
             )
