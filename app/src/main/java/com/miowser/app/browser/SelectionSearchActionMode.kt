@@ -2,9 +2,11 @@ package com.miowser.app.browser
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Rect
 import android.view.ActionMode
 import android.view.Menu
 import android.view.MenuItem
+import android.view.View
 import android.webkit.WebView
 import com.miowser.app.R
 import org.json.JSONTokener
@@ -41,7 +43,7 @@ private class SelectionSearchActionModeCallback(
     private val webView: WebView,
     private val appPackage: String,
     private val onSearch: (String) -> Unit
-) : ActionMode.Callback {
+) : ActionMode.Callback2() {
     override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
         val created = delegate.onCreateActionMode(mode, menu)
         if (created) addSearchAction(menu)
@@ -91,5 +93,17 @@ private class SelectionSearchActionModeCallback(
     }
 
     override fun onDestroyActionMode(mode: ActionMode) = delegate.onDestroyActionMode(mode)
+
+    /**
+     * WebView supplies the selected text's screen rectangle through Callback2. Wrapping that
+     * callback as the older Callback interface discarded the rectangle, so Android had no anchor
+     * and placed the floating toolbar near the bottom of the window. Preserve the original bounds
+     * while still adding Miowser's action.
+     */
+    override fun onGetContentRect(mode: ActionMode, view: View, outRect: Rect) {
+        val positionedDelegate = delegate as? ActionMode.Callback2
+        if (positionedDelegate != null) positionedDelegate.onGetContentRect(mode, view, outRect)
+        else super.onGetContentRect(mode, view, outRect)
+    }
 }
 

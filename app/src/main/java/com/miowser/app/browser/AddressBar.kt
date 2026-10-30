@@ -124,6 +124,8 @@ internal fun AddressBar(
         SiteSecurity.OTHER -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val addressBarShape = MaterialTheme.shapes.extraLarge
+    val chromeColor = if (isPrivate) MaterialTheme.colorScheme.secondaryContainer
+        else MaterialTheme.colorScheme.background
     val suggestions = rememberBrowserSuggestions(
         textState.text.toString(),
         searchEngine,
@@ -164,15 +166,17 @@ internal fun AddressBar(
     // it by the inset amount pushes the content down to match automatically — no separate fix
     // needed on the content side.
     Surface(
-        tonalElevation = 2.dp,
-        color = if (isPrivate) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = if (isPrivate) 2.dp else 0.dp,
+        color = chromeColor,
         modifier = modifier
             .fillMaxWidth()
-            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                // Keep the background behind the system status bar while only offsetting content.
+                // Padding on Surface itself left the inset outside its color and created a seam.
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
                 .padding(horizontal = 8.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
