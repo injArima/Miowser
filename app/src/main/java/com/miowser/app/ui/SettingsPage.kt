@@ -61,6 +61,7 @@ fun SettingsPage(
     onOpenSitePermissions: () -> Unit,
     onOpenBackupRestore: () -> Unit,
     onOpenCrashReports: () -> Unit,
+    onOpenOnboarding: () -> Unit,
     onBack: () -> Unit
 ) {
     var homePageDraft by remember(settings.homePageUrl) { mutableStateOf(settings.homePageUrl) }
@@ -261,6 +262,12 @@ fun SettingsPage(
                 }
             }
             SettingsSection("About") {
+                NavigationRow(
+                    "Getting started",
+                    "Review the guide to browsing, media playback, downloads, and the Library.",
+                    onClick = onOpenOnboarding
+                )
+                SectionDivider()
                 Row(
                     modifier = Modifier.fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 16.dp),

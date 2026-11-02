@@ -98,7 +98,7 @@ import kotlinx.coroutines.launch
 /** Every full-page destination in the app. */
 enum class Screen {
     HUB, DETECTED, DOWNLOADS, HISTORY, ADBLOCK, BOOKMARKS, SETTINGS, CLEAR_DATA,
-    SITE_PERMISSIONS, CRASH_DIAGNOSTICS, TABS
+    SITE_PERMISSIONS, CRASH_DIAGNOSTICS, TABS, ONBOARDING
 }
 
 private val MENU_TILE_WIDTH = 48.dp

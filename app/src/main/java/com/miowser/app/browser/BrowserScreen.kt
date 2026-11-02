@@ -161,6 +161,8 @@ import com.miowser.app.ui.SitePermissionsPage
 import com.miowser.app.ui.ConfirmationAction
 import com.miowser.app.ui.ConfirmationTone
 import com.miowser.app.ui.MiowserConfirmationDialog
+import com.miowser.app.ui.OnboardingGuide
+import com.miowser.app.ui.OnboardingStore
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -295,7 +297,15 @@ fun BrowserScreen(
     var findMatchCount by remember { mutableIntStateOf(0) }
     var showBrowserDownloads by remember { mutableStateOf(false) }
     var showBackupRestore by remember { mutableStateOf(false) }
-    var activeScreen by remember { mutableStateOf<Screen?>(null) }
+    var activeScreen by remember {
+        mutableStateOf<Screen?>(if (OnboardingStore.shouldShow(context)) Screen.ONBOARDING else null)
+    }
+    var onboardingReturnToSettings by remember { mutableStateOf(false) }
+    fun closeOnboarding() {
+        OnboardingStore.complete(context)
+        activeScreen = if (onboardingReturnToSettings) Screen.SETTINGS else null
+        onboardingReturnToSettings = false
+    }
     var openingTabs by remember { mutableStateOf(false) }
     var showingHub by rememberSaveable { mutableStateOf(true) }
     var hubSection by rememberSaveable { mutableStateOf(HubSection.LIBRARY) }
@@ -1058,7 +1068,7 @@ fun BrowserScreen(
                 activeTabId = createAndInsertTab(AppSettings.current.searchUrl(query), null).id
             }
         }
-        activeScreen = null
+        if (activeScreen != Screen.ONBOARDING) activeScreen = null
         playbackRequest = null
         showOverflowMenu = false
         showingHub = false
@@ -1619,9 +1629,15 @@ fun BrowserScreen(
                 playbackRequest = null
                 libraryPlaybackQueue = null
             }
-            BrowserBackAction.CLOSE_INTERNAL_PAGE -> activeScreen =
-                if (activeScreen == Screen.CLEAR_DATA || activeScreen == Screen.SITE_PERMISSIONS ||
-                    activeScreen == Screen.CRASH_DIAGNOSTICS) Screen.SETTINGS else null
+            BrowserBackAction.CLOSE_INTERNAL_PAGE -> {
+                if (activeScreen == Screen.ONBOARDING) {
+                    closeOnboarding()
+                } else {
+                    activeScreen = if (activeScreen == Screen.CLEAR_DATA ||
+                        activeScreen == Screen.SITE_PERMISSIONS ||
+                        activeScreen == Screen.CRASH_DIAGNOSTICS) Screen.SETTINGS else null
+                }
+            }
             BrowserBackAction.WEB_HISTORY -> goBack()
             BrowserBackAction.CLOSE_CHILD_TAB -> activeTab?.let { closeTab(it.id) }
             BrowserBackAction.SHOW_HUB -> showingHub = true
@@ -2235,6 +2251,10 @@ fun BrowserScreen(
                 onOpenSitePermissions = { activeScreen = Screen.SITE_PERMISSIONS },
                 onOpenBackupRestore = { showBackupRestore = true },
                 onOpenCrashReports = { activeScreen = Screen.CRASH_DIAGNOSTICS },
+                onOpenOnboarding = {
+                    onboardingReturnToSettings = true
+                    activeScreen = Screen.ONBOARDING
+                },
                 onBack = { activeScreen = null }
             )
             Screen.CLEAR_DATA -> BrowsingDataPage(
@@ -2256,6 +2276,11 @@ fun BrowserScreen(
             )
             Screen.CRASH_DIAGNOSTICS -> CrashDiagnosticsPage(
                 onBack = { activeScreen = Screen.SETTINGS }
+            )
+            Screen.ONBOARDING -> OnboardingGuide(
+                revisiting = onboardingReturnToSettings,
+                onDismiss = ::closeOnboarding,
+                onFinished = ::closeOnboarding
             )
             null -> Unit
         }
