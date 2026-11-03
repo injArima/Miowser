@@ -1,6 +1,8 @@
 package com.miowser.app.browser
 
 import android.net.http.SslCertificate
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -17,15 +19,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -38,6 +40,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -84,6 +87,7 @@ fun SiteInfoSheet(
     var mediaMinimumDraft by remember(host, mediaMinimumOverride) {
         mutableFloatStateOf((mediaMinimumOverride ?: globalMediaMinimum).toFloat())
     }
+    var elementChangesExpanded by remember(host) { mutableStateOf(false) }
     val draftSeconds = (mediaMinimumDraft / 30f).roundToInt() * 30
 
     ModalBottomSheet(
@@ -101,7 +105,7 @@ fun SiteInfoSheet(
                     .padding(start = 16.dp, end = 16.dp, bottom = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                DashboardHeader(host = host, security = security, onDismiss = onDismiss)
+                DashboardHeader(host = host, security = security)
 
                 if (host != null) {
                     ExpressiveSectionCard(Modifier.fillMaxWidth()) {
@@ -174,17 +178,35 @@ fun SiteInfoSheet(
 
                     ExpressiveSectionCard(Modifier.fillMaxWidth()) {
                         Row(
-                            Modifier.fillMaxWidth(),
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .clickable(enabled = elementRules.isNotEmpty()) {
+                                    elementChangesExpanded = !elementChangesExpanded
+                                },
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             DashboardSectionTitle("Page element changes")
                             if (elementRules.isNotEmpty()) {
-                                Text(
-                                    "${elementRules.size} active",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        "${elementRules.size} active",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Icon(
+                                        if (elementChangesExpanded) Icons.Rounded.ExpandLess
+                                        else Icons.Rounded.ExpandMore,
+                                        contentDescription = if (elementChangesExpanded) {
+                                            "Collapse page element changes"
+                                        } else {
+                                            "Expand page element changes"
+                                        },
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(start = 4.dp)
+                                    )
+                                }
                             }
                         }
                         Spacer(Modifier.size(8.dp))
@@ -195,13 +217,17 @@ fun SiteInfoSheet(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         } else {
-                            elementRules.forEachIndexed { index, rule ->
-                                ElementRuleRow(
-                                    rule = rule,
-                                    onActionChanged = { onElementRuleActionChanged(rule, it) },
-                                    onRevert = { onRevertElementRule(rule) }
-                                )
-                                if (index != elementRules.lastIndex) DashboardDivider()
+                            AnimatedVisibility(visible = elementChangesExpanded) {
+                                Column {
+                                    elementRules.forEachIndexed { index, rule ->
+                                        ElementRuleRow(
+                                            rule = rule,
+                                            onActionChanged = { onElementRuleActionChanged(rule, it) },
+                                            onRevert = { onRevertElementRule(rule) }
+                                        )
+                                        if (index != elementRules.lastIndex) DashboardDivider()
+                                    }
+                                }
                             }
                             TextButton(
                                 onClick = onRevertAllElementRules,
@@ -365,7 +391,7 @@ fun SiteInfoSheet(
 }
 
 @Composable
-private fun DashboardHeader(host: String?, security: SiteSecurity, onDismiss: () -> Unit) {
+private fun DashboardHeader(host: String?, security: SiteSecurity) {
     val statusColor = securityStatusColor(security)
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Surface(
@@ -386,9 +412,6 @@ private fun DashboardHeader(host: String?, security: SiteSecurity, onDismiss: ()
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-        }
-        IconButton(onClick = onDismiss) {
-            Icon(Icons.Rounded.Close, contentDescription = "Close privacy dashboard")
         }
     }
     Surface(
