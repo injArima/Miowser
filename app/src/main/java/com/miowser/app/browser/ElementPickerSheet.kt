@@ -152,7 +152,13 @@ fun ElementPickerPrompt(onCancel: () -> Unit, modifier: Modifier = Modifier) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text("Tap an element to block", style = MaterialTheme.typography.labelLarge)
+            Column(Modifier.weight(1f)) {
+                Text("Choose an element", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    "Tap once to outline it, then tap the outlined area again",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
             TextButton(onClick = onCancel) { Text("Cancel") }
         }
     }

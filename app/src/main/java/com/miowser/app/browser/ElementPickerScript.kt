@@ -67,6 +67,7 @@ internal fun elementPickerStartScript(token: String): String {
             var previewStyle = null;
             var candidates = [];
             var chosenIndex = 0;
+            var armedElement = null;
 
             function escaped(value) {
                 if (window.CSS && CSS.escape) return CSS.escape(value);
@@ -134,10 +135,14 @@ internal fun elementPickerStartScript(token: String): String {
                 overlay.style.height = Math.max(0, Math.min(innerHeight, rect.bottom) - Math.max(0, rect.top)) + 'px';
             }
 
-            function onMove(event) { show(candidateAt(event)); }
             function stopCapture() {
-                document.removeEventListener('pointermove', onMove, true);
                 document.removeEventListener('click', onPick, true);
+                window.removeEventListener('scroll', refreshArmed, true);
+                window.removeEventListener('resize', refreshArmed, true);
+            }
+            function refreshArmed() {
+                if (armedElement && armedElement.isConnected) show(armedElement);
+                else if (armedElement) overlay.style.display = 'none';
             }
             function onPick(event) {
                 var element = candidateAt(event);
@@ -145,9 +150,14 @@ internal fun elementPickerStartScript(token: String): String {
                     element === document.documentElement) return;
                 event.preventDefault();
                 event.stopImmediatePropagation();
+                if (!armedElement || !armedElement.contains(element)) {
+                    armedElement = element;
+                    show(armedElement);
+                    return;
+                }
                 stopCapture();
                 candidates = [];
-                var node = element;
+                var node = armedElement;
                 while (node && node instanceof Element && node !== document.body &&
                     node !== document.documentElement && candidates.length < 6) {
                     var selector = selectorFor(node);
@@ -199,8 +209,9 @@ internal fun elementPickerStartScript(token: String): String {
                 }
             };
             window.__miowserElementPicker = api;
-            document.addEventListener('pointermove', onMove, true);
             document.addEventListener('click', onPick, true);
+            window.addEventListener('scroll', refreshArmed, true);
+            window.addEventListener('resize', refreshArmed, true);
         })();
     """.trimIndent()
 }

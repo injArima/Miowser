@@ -20,6 +20,16 @@ class ElementPickerScriptTest {
     }
 
     @Test
+    fun `picker requires a second tap inside the outlined element`() {
+        val script = elementPickerStartScript("token")
+
+        assertTrue(script.contains("armedElement = element"))
+        assertTrue(script.contains("armedElement.contains(element)"))
+        assertTrue(script.indexOf("armedElement = element") <
+            script.indexOf("window.MiowserElementPicker.selected"))
+    }
+
+    @Test
     fun `commit action is quoted rather than interpolated as code`() {
         val script = elementPickerCommitScript("DELETE');alert(1)//")
 

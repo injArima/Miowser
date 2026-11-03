@@ -1739,6 +1739,7 @@ fun BrowserScreen(
 
     BackHandler(enabled = !showingHub && !startupReady) { showingHub = true }
     BackHandler(enabled = showBackupRestore) { showBackupRestore = false }
+    BackHandler(enabled = elementPickerTabId != null) { cancelElementPicker() }
 
     BackHandler(enabled = fullscreenVideo != null) { exitWebFullscreen() }
 
