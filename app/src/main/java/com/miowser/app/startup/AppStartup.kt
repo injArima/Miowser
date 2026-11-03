@@ -39,6 +39,7 @@ object AppStartup {
             try {
                 val settings = hub.get {
                     AppSettings.loadAsync(app)
+                    com.miowser.app.adblock.SiteElementRules.load(app)
                     val saved = withContext(Dispatchers.IO) {
                         com.miowser.app.library.LocalInspectionCache.prepare(app)
                         listOf("player_track_preferences", "player_subtitle_style", "player_display_preferences",

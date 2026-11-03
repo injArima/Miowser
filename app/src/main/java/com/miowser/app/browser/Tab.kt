@@ -213,6 +213,7 @@ class Tab(
     val detectedMedia = mutableStateListOf<DetectedMedia>()
     private val detectionIndexes = mutableMapOf<String, Int>()
     private var grabberBridge: GrabberBridge? = null
+    private var elementPickerBridge: ElementPickerBridge? = null
     private var liveVideoTracker: LiveVideoTracker? = null
     internal val browserVideoPlayer = BrowserVideoController()
     internal fun startBrowserVideoFullscreen() { liveVideoTracker?.onNativeFullscreenShown() }
@@ -517,6 +518,7 @@ class Tab(
         }
         retireEngineCallbacks?.invoke()
         retireEngineCallbacks = null
+        elementPickerBridge?.cancel()
         previewCaptureGeneration++
         mainHandler.removeCallbacks(previewCaptureRunnable)
         clearDetections()
@@ -534,6 +536,7 @@ class Tab(
         TabThumbnailMemoryRegistry.remove(thumbnailKey)
         retireEngineCallbacks?.invoke()
         retireEngineCallbacks = null
+        elementPickerBridge?.cancel()
         popupProxies.values.toList().forEach { it() }
         clearDetections()
         controller.release(id)
@@ -545,6 +548,7 @@ class Tab(
         rendererUnavailable = true
         retireEngineCallbacks?.invoke()
         retireEngineCallbacks = null
+        elementPickerBridge?.cancel()
         previewCaptureGeneration++
         mainHandler.removeCallbacks(previewCaptureRunnable)
         clearDetections()
@@ -747,6 +751,12 @@ class Tab(
             requestUserAgent = cachedUserAgent
             addJavascriptInterface(CosmeticBridge(AdBlock.engine), "MiowserAdBlock")
             installCosmeticInjectionScript() // must run before loadUrl()
+            addJavascriptInterface(ElementRuleBridge(), "MiowserElementRules")
+            installElementRuleInjectionScript()
+            ElementPickerBridge().also { picker ->
+                elementPickerBridge = picker
+                addJavascriptInterface(picker, "MiowserElementPicker")
+            }
             desktopViewportScript = if (isDesktopMode) installDesktopViewportScript() else null
 
             val bridge = RendererResourceDownloader(tabContext)
@@ -1284,6 +1294,31 @@ class Tab(
 
     fun jumpToTop() {
         liveWebView?.evaluateJavascript("window.scrollTo({top: 0, left: 0, behavior: 'smooth'});", null)
+    }
+
+    fun startElementPicker(onSelection: (ElementPickerSelection) -> Unit): Boolean {
+        if (destroyed || isShowingHome) return false
+        val view = runCatching { ensureWebView() }.getOrNull() ?: return false
+        if (!view.settings.javaScriptEnabled) return false
+        val picker = elementPickerBridge ?: return false
+        val token = UUID.randomUUID().toString()
+        picker.begin(token, onSelection)
+        view.evaluateJavascript(elementPickerStartScript(token), null)
+        return true
+    }
+
+    fun previewElementPickerCandidate(index: Int) {
+        liveWebView?.evaluateJavascript(elementPickerPreviewScript(index), null)
+    }
+
+    fun cancelElementPicker() {
+        elementPickerBridge?.cancel()
+        liveWebView?.evaluateJavascript(elementPickerCancelScript(), null)
+    }
+
+    fun commitElementPicker(action: com.miowser.app.adblock.ElementRuleAction) {
+        elementPickerBridge?.cancel()
+        liveWebView?.evaluateJavascript(elementPickerCommitScript(action.name), null)
     }
 
     /** Stops page-owned media before Miowser's rich player takes over audio/video playback. */

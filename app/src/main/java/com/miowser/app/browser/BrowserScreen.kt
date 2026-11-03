@@ -103,6 +103,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.miowser.app.adblock.AdBlock
 import com.miowser.app.adblock.AdBlockFilters
 import com.miowser.app.adblock.SiteProtection
+import com.miowser.app.adblock.SiteElementRules
+import com.miowser.app.adblock.SiteElementRule
+import com.miowser.app.adblock.ElementRuleAction
 import com.miowser.app.bookmarks.BookmarkList
 import com.miowser.app.browser.video.VideoAssistantButtonPolicy
 import com.miowser.app.browser.video.NativeVideoAssistantDisplay
@@ -151,6 +154,7 @@ import com.miowser.app.ui.BottomBar
 import com.miowser.app.ui.BrowsingDataPage
 import com.miowser.app.ui.CrashDiagnosticsPage
 import com.miowser.app.ui.HistoryPage
+import com.miowser.app.ui.ElementRulesPage
 import com.miowser.app.ui.LinkContextMenu
 import com.miowser.app.ui.MiowserSnackbarHost
 import com.miowser.app.ui.MiowserSnackbarVisuals
@@ -295,6 +299,8 @@ fun BrowserScreen(
     var findQuery by remember { mutableStateOf("") }
     var findMatchIndex by remember { mutableIntStateOf(0) }
     var findMatchCount by remember { mutableIntStateOf(0) }
+    var elementPickerTabId by remember { mutableStateOf<Long?>(null) }
+    var elementPickerSelection by remember { mutableStateOf<ElementPickerSelection?>(null) }
     var showBrowserDownloads by remember { mutableStateOf(false) }
     var showBackupRestore by remember { mutableStateOf(false) }
     var activeScreen by remember {
@@ -1183,6 +1189,83 @@ fun BrowserScreen(
         }
     }
 
+    fun refreshSiteElementRules(host: String, restoreDeletedNodes: Boolean) {
+        tabs.filter { SiteProtection.host(it.url) == host }.forEach { tab ->
+            if (restoreDeletedNodes) tab.reload()
+            else tab.liveWebView?.applyElementRulesNow()
+        }
+    }
+
+    fun updateElementRuleAction(rule: SiteElementRule, action: ElementRuleAction) {
+        if (rule.action == action) return
+        val updated = SiteElementRules.updateAction(context, rule.id, action) ?: return
+        refreshSiteElementRules(rule.host, restoreDeletedNodes = true)
+        showSavedSnackbar("Page element action changed", "Undo") {
+            SiteElementRules.updateAction(context, updated.id, rule.action)
+            refreshSiteElementRules(rule.host, restoreDeletedNodes = true)
+        }
+    }
+
+    fun revertElementRule(rule: SiteElementRule) {
+        val removed = SiteElementRules.remove(context, rule.id) ?: return
+        refreshSiteElementRules(
+            removed.host,
+            restoreDeletedNodes = removed.action == ElementRuleAction.DELETE
+        )
+        showSavedSnackbar("Page element change reverted", "Undo") {
+            SiteElementRules.restore(context, listOf(removed))
+            refreshSiteElementRules(removed.host, restoreDeletedNodes = false)
+        }
+    }
+
+    fun revertSiteElementRules(host: String) {
+        val removed = SiteElementRules.removeHost(context, host)
+        if (removed.isEmpty()) return
+        refreshSiteElementRules(host, removed.any { it.action == ElementRuleAction.DELETE })
+        showSavedSnackbar("All page changes reverted for $host", "Undo") {
+            SiteElementRules.restore(context, removed)
+            refreshSiteElementRules(host, restoreDeletedNodes = false)
+        }
+    }
+
+    fun cancelElementPicker() {
+        elementPickerTabId?.let { id -> tabs.firstOrNull { it.id == id }?.cancelElementPicker() }
+        elementPickerTabId = null
+        elementPickerSelection = null
+    }
+
+    fun beginElementPicker() {
+        val tab = activeTab ?: return
+        if (tab.isPrivate) {
+            showActionSnackbar("Block element is unavailable in private tabs")
+            return
+        }
+        if (SiteProtection.host(tab.url) == null) {
+            showActionSnackbar("Open a website before selecting an element")
+            return
+        }
+        elementPickerTabId = tab.id
+        elementPickerSelection = null
+        val started = tab.startElementPicker { selection ->
+            if (elementPickerTabId == tab.id && activeTabId == tab.id) {
+                elementPickerSelection = selection
+            } else {
+                tab.cancelElementPicker()
+            }
+        }
+        if (!started) {
+            elementPickerTabId = null
+            showActionSnackbar("Enable JavaScript to select page elements")
+        }
+    }
+
+    LaunchedEffect(activeTabId, activeTab?.url, showingHub, activeScreen, playbackRequest) {
+        val pickerId = elementPickerTabId ?: return@LaunchedEffect
+        if (pickerId != activeTabId || showingHub || activeScreen != null || playbackRequest != null) {
+            cancelElementPicker()
+        }
+    }
+
     fun deleteDownloadWithUndo(download: Download, deleteFile: Boolean) {
         if (download.id in pendingDownloadDeletes) return
         val wasActive = download.status == DownloadStatus.QUEUED ||
@@ -1635,7 +1718,8 @@ fun BrowserScreen(
                 } else {
                     activeScreen = if (activeScreen == Screen.CLEAR_DATA ||
                         activeScreen == Screen.SITE_PERMISSIONS ||
-                        activeScreen == Screen.CRASH_DIAGNOSTICS) Screen.SETTINGS else null
+                        activeScreen == Screen.CRASH_DIAGNOSTICS ||
+                        activeScreen == Screen.ELEMENT_RULES) Screen.SETTINGS else null
                 }
             }
             BrowserBackAction.WEB_HISTORY -> goBack()
@@ -2026,6 +2110,15 @@ fun BrowserScreen(
             }
         }
 
+        if (elementPickerTabId == activeTabId && elementPickerSelection == null &&
+            !showingHub && activeScreen == null && playbackRequest == null) {
+            ElementPickerPrompt(
+                onCancel = ::cancelElementPicker,
+                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding()
+                    .padding(top = 64.dp).zIndex(4f)
+            )
+        }
+
         // Rendered as an opaque full-screen overlay after the Scaffold above — same pattern
         // PlayerScreen already uses below — rather than replacing the Scaffold outright: the tab
         // Acquired WebViews stay hosted behind full pages; the controller retains their engines
@@ -2255,6 +2348,7 @@ fun BrowserScreen(
                     onboardingReturnToSettings = true
                     activeScreen = Screen.ONBOARDING
                 },
+                onOpenElementRules = { activeScreen = Screen.ELEMENT_RULES },
                 onBack = { activeScreen = null }
             )
             Screen.CLEAR_DATA -> BrowsingDataPage(
@@ -2277,6 +2371,16 @@ fun BrowserScreen(
             Screen.CRASH_DIAGNOSTICS -> CrashDiagnosticsPage(
                 onBack = { activeScreen = Screen.SETTINGS }
             )
+            Screen.ELEMENT_RULES -> {
+                SiteElementRules.revision
+                ElementRulesPage(
+                    rules = SiteElementRules.rules,
+                    onActionChanged = ::updateElementRuleAction,
+                    onRevert = ::revertElementRule,
+                    onRevertSite = ::revertSiteElementRules,
+                    onBack = { activeScreen = Screen.SETTINGS }
+                )
+            }
             Screen.ONBOARDING -> OnboardingGuide(
                 revisiting = onboardingReturnToSettings,
                 onDismiss = ::closeOnboarding,
@@ -2479,6 +2583,10 @@ fun BrowserScreen(
                 pageActionsEnabled = activeTab?.let {
                     !it.isShowingHome && it.liveWebView != null && it.pageError == null
                 } == true,
+                elementBlockingEnabled = activeTab?.let {
+                    !it.isShowingHome && !it.isPrivate && it.liveWebView != null &&
+                        it.pageError == null && SiteProtection.host(it.url) != null
+                } == true,
                 onShare = {
                     activeTab?.let { tab -> shareUrl(tab.url, tab.title) }
                 },
@@ -2491,6 +2599,7 @@ fun BrowserScreen(
                     }
                 },
                 onZoom = { showZoomTabId = activeTab?.id },
+                onBlockElement = ::beginElementPicker,
                 onTextSize = { showTextSizeTabId = activeTab?.id },
                 onClearCache = {
                     BrowsingData.clearCache(context, tabs.toList())
@@ -2548,6 +2657,53 @@ fun BrowserScreen(
                     }, ConfirmationTone.CAUTION)
                 )
             )
+        }
+
+        elementPickerSelection?.let { selection ->
+            val pickerTab = elementPickerTabId?.let { id -> tabs.firstOrNull { it.id == id } }
+            if (pickerTab == null || pickerTab.id != activeTabId) {
+                LaunchedEffect(selection) { cancelElementPicker() }
+            } else {
+                ElementPickerSheet(
+                    selection = selection,
+                    onPreview = pickerTab::previewElementPickerCandidate,
+                    onConfirm = { index, action ->
+                        val host = SiteProtection.host(pickerTab.url)
+                        val selector = selection.selectors.getOrNull(index)
+                        if (host == null || selector == null) {
+                            cancelElementPicker()
+                            showActionSnackbar("Could not save this page element")
+                        } else {
+                            val previous = SiteElementRules.forHost(host)
+                                .firstOrNull { it.selector == selector }
+                            val saved = SiteElementRules.add(context, host, selector, action)
+                            if (saved == null) {
+                                cancelElementPicker()
+                                showActionSnackbar("Could not save this page element")
+                            } else {
+                                pickerTab.commitElementPicker(action)
+                                elementPickerTabId = null
+                                elementPickerSelection = null
+                                refreshSiteElementRules(host, restoreDeletedNodes = false)
+                                showSavedSnackbar(
+                                    if (action == ElementRuleAction.HIDE)
+                                        "Element hidden on $host" else "Element deleted on $host",
+                                    "Undo"
+                                ) {
+                                    if (previous == null) SiteElementRules.remove(context, saved.id)
+                                    else SiteElementRules.updateAction(context, previous.id, previous.action)
+                                    refreshSiteElementRules(
+                                        host,
+                                        restoreDeletedNodes = action == ElementRuleAction.DELETE ||
+                                            previous?.action == ElementRuleAction.DELETE
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    onDismiss = ::cancelElementPicker
+                )
+            }
         }
 
         if (findOwnerId == activeTabId && findView != null && !showingHub &&
@@ -2804,6 +2960,7 @@ fun BrowserScreen(
             if (siteTab != null) {
                 val host = SiteProtection.host(siteTab.url)
                 SiteProtection.revision // observe changes to per-site settings
+                SiteElementRules.revision // observe page-element changes while open
                 val security = siteSecurity(siteTab.url,
                     siteTab.lastFinishedUrl.takeIf { siteTab.pageError == null },
                     siteTab.certificateErrorUrl, siteTab.certificateBypassed)
@@ -2827,6 +2984,7 @@ fun BrowserScreen(
                     mediaMinimumOverride = host?.let(SiteProtection::mediaMinimumOverride),
                     globalMediaMinimum = AppSettings.current.grabberMinimumDurationSeconds,
                     canInterceptPopups = AppSettings.current.popupsEnabled,
+                    elementRules = SiteElementRules.forHost(host),
                     onSiteModeChanged = { mode ->
                         if (host != null) {
                             SiteProtection.set(context, host, mode)
@@ -2838,6 +2996,11 @@ fun BrowserScreen(
                     },
                     onMediaMinimumChanged = { seconds ->
                         if (host != null) SiteProtection.setMediaMinimum(context, host, seconds)
+                    },
+                    onElementRuleActionChanged = ::updateElementRuleAction,
+                    onRevertElementRule = ::revertElementRule,
+                    onRevertAllElementRules = {
+                        if (host != null) revertSiteElementRules(host)
                     },
                     onClearCache = {
                         BrowsingData.clearCache(context, tabs.toList())

@@ -62,6 +62,7 @@ fun SettingsPage(
     onOpenBackupRestore: () -> Unit,
     onOpenCrashReports: () -> Unit,
     onOpenOnboarding: () -> Unit,
+    onOpenElementRules: () -> Unit,
     onBack: () -> Unit
 ) {
     var homePageDraft by remember(settings.homePageUrl) { mutableStateOf(settings.homePageUrl) }
@@ -178,6 +179,12 @@ fun SettingsPage(
                     destructive = true, onClick = onOpenBrowsingData)
                 SectionDivider()
                 NavigationRow("Site permissions", "Review access granted to websites.", onClick = onOpenSitePermissions)
+                SectionDivider()
+                NavigationRow(
+                    "Blocked page elements",
+                    "Review elements you have hidden or deleted on individual websites.",
+                    onClick = onOpenElementRules
+                )
                 SectionDivider()
                 SettingRow("Cookies", "Allow websites to remember sign-ins and preferences.", settings.cookiesEnabled) {
                     onUpdate(settings.copy(cookiesEnabled = it))

@@ -105,6 +105,7 @@ class BackupArchiveTest {
         assertFalse(allowedBackupPath("prefs/private_session.json"))
         assertFalse(allowedBackupPath("prefs/history.json"))
         assertFalse(allowedBackupPath("prefs/browser_session.json"))
+        assertTrue(allowedBackupPath("prefs/site_element_rules.json"))
         assertTrue(allowedBackupPath("files/library_subtitles/${"a".repeat(64)}.vtt"))
         assertThrows(IllegalArgumentException::class.java) {
             BackupArchive.write(ByteArrayOutputStream(), listOf(

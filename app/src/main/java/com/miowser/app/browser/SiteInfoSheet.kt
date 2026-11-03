@@ -19,6 +19,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -28,8 +29,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.miowser.app.adblock.SiteProtectionMode
+import com.miowser.app.adblock.ElementRuleAction
+import com.miowser.app.adblock.SiteElementRule
 import com.miowser.app.ui.CompactSheetDragHandle
 import com.miowser.app.ui.MiowserBottomSheetShape
 import kotlin.math.roundToInt
@@ -48,9 +52,13 @@ fun SiteInfoSheet(
     mediaMinimumOverride: Int?,
     globalMediaMinimum: Int,
     canInterceptPopups: Boolean,
+    elementRules: List<SiteElementRule>,
     onSiteModeChanged: (SiteProtectionMode) -> Unit,
     onOpenPageLinksHereChanged: (Boolean) -> Unit,
     onMediaMinimumChanged: (Int?) -> Unit,
+    onElementRuleActionChanged: (SiteElementRule, ElementRuleAction) -> Unit,
+    onRevertElementRule: (SiteElementRule) -> Unit,
+    onRevertAllElementRules: () -> Unit,
     onClearCache: () -> Unit,
     onHardReload: () -> Unit,
     onDismiss: () -> Unit
@@ -134,6 +142,39 @@ fun SiteInfoSheet(
                     Text("Unknown-length media is hidden when a minimum is enabled.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text("Page element changes", style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(top = 8.dp))
+                if (elementRules.isEmpty()) {
+                    Text("No elements have been hidden or deleted on this site.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    elementRules.forEach { rule ->
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(rule.selector, style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace, maxLines = 2,
+                                overflow = TextOverflow.Ellipsis)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                ElementRuleAction.entries.forEach { action ->
+                                    FilterChip(
+                                        selected = rule.action == action,
+                                        onClick = { onElementRuleActionChanged(rule, action) },
+                                        label = { Text(if (action == ElementRuleAction.HIDE) "Hide" else "Delete") }
+                                    )
+                                }
+                                TextButton(onClick = { onRevertElementRule(rule) }) {
+                                    Text("Revert", color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                    TextButton(onClick = onRevertAllElementRules) {
+                        Text("Revert all page changes", color = MaterialTheme.colorScheme.error)
+                    }
                 }
                 Text("Ad blocker for this site", style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier.padding(top = 8.dp))

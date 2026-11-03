@@ -14,6 +14,7 @@ enum class OverflowMenuAction {
     HISTORY,
     DETECTED,
     SETTINGS,
+    BLOCK_ELEMENT,
     ZOOM,
     SHARE
 }
@@ -25,6 +26,7 @@ val DEFAULT_OVERFLOW_MENU_ORDER: List<OverflowMenuAction> = listOf(
     OverflowMenuAction.HISTORY,
     OverflowMenuAction.DETECTED,
     OverflowMenuAction.SETTINGS,
+    OverflowMenuAction.BLOCK_ELEMENT,
     OverflowMenuAction.ZOOM,
     OverflowMenuAction.SHARE
 )

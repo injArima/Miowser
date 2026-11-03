@@ -22,6 +22,7 @@ class OverflowMenuOrderStoreTest {
                 OverflowMenuAction.DOWNLOADS,
                 OverflowMenuAction.DETECTED,
                 OverflowMenuAction.SETTINGS,
+                OverflowMenuAction.BLOCK_ELEMENT,
                 OverflowMenuAction.ZOOM
             ),
             normalized

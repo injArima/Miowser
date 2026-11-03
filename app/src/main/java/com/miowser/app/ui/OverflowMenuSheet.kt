@@ -39,6 +39,7 @@ import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Shield
@@ -98,7 +99,7 @@ import kotlinx.coroutines.launch
 /** Every full-page destination in the app. */
 enum class Screen {
     HUB, DETECTED, DOWNLOADS, HISTORY, ADBLOCK, BOOKMARKS, SETTINGS, CLEAR_DATA,
-    SITE_PERMISSIONS, CRASH_DIAGNOSTICS, TABS, ONBOARDING
+    SITE_PERMISSIONS, CRASH_DIAGNOSTICS, TABS, ONBOARDING, ELEMENT_RULES
 }
 
 private val MENU_TILE_WIDTH = 48.dp
@@ -119,9 +120,11 @@ fun OverflowMenuSheet(
     detectedCount: Int,
     shareEnabled: Boolean,
     pageActionsEnabled: Boolean,
+    elementBlockingEnabled: Boolean,
     onShare: () -> Unit,
     onFind: () -> Unit,
     onZoom: () -> Unit,
+    onBlockElement: () -> Unit,
     onTextSize: () -> Unit,
     onClearCache: () -> Unit,
     onClearCookiesAndSiteData: () -> Unit,
@@ -299,7 +302,11 @@ fun OverflowMenuSheet(
             ) {
                 itemsIndexed(shortcuts, key = { _, action -> action.name }) { index, action ->
                     val presentation = action.presentation()
-                    val enabled = action != OverflowMenuAction.ZOOM || pageActionsEnabled
+                    val enabled = when (action) {
+                        OverflowMenuAction.ZOOM -> pageActionsEnabled
+                        OverflowMenuAction.BLOCK_ELEMENT -> elementBlockingEnabled
+                        else -> true
+                    }
                     val isDragged = draggedAction == action
                     val isTarget = draggedAction != null && dragTargetIndex == index
 
@@ -317,10 +324,17 @@ fun OverflowMenuSheet(
                         isDropTarget = isTarget,
                         dragOffset = if (isDragged) dragOffset else Offset.Zero,
                         onClick = {
-                            if (action == OverflowMenuAction.ZOOM) {
-                                onDismiss()
-                                onZoom()
-                            } else presentation.screen?.let(onSelect)
+                            when (action) {
+                                OverflowMenuAction.ZOOM -> {
+                                    onDismiss()
+                                    onZoom()
+                                }
+                                OverflowMenuAction.BLOCK_ELEMENT -> {
+                                    onDismiss()
+                                    onBlockElement()
+                                }
+                                else -> presentation.screen?.let(onSelect)
+                            }
                         },
                         onDragStart = {
                             draggedAction = action
@@ -554,6 +568,7 @@ private fun OverflowMenuAction.presentation(): MenuPresentation = when (this) {
     OverflowMenuAction.HISTORY -> MenuPresentation("History", Icons.Rounded.History, Screen.HISTORY)
     OverflowMenuAction.DETECTED -> MenuPresentation("Media", Icons.Rounded.VideoLibrary, Screen.DETECTED)
     OverflowMenuAction.SETTINGS -> MenuPresentation("Settings", Icons.Rounded.Settings, Screen.SETTINGS)
+    OverflowMenuAction.BLOCK_ELEMENT -> MenuPresentation("Block", Icons.Rounded.SelectAll, null)
     OverflowMenuAction.ZOOM -> MenuPresentation("Zoom", Icons.Rounded.ZoomIn, null)
     OverflowMenuAction.SHARE -> MenuPresentation("Share", Icons.Rounded.Share, null)
 }

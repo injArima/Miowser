@@ -114,6 +114,7 @@ class MiowserWebViewClient(
             // Document-start remains the flicker-free primary path. This second application
             // catches a filter rebuild that completed while the page itself was loading.
             view.applyCosmeticFiltersNow()
+            view.applyElementRulesNow()
         }
     }
 

@@ -26,7 +26,7 @@ internal fun backupFileByteLimit(path: String): Long =
 internal val BACKUP_PREFERENCE_NAMES = listOf(
     "settings", "hub_settings", "bookmarks", "browser_speed_dials", "media_library",
     "library_folders", "downloads", "failed_video_log", "site_protection", "site_permissions",
-    "adblock_filters", "browser_overflow_menu", "player_display_preferences",
+    "site_element_rules", "adblock_filters", "browser_overflow_menu", "player_display_preferences",
     "player_subtitle_style", "player_track_preferences"
 )
 

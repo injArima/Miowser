@@ -23,6 +23,7 @@ Miowser is an Android browser built for discovering, playing, downloading, and o
 - Regular and private tabs, tab previews, session restore, and inactive-tab archiving
 - Bookmarks, browsing history search, speed dial, and Android's **Search with Miowser** text action
 - Per-site privacy controls, permissions, desktop mode, hard reload, cache clearing, and cookie clearing
+- A visual element picker for hiding or deleting unwanted parts of individual websites, with undo and per-site management
 - Find in page, zoom, text size, sharing, printing/PDF, and pull to refresh
 - Camera, microphone, and location permission handling
 - AMOLED theme and accessibility options such as reduced motion
@@ -51,6 +52,7 @@ Miowser is an Android browser built for discovering, playing, downloading, and o
 - Additional filter-list URLs, bulk import, duplicate detection, renaming, individual refresh, and per-list progress
 - Custom network and cosmetic rules with an in-app usage guide
 - Per-site Standard, Strict, or Off modes
+- Site-scoped element changes that remain manageable separately from raw custom filter rules
 - Blocked-page explanation showing the responsible filter lists
 
 ## Backup and privacy
