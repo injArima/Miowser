@@ -1246,6 +1246,37 @@ fun BrowserScreen(
         elementPickerSelection = null
     }
 
+    fun saveElementPickerChange(tab: Tab, index: Int, action: ElementRuleAction) {
+        val host = SiteProtection.host(tab.url)
+        val selector = elementPickerSelection?.selectors?.getOrNull(index)
+        if (elementPickerTabId != tab.id || activeTabId != tab.id || host == null || selector == null) {
+            cancelElementPicker()
+            showActionSnackbar("Could not save this page element")
+            return
+        }
+        val previous = SiteElementRules.forHost(host).firstOrNull { it.selector == selector }
+        val saved = SiteElementRules.add(context, host, selector, action)
+        if (saved == null) {
+            cancelElementPicker()
+            showActionSnackbar("Could not save this page element")
+            return
+        }
+        tab.commitElementPicker(action)
+        elementPickerTabId = null
+        elementPickerSelection = null
+        refreshSiteElementRules(host, restoreDeletedNodes = false)
+        showSavedSnackbar(
+            if (action == ElementRuleAction.HIDE) "Element hidden on $host" else "Element deleted on $host",
+            "Undo"
+        ) {
+            if (previous == null) SiteElementRules.remove(context, saved.id)
+            else SiteElementRules.updateAction(context, previous.id, previous.action)
+            refreshSiteElementRules(host,
+                restoreDeletedNodes = action == ElementRuleAction.DELETE ||
+                    previous?.action == ElementRuleAction.DELETE)
+        }
+    }
+
     fun beginElementPicker() {
         val tab = activeTab ?: return
         if (tab.isPrivate) {
@@ -1258,13 +1289,16 @@ fun BrowserScreen(
         }
         elementPickerTabId = tab.id
         elementPickerSelection = null
-        val started = tab.startElementPicker { selection ->
-            if (elementPickerTabId == tab.id && activeTabId == tab.id) {
-                elementPickerSelection = selection
-            } else {
-                tab.cancelElementPicker()
-            }
-        }
+        val started = tab.startElementPicker(
+            onSelection = { selection ->
+                if (elementPickerTabId == tab.id && activeTabId == tab.id) {
+                    elementPickerSelection = selection
+                } else {
+                    tab.cancelElementPicker()
+                }
+            },
+            onAction = { index, action -> saveElementPickerChange(tab, index, action) }
+        )
         if (!started) {
             elementPickerTabId = null
             showActionSnackbar("Enable JavaScript to select page elements")
@@ -2718,53 +2752,6 @@ fun BrowserScreen(
                     }, ConfirmationTone.CAUTION)
                 )
             )
-        }
-
-        elementPickerSelection?.let { selection ->
-            val pickerTab = elementPickerTabId?.let { id -> tabs.firstOrNull { it.id == id } }
-            if (pickerTab == null || pickerTab.id != activeTabId) {
-                LaunchedEffect(selection) { cancelElementPicker() }
-            } else {
-                ElementPickerSheet(
-                    selection = selection,
-                    onPreview = pickerTab::previewElementPickerCandidate,
-                    onConfirm = { index, action ->
-                        val host = SiteProtection.host(pickerTab.url)
-                        val selector = selection.selectors.getOrNull(index)
-                        if (host == null || selector == null) {
-                            cancelElementPicker()
-                            showActionSnackbar("Could not save this page element")
-                        } else {
-                            val previous = SiteElementRules.forHost(host)
-                                .firstOrNull { it.selector == selector }
-                            val saved = SiteElementRules.add(context, host, selector, action)
-                            if (saved == null) {
-                                cancelElementPicker()
-                                showActionSnackbar("Could not save this page element")
-                            } else {
-                                pickerTab.commitElementPicker(action)
-                                elementPickerTabId = null
-                                elementPickerSelection = null
-                                refreshSiteElementRules(host, restoreDeletedNodes = false)
-                                showSavedSnackbar(
-                                    if (action == ElementRuleAction.HIDE)
-                                        "Element hidden on $host" else "Element deleted on $host",
-                                    "Undo"
-                                ) {
-                                    if (previous == null) SiteElementRules.remove(context, saved.id)
-                                    else SiteElementRules.updateAction(context, previous.id, previous.action)
-                                    refreshSiteElementRules(
-                                        host,
-                                        restoreDeletedNodes = action == ElementRuleAction.DELETE ||
-                                            previous?.action == ElementRuleAction.DELETE
-                                    )
-                                }
-                            }
-                        }
-                    },
-                    onDismiss = ::cancelElementPicker
-                )
-            }
         }
 
         if (findOwnerId == activeTabId && findView != null && !showingHub &&

@@ -1296,19 +1296,18 @@ class Tab(
         liveWebView?.evaluateJavascript("window.scrollTo({top: 0, left: 0, behavior: 'smooth'});", null)
     }
 
-    fun startElementPicker(onSelection: (ElementPickerSelection) -> Unit): Boolean {
+    fun startElementPicker(
+        onSelection: (ElementPickerSelection) -> Unit,
+        onAction: (Int, com.miowser.app.adblock.ElementRuleAction) -> Unit
+    ): Boolean {
         if (destroyed || isShowingHome) return false
         val view = runCatching { ensureWebView() }.getOrNull() ?: return false
         if (!view.settings.javaScriptEnabled) return false
         val picker = elementPickerBridge ?: return false
         val token = UUID.randomUUID().toString()
-        picker.begin(token, onSelection)
+        picker.begin(token, onSelection, onAction)
         view.evaluateJavascript(elementPickerStartScript(token), null)
         return true
-    }
-
-    fun previewElementPickerCandidate(index: Int) {
-        liveWebView?.evaluateJavascript(elementPickerPreviewScript(index), null)
     }
 
     fun cancelElementPicker() {

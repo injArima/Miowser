@@ -14,19 +14,15 @@ class ElementPickerScriptTest {
     }
 
     @Test
-    fun `preview index is constrained to available candidate range`() {
-        assertTrue(elementPickerPreviewScript(-10).contains("preview(0)"))
-        assertTrue(elementPickerPreviewScript(100).contains("preview(5)"))
-    }
-
-    @Test
-    fun `picker requires a second tap inside the outlined element`() {
+    fun `first element tap outlines the candidate and opens an action toolbar`() {
         val script = elementPickerStartScript("token")
 
-        assertTrue(script.contains("armedElement = element"))
-        assertTrue(script.contains("armedElement.contains(element)"))
-        assertTrue(script.indexOf("armedElement = element") <
+        assertTrue(script.contains("choose(0);"))
+        assertTrue(script.contains("toolbar.style.display = 'block'"))
+        assertTrue(script.indexOf("choose(0);") <
             script.indexOf("window.MiowserElementPicker.selected"))
+        assertTrue(script.contains("rect.top >= 58"))
+        assertTrue(script.contains("window.MiowserElementPicker.action(token, chosenIndex, operation)"))
     }
 
     @Test

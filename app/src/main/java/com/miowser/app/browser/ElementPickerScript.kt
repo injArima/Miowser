@@ -3,6 +3,7 @@ package com.miowser.app.browser
 import android.os.Handler
 import android.os.Looper
 import android.webkit.JavascriptInterface
+import com.miowser.app.adblock.ElementRuleAction
 import org.json.JSONObject
 
 data class ElementPickerSelection(
@@ -13,14 +14,17 @@ data class ElementPickerSelection(
 internal class ElementPickerBridge {
     private data class Session(
         val token: String,
-        val callback: (ElementPickerSelection) -> Unit
+        val onSelection: (ElementPickerSelection) -> Unit,
+        val onAction: (Int, ElementRuleAction) -> Unit,
+        var selection: ElementPickerSelection? = null
     )
 
     private val mainHandler = Handler(Looper.getMainLooper())
     @Volatile private var session: Session? = null
 
-    fun begin(token: String, callback: (ElementPickerSelection) -> Unit) {
-        session = Session(token, callback)
+    fun begin(token: String, onSelection: (ElementPickerSelection) -> Unit,
+              onAction: (Int, ElementRuleAction) -> Unit) {
+        session = Session(token, onSelection, onAction)
     }
 
     fun cancel() {
@@ -45,8 +49,18 @@ internal class ElementPickerBridge {
             }
             ElementPickerSelection(selectors, labels)
         }.getOrNull() ?: return
+        current.selection = parsed
+        mainHandler.post { if (session === current) current.onSelection(parsed) }
+    }
+
+    @JavascriptInterface
+    fun action(token: String?, index: Int, action: String?) {
+        val current = session ?: return
+        val selected = current.selection ?: return
+        if (token != current.token || index !in selected.selectors.indices) return
+        val parsedAction = runCatching { ElementRuleAction.valueOf(action ?: "") }.getOrNull() ?: return
         session = null
-        mainHandler.post { current.callback(parsed) }
+        mainHandler.post { current.onAction(index, parsedAction) }
     }
 }
 
@@ -62,12 +76,48 @@ internal fun elementPickerStartScript(token: String): String {
             overlay.setAttribute('data-miowser-picker', '1');
             overlay.style.cssText = 'position:fixed;z-index:2147483647;pointer-events:none;' +
                 'border:3px solid #f5d77a;background:rgba(245,215,122,.18);border-radius:6px;' +
-                'box-sizing:border-box;display:none;transition:all 60ms linear;';
+                'box-sizing:border-box;display:none;';
             (document.documentElement || document.body).appendChild(overlay);
-            var previewStyle = null;
+            var toolbar = document.createElement('div');
+            toolbar.setAttribute('data-miowser-picker', '1');
+            toolbar.style.cssText = 'position:fixed;z-index:2147483647;display:none;' +
+                'width:216px;height:48px;pointer-events:auto;';
+            var shadow = toolbar.attachShadow({mode:'closed'});
+            shadow.innerHTML = '<style>' +
+                ':host{all:initial}div{display:flex;gap:4px;align-items:center;padding:4px;' +
+                'border-radius:15px;background:#252129;box-shadow:0 5px 18px #0008;' +
+                'box-sizing:border-box;width:216px;height:48px}' +
+                'button{all:unset;display:flex;align-items:center;justify-content:center;' +
+                'width:48px;height:40px;border-radius:10px;color:#fff;cursor:pointer;' +
+                'font:600 22px sans-serif;touch-action:manipulation}' +
+                'svg{width:24px;height:24px;fill:currentColor}' +
+                'button:disabled{opacity:.35;cursor:default}button:focus-visible{outline:2px solid #f5d77a}' +
+                'button[data-action="HIDE"]{color:#f5d77a}button[data-action="DELETE"]{color:#ffc5c5}' +
+                '</style><div role="toolbar" aria-label="Page element actions">' +
+                '<button type="button" data-action="smaller" aria-label="Select smaller element" title="Smaller"><svg viewBox="0 0 24 24"><path d="M5 11h14v2H5z"/></svg></button>' +
+                '<button type="button" data-action="larger" aria-label="Select larger container" title="Larger"><svg viewBox="0 0 24 24"><path d="M11 5h2v14h-2zM5 11h14v2H5z"/></svg></button>' +
+                '<button type="button" data-action="HIDE" aria-label="Hide element with CSS" title="Hide with CSS"><svg viewBox="0 0 24 24"><path d="M2.3 3.7 3.7 2.3l18 18-1.4 1.4-3-3A11.8 11.8 0 0 1 12 20C6.6 20 2.4 16.7 1 12c.7-2.2 2-4.1 3.8-5.5L2.3 3.7ZM12 4c5.4 0 9.6 3.3 11 8-.5 1.6-1.4 3.1-2.6 4.3l-3-3A5.5 5.5 0 0 0 10.7 6L8.8 4.3c1-.2 2.1-.3 3.2-.3ZM7.3 9 5.9 7.7A9.7 9.7 0 0 0 3.2 12c1.5 3.7 4.6 6 8.8 6 1.4 0 2.7-.3 3.8-.8l-2-2A5.5 5.5 0 0 1 7.3 9Z"/></svg></button>' +
+                '<button type="button" data-action="DELETE" aria-label="Delete element from page" title="Delete from page"><svg viewBox="0 0 24 24"><path d="m18.3 4.3 1.4 1.4L13.4 12l6.3 6.3-1.4 1.4L12 13.4l-6.3 6.3-1.4-1.4 6.3-6.3-6.3-6.3 1.4-1.4 6.3 6.3z"/></svg></button>' +
+                '</div>';
+            (document.documentElement || document.body).appendChild(toolbar);
             var candidates = [];
             var chosenIndex = 0;
             var armedElement = null;
+
+            shadow.querySelectorAll('button').forEach(function(button) {
+                button.addEventListener('click', function(event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    var operation = button.getAttribute('data-action');
+                    if (operation === 'smaller' || operation === 'larger') {
+                        choose(chosenIndex + (operation === 'smaller' ? -1 : 1));
+                    } else if (candidates[chosenIndex]) {
+                        toolbar.style.display = 'none';
+                        try { window.MiowserElementPicker.action(token, chosenIndex, operation); }
+                        catch (_) { cleanup(); }
+                    }
+                });
+            });
 
             function escaped(value) {
                 if (window.CSS && CSS.escape) return CSS.escape(value);
@@ -133,6 +183,21 @@ internal fun elementPickerStartScript(token: String): String {
                 overlay.style.top = Math.max(0, rect.top) + 'px';
                 overlay.style.width = Math.max(0, Math.min(innerWidth, rect.right) - Math.max(0, rect.left)) + 'px';
                 overlay.style.height = Math.max(0, Math.min(innerHeight, rect.bottom) - Math.max(0, rect.top)) + 'px';
+                var top = rect.top >= 58 ? rect.top - 56 :
+                    (rect.bottom + 56 <= innerHeight ? rect.bottom + 8 :
+                        Math.max(8, Math.min(innerHeight - 56, rect.top + 8)));
+                toolbar.style.left = Math.max(8, Math.min(innerWidth - 224,
+                    rect.left + (rect.width - 216) / 2)) + 'px';
+                toolbar.style.top = Math.max(8, top) + 'px';
+                toolbar.style.display = 'block';
+            }
+
+            function choose(index) {
+                chosenIndex = Math.max(0, Math.min(candidates.length - 1, index));
+                armedElement = candidates[chosenIndex] && candidates[chosenIndex].element;
+                if (armedElement && armedElement.isConnected) show(armedElement);
+                shadow.querySelector('[data-action="smaller"]').disabled = chosenIndex === 0;
+                shadow.querySelector('[data-action="larger"]').disabled = chosenIndex >= candidates.length - 1;
             }
 
             function stopCapture() {
@@ -142,29 +207,28 @@ internal fun elementPickerStartScript(token: String): String {
             }
             function refreshArmed() {
                 if (armedElement && armedElement.isConnected) show(armedElement);
-                else if (armedElement) overlay.style.display = 'none';
+                else if (armedElement) {
+                    overlay.style.display = 'none';
+                    toolbar.style.display = 'none';
+                }
             }
             function onPick(event) {
+                if (event.composedPath && event.composedPath().indexOf(toolbar) !== -1) return;
                 var element = candidateAt(event);
                 if (!(element instanceof Element) || element === document.body ||
                     element === document.documentElement) return;
                 event.preventDefault();
                 event.stopImmediatePropagation();
-                if (!armedElement || !armedElement.contains(element)) {
-                    armedElement = element;
-                    show(armedElement);
-                    return;
-                }
-                stopCapture();
                 candidates = [];
-                var node = armedElement;
+                var node = element;
                 while (node && node instanceof Element && node !== document.body &&
                     node !== document.documentElement && candidates.length < 6) {
                     var selector = selectorFor(node);
-                    if (selector) candidates.push({ selector: selector, label: labelFor(node) });
+                    if (selector) candidates.push({ selector: selector, label: labelFor(node), element: node });
                     node = node.parentElement;
                 }
-                overlay.style.display = 'none';
+                if (!candidates.length) return;
+                choose(0);
                 try {
                     window.MiowserElementPicker.selected(token, JSON.stringify({
                         selectors: candidates.map(function(item) { return item.selector; }),
@@ -173,33 +237,16 @@ internal fun elementPickerStartScript(token: String): String {
                 } catch (_) { cleanup(); }
             }
 
-            function clearPreview() {
-                if (previewStyle) previewStyle.remove();
-                previewStyle = null;
-            }
-            function preview(index) {
-                clearPreview();
-                chosenIndex = Math.max(0, Math.min(candidates.length - 1, Number(index) || 0));
-                var item = candidates[chosenIndex];
-                if (!item) return;
-                try { document.querySelector(item.selector); } catch (_) { return; }
-                previewStyle = document.createElement('style');
-                previewStyle.setAttribute('data-miowser-picker', '1');
-                previewStyle.textContent = item.selector + '{display:none!important;}';
-                (document.head || document.documentElement).appendChild(previewStyle);
-            }
             function cleanup() {
                 stopCapture();
-                clearPreview();
                 overlay.remove();
+                toolbar.remove();
                 if (window.__miowserElementPicker === api) delete window.__miowserElementPicker;
             }
             var api = {
-                preview: preview,
                 cancel: cleanup,
                 commit: function(action) {
                     var item = candidates[chosenIndex];
-                    clearPreview();
                     if (action === 'DELETE' && item) {
                         try {
                             document.querySelectorAll(item.selector).forEach(function(node) { node.remove(); });
@@ -215,9 +262,6 @@ internal fun elementPickerStartScript(token: String): String {
         })();
     """.trimIndent()
 }
-
-internal fun elementPickerPreviewScript(index: Int): String =
-    "window.__miowserElementPicker && window.__miowserElementPicker.preview(${index.coerceIn(0, 5)});"
 
 internal fun elementPickerCancelScript(): String =
     "window.__miowserElementPicker && window.__miowserElementPicker.cancel();"
