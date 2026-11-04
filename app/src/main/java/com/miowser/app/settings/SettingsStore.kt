@@ -19,6 +19,7 @@ private const val KEY_GRABBER_MINIMUM_DURATION_SECONDS = "grabber_minimum_durati
 private const val KEY_AUTO_DELETE_INACTIVE_TABS = "auto_delete_inactive_tabs"
 private const val KEY_INACTIVE_TAB_RETENTION = "inactive_tab_retention"
 private const val KEY_REDUCE_MOTION = "reduce_motion"
+private const val KEY_LIBRARY_BEHAVIOR = "library_behavior"
 private const val KEY_BACKGROUND_PLAYBACK_ENABLED = "background_playback_enabled"
 private const val KEY_CRASH_DIAGNOSTICS_ENABLED = "crash_diagnostics_enabled"
 
@@ -37,6 +38,8 @@ object SettingsStore {
             ?.let { name -> runCatching { DownloadThreadCount.valueOf(name) }.getOrNull() }
         val savedRetention = prefs.getString(KEY_INACTIVE_TAB_RETENTION, null)
             ?.let { name -> runCatching { InactiveTabRetention.valueOf(name) }.getOrNull() }
+        val savedLibraryBehavior = prefs.getString(KEY_LIBRARY_BEHAVIOR, null)
+            ?.let { name -> runCatching { LibraryBehavior.valueOf(name) }.getOrNull() }
         val legacyRetention = if (prefs.contains(KEY_AUTO_DELETE_INACTIVE_TABS)) {
             if (prefs.getBoolean(KEY_AUTO_DELETE_INACTIVE_TABS, true)) InactiveTabRetention.DAYS_30
             else InactiveTabRetention.NEVER
@@ -60,6 +63,7 @@ object SettingsStore {
             ).coerceIn(0, 1_800),
             inactiveTabRetention = savedRetention ?: legacyRetention,
             reduceMotion = prefs.getBoolean(KEY_REDUCE_MOTION, defaults.reduceMotion),
+            libraryBehavior = savedLibraryBehavior ?: defaults.libraryBehavior,
             backgroundPlaybackEnabled = prefs.getBoolean(
                 KEY_BACKGROUND_PLAYBACK_ENABLED, defaults.backgroundPlaybackEnabled
             ),
@@ -88,6 +92,7 @@ object SettingsStore {
                 .putInt(KEY_GRABBER_MINIMUM_DURATION_SECONDS, settings.grabberMinimumDurationSeconds.coerceIn(0, 1_800))
                 .putString(KEY_INACTIVE_TAB_RETENTION, settings.inactiveTabRetention.name)
                 .putBoolean(KEY_REDUCE_MOTION, settings.reduceMotion)
+                .putString(KEY_LIBRARY_BEHAVIOR, settings.libraryBehavior.name)
                 .putBoolean(KEY_BACKGROUND_PLAYBACK_ENABLED, settings.backgroundPlaybackEnabled)
                 .putBoolean(KEY_CRASH_DIAGNOSTICS_ENABLED, settings.crashDiagnosticsEnabled)
                 .commit()

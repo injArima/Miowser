@@ -221,6 +221,7 @@ fun HubHomePage(
     onBottomBarHeightChanged: (Int) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val libraryEnabled = com.miowser.app.settings.AppSettings.current.libraryBehavior.isAvailable
     val focusManager = LocalFocusManager.current
     val view = LocalView.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -600,7 +601,7 @@ fun HubHomePage(
                             onRefreshLink = onRefreshDownloadLink,
                             onOpenLocal = onOpenLocalDownload,
                             onRelink = onRelinkDownload,
-                            libraryEntries = libraryEntries,
+                            libraryEntries = if (libraryEnabled) libraryEntries else emptyList(),
                             modifier = Modifier.fillMaxSize()
                         )
                         HubSection.MORE -> HubMoreContent(
@@ -611,6 +612,7 @@ fun HubHomePage(
                 }
             }
             HubBottomNavigation(
+                libraryEnabled = libraryEnabled,
                 selectedSection = selectedSection,
                 activeDownloadCount = downloads.count { it.status.isHubActiveDownload() },
                 librarySort = librarySort,
@@ -699,6 +701,7 @@ fun HubHomePage(
 
 @Composable
 private fun HubBottomNavigation(
+    libraryEnabled: Boolean,
     selectedSection: HubSection,
     activeDownloadCount: Int,
     librarySort: HubLibrarySort,
@@ -724,6 +727,10 @@ private fun HubBottomNavigation(
         HubSection.DOWNLOADS to stringResource(R.string.nav_downloads),
         HubSection.MORE to stringResource(R.string.nav_more)
     )
+    val sections = remember(libraryEnabled) {
+        if (libraryEnabled) HubSection.entries.toList()
+        else listOf(HubSection.DOWNLOADS, HubSection.MORE)
+    }
     val openLibrarySettings = stringResource(R.string.nav_open_library_settings)
     // The Scaffold content inset keeps this overlay clear of gesture and three-button navigation.
     BoxWithConstraints(
@@ -736,8 +743,8 @@ private fun HubBottomNavigation(
         val textStyle = MaterialTheme.typography.labelLarge
         val textMeasurer = rememberTextMeasurer()
         val layoutDirection = androidx.compose.ui.platform.LocalLayoutDirection.current
-        val expandedWidths = remember(textMeasurer, textStyle, density, layoutDirection, labels) {
-            HubSection.entries.associateWith { section ->
+        val expandedWidths = remember(textMeasurer, textStyle, density, layoutDirection, labels, sections) {
+            sections.associateWith { section ->
                 val label = labels.getValue(section)
                 56.dp + with(density) { textMeasurer.measure(label, style = textStyle).size.width.toDp() }
             }
@@ -745,7 +752,8 @@ private fun HubBottomNavigation(
         val iconWidth = 48.dp
         fun segmentWidth(section: HubSection, active: HubSection): Dp =
             if (section == active) expandedWidths.getValue(section)
-                .coerceAtMost((maxWidth - iconWidth * 2 - 12.dp).coerceAtLeast(iconWidth))
+                .coerceAtMost((maxWidth - iconWidth * (sections.size - 1) - 12.dp)
+                    .coerceAtLeast(iconWidth))
             else iconWidth
         val selection = updateTransition(selectedSection, label = "Hub destination")
         val pillLeft = selection.animateDp(
@@ -753,7 +761,7 @@ private fun HubBottomNavigation(
             label = "Hub pill position"
         ) { active ->
             with(density) {
-                HubSection.entries.takeWhile { it != active }
+                sections.takeWhile { it != active }
                     .sumOf { section -> segmentWidth(section, active).roundToPx() + 2.dp.roundToPx() }
                     .toDp()
             }
@@ -789,7 +797,7 @@ private fun HubBottomNavigation(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        HubSection.entries.forEach { section ->
+                        sections.forEach { section ->
                             val label = labels.getValue(section)
                             val icon = when (section) {
                                 HubSection.LIBRARY -> Icons.Rounded.VideoLibrary

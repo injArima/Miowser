@@ -148,6 +148,7 @@ import com.miowser.app.player.toLibraryEntry
 import com.miowser.app.settings.AppSettings
 import com.miowser.app.settings.HomePageMode
 import com.miowser.app.settings.NewTabConfirmation
+import com.miowser.app.settings.shouldRecordLibraryPlayback
 import com.miowser.app.ui.BookmarksPage
 import com.miowser.app.ui.AdBlockPage
 import com.miowser.app.ui.BottomBar
@@ -315,7 +316,15 @@ fun BrowserScreen(
     }
     var openingTabs by remember { mutableStateOf(false) }
     var showingHub by rememberSaveable { mutableStateOf(true) }
-    var hubSection by rememberSaveable { mutableStateOf(HubSection.LIBRARY) }
+    val libraryEnabled = AppSettings.current.libraryBehavior.isAvailable
+    var hubSection by rememberSaveable {
+        mutableStateOf(if (libraryEnabled) HubSection.LIBRARY else HubSection.DOWNLOADS)
+    }
+    LaunchedEffect(libraryEnabled) {
+        if (!libraryEnabled && hubSection == HubSection.LIBRARY) {
+            hubSection = HubSection.DOWNLOADS
+        }
+    }
     var hubDownloadSection by rememberSaveable { mutableStateOf(initialHubSettings.defaultDownloadSection) }
     var hubLibrarySort by rememberSaveable { mutableStateOf(initialHubSettings.librarySort) }
     var playbackRequest by remember { mutableStateOf<PlaybackRequest?>(null) }
@@ -382,6 +391,7 @@ fun BrowserScreen(
         }
     }
     var libraryPlaybackQueue by remember { mutableStateOf<LibraryPlaybackQueue?>(null) }
+    var playbackFromLibrary by remember { mutableStateOf(false) }
     var libraryPlayRequestId by remember { mutableIntStateOf(0) }
     var pendingWebPermission by remember { mutableStateOf<PermissionRequest?>(null) }
     var pendingWebPermissionIsPrivate by remember { mutableStateOf(false) }
@@ -958,7 +968,7 @@ fun BrowserScreen(
     // Only after a rendered, settled Library; stop issuing stages when it is hidden/busy.
     LaunchedEffect(libraryIdle, recordsReady, showingHub, hubSection, playbackRequest,
         activeScreen, showBackupRestore, browserRequested, lifecycleOwner) {
-        if (!libraryIdle || !recordsReady || !showingHub || hubSection != HubSection.LIBRARY ||
+        if (!libraryEnabled || !libraryIdle || !recordsReady || !showingHub || hubSection != HubSection.LIBRARY ||
             playbackRequest != null || activeScreen != null || showBackupRestore || browserRequested) return@LaunchedEffect
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             delay(1_500)
@@ -1077,6 +1087,7 @@ fun BrowserScreen(
         }
         if (activeScreen != Screen.ONBOARDING) activeScreen = null
         playbackRequest = null
+        playbackFromLibrary = false
         showOverflowMenu = false
         showingHub = false
         onShortcutHandled()
@@ -1345,6 +1356,7 @@ fun BrowserScreen(
                         }
                         libraryPlayRequestId++
                         libraryPlaybackQueue = null
+                        playbackFromLibrary = false
                         playbackRequest = remote
                         Toast.makeText(context,
                             "Not downloading. Tap Download in the player to save it.",
@@ -1548,6 +1560,7 @@ fun BrowserScreen(
         tab.liveWebView?.onPause()
         libraryPlayRequestId++
         libraryPlaybackQueue = null
+        playbackFromLibrary = false
         playbackRequest = detectedPlaybackRequest(item, tab)
     }
 
@@ -1584,6 +1597,7 @@ fun BrowserScreen(
                 val prepared = prepareLibraryPlayback(entry)
                 if (requestId != libraryPlayRequestId) return@launch
                 if (queue != null) libraryPlaybackQueue = queue
+                playbackFromLibrary = true
                 playbackRequest = prepared
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
             catch (failure: Exception) {
@@ -1606,7 +1620,10 @@ fun BrowserScreen(
                     }) {
                     try {
                         val prepared = prepareLibraryPlayback(entry)
-                        if (requestId == libraryPlayRequestId) playbackRequest = prepared
+                        if (requestId == libraryPlayRequestId) {
+                            playbackFromLibrary = true
+                            playbackRequest = prepared
+                        }
                     } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
                     catch (_: Exception) {
                         if (requestId == libraryPlayRequestId) {
@@ -1626,7 +1643,7 @@ fun BrowserScreen(
 
     fun addMediaToLibrary(item: DetectedMedia) {
         val tab = activeTab ?: return
-        if (tab.isPrivate) return
+        if (tab.isPrivate || !libraryEnabled) return
         val durationMs = item.durationSeconds?.takeIf { it.isFinite() && it > 0.0 }
             ?.let { (it * 1000).toLong() } ?: 0L
         val entry = detectedPlaybackRequest(item, tab).toLibraryEntry(durationMs = durationMs)
@@ -1741,6 +1758,7 @@ fun BrowserScreen(
                 libraryPlayRequestId++
                 playbackRequest = null
                 libraryPlaybackQueue = null
+                playbackFromLibrary = false
             }
             BrowserBackAction.CLOSE_INTERNAL_PAGE -> {
                 if (activeScreen == Screen.ONBOARDING) {
@@ -1755,7 +1773,8 @@ fun BrowserScreen(
             BrowserBackAction.WEB_HISTORY -> goBack()
             BrowserBackAction.CLOSE_CHILD_TAB -> activeTab?.let { closeTab(it.id) }
             BrowserBackAction.SHOW_HUB -> showingHub = true
-            BrowserBackAction.SHOW_HUB_LIBRARY -> hubSection = HubSection.LIBRARY
+            BrowserBackAction.SHOW_HUB_LIBRARY ->
+                hubSection = if (libraryEnabled) HubSection.LIBRARY else HubSection.DOWNLOADS
             BrowserBackAction.EXIT_APP -> Unit
         }
     }
@@ -2184,8 +2203,11 @@ fun BrowserScreen(
                             pendingBlobAction = PendingBlobAction(activeTab.id, item, BlobActionKind.ADD_TO_LIBRARY)
                         } else addMediaToLibrary(item)
                     },
-                    savedMediaUrls = MediaLibrary.entries.mapTo(mutableSetOf()) { it.mediaUri },
-                    canSaveToLibrary = !activeTab.isPrivate,
+                    savedMediaUrls = if (libraryEnabled) {
+                        MediaLibrary.entries.mapTo(mutableSetOf()) { it.mediaUri }
+                    } else emptySet(),
+                    showLibraryAction = libraryEnabled,
+                    canSaveToLibrary = libraryEnabled && !activeTab.isPrivate,
                     onDownload = { item ->
                         if (rendererResourceKind(item.url) == com.miowser.app.downloader.RendererResourceKind.BLOB) {
                             pendingBlobAction = PendingBlobAction(activeTab.id, item, BlobActionKind.DOWNLOAD)
@@ -2420,6 +2442,7 @@ fun BrowserScreen(
             }
             Screen.ONBOARDING -> OnboardingGuide(
                 revisiting = onboardingReturnToSettings,
+                libraryEnabled = libraryEnabled,
                 onDismiss = ::closeOnboarding,
                 onFinished = ::closeOnboarding
             )
@@ -2462,7 +2485,7 @@ fun BrowserScreen(
                 onBottomBarHeightChanged = { hubBottomBarHeightPx = it },
                 onLibraryIdleChanged = { libraryIdle = it },
                 uiVisible = playbackRequest == null && activeScreen == null && !showBackupRestore,
-                selectedSection = hubSection,
+                selectedSection = if (libraryEnabled) hubSection else HubSection.DOWNLOADS,
                 onSectionSelected = { hubSection = it },
                 selectedDownloadSection = hubDownloadSection,
                 onDownloadSectionSelected = { section ->
@@ -2533,6 +2556,7 @@ fun BrowserScreen(
                             DownloadedFileType.MEDIA -> download.savedUri?.let { uri ->
                                 libraryPlayRequestId++
                                 libraryPlaybackQueue = null
+                                playbackFromLibrary = false
                                 playbackRequest = PlaybackRequest.Local(
                                     uri = uri,
                                     title = download.displayName,
@@ -2664,7 +2688,7 @@ fun BrowserScreen(
                         activeScreen = null
                         showBrowserDownloads = true
                     } else if (screen == Screen.HUB) {
-                        hubSection = HubSection.LIBRARY
+                        hubSection = if (libraryEnabled) HubSection.LIBRARY else HubSection.DOWNLOADS
                         activeScreen = null
                         showingHub = true
                     } else {
@@ -2794,6 +2818,11 @@ fun BrowserScreen(
             val queue = libraryPlaybackQueue?.takeIf {
                 showingHub && currentKey in it.identityKeys
             }
+            val recordCurrentPlayback = shouldRecordLibraryPlayback(
+                behavior = AppSettings.current.libraryBehavior,
+                openedFromLibrary = playbackFromLibrary,
+                privateTab = !showingHub && activeTab?.isPrivate == true
+            )
             MiowserPlayerTheme {
                 PlayerScreen(
                     request = request,
@@ -2803,9 +2832,9 @@ fun BrowserScreen(
                         ({ playLibraryNeighbor(currentKey, 1) }) else null,
                     onPlayPrevious = if (queue?.neighbor(currentKey, MediaLibrary.entries, -1) != null)
                         ({ playLibraryNeighbor(currentKey, -1) }) else null,
-                    recordInLibrary = showingHub || activeTab?.isPrivate != true,
+                    recordInLibrary = recordCurrentPlayback,
                     onOpenSourcePage = if (request is PlaybackRequest.Remote) ({
-                        if (showingHub || activeTab?.isPrivate != true) {
+                        if (recordCurrentPlayback) {
                             val entry = MediaLibrary.entries.firstOrNull {
                                 it.identityKey == request.toLibraryEntry().identityKey
                             }
@@ -2823,6 +2852,7 @@ fun BrowserScreen(
                         playbackRequest = null
                         libraryPlayRequestId++
                         libraryPlaybackQueue = null
+                        playbackFromLibrary = false
                         activeScreen = null
                         showingHub = false
                         activeTabId = createAndInsertTab(
@@ -2839,6 +2869,7 @@ fun BrowserScreen(
                         libraryPlayRequestId++
                         playbackRequest = null
                         libraryPlaybackQueue = null
+                        playbackFromLibrary = false
                     }
                 )
             }
@@ -3260,6 +3291,7 @@ fun BrowserScreen(
                                     refreshTargetDownloadId = existing.id
                                     pendingDownloadConflict = null
                                     playbackRequest = null
+                                    playbackFromLibrary = false
                                     showingHub = false
                                     openUrlInActiveTab(existing.pageUrl.ifBlank { existing.sourceUrl })
                                     showActionSnackbar("Choose the same file to refresh its link")
@@ -3278,6 +3310,7 @@ fun BrowserScreen(
                                     }
                                     pendingDownloadConflict = null
                                     playbackRequest = null
+                                    playbackFromLibrary = false
                                     showSavedSnackbar("Existing download replaced", "View") {
                                         showBrowserDownloads = true
                                     }
@@ -3411,6 +3444,7 @@ fun BrowserScreen(
                 activeScreen == Screen.DETECTED && !showingHub) {
                 libraryPlayRequestId++
                 libraryPlaybackQueue = null
+                playbackFromLibrary = false
                 playbackRequest = PlaybackRequest.Local(
                     uri = download.savedUri!!,
                     title = download.displayName,

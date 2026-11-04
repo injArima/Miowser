@@ -21,6 +21,27 @@ enum class HomePageMode(val label: String) {
     CUSTOM("Custom URL")
 }
 
+/** Controls whether the media Library is automatic, explicitly managed, or hidden. */
+enum class LibraryBehavior(val label: String) {
+    AUTOMATIC("Automatic"),
+    MANUAL_ONLY("Manual only"),
+    DISABLED("Disabled");
+
+    val isAvailable: Boolean get() = this != DISABLED
+}
+
+/**
+ * Existing Library entries remain writable in manual mode so their playback progress stays
+ * useful. Direct browser and Downloads playback is recorded only in automatic mode. Private
+ * browsing and the disabled mode never write Library data.
+ */
+fun shouldRecordLibraryPlayback(
+    behavior: LibraryBehavior,
+    openedFromLibrary: Boolean,
+    privateTab: Boolean
+): Boolean = !privateTab && behavior.isAvailable &&
+    (openedFromLibrary || behavior == LibraryBehavior.AUTOMATIC)
+
 /**
  * How much say the user gets before a page-triggered new tab (target="_blank", window.open())
  * actually opens — see BrowserScreen's handleNewWindowRequested. WebView tells us whether the
@@ -70,6 +91,7 @@ data class Settings(
     val grabberMinimumDurationSeconds: Int = 0,
     val inactiveTabRetention: InactiveTabRetention = InactiveTabRetention.DAYS_30,
     val reduceMotion: Boolean = false,
+    val libraryBehavior: LibraryBehavior = LibraryBehavior.AUTOMATIC,
     val backgroundPlaybackEnabled: Boolean = true,
     val crashDiagnosticsEnabled: Boolean = false
 ) {

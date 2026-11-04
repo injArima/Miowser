@@ -81,6 +81,7 @@ fun DetectedMediaPage(
     onAddToLibrary: (DetectedMedia) -> Unit,
     onDownload: (DetectedMedia) -> Unit,
     savedMediaUrls: Set<String>,
+    showLibraryAction: Boolean,
     canSaveToLibrary: Boolean,
     scanProgress: DiscoveryProgress?,
     onScan: (depth: Int, pageLimit: Int) -> Unit,
@@ -180,6 +181,7 @@ fun DetectedMediaPage(
                                     onAddToLibrary = onAddToLibrary,
                                     isSaved = item.url in savedMediaUrls ||
                                         item.hlsRenditions.any { it.url in savedMediaUrls },
+                                    showLibraryAction = showLibraryAction,
                                     canSaveToLibrary = canSaveToLibrary
                                 )
                             }
@@ -303,6 +305,7 @@ private fun DetectedMediaRow(
     onDownload: (DetectedMedia) -> Unit,
     onAddToLibrary: (DetectedMedia) -> Unit,
     isSaved: Boolean,
+    showLibraryAction: Boolean,
     canSaveToLibrary: Boolean
 ) {
     if (item.type == MediaType.SUBTITLE || item.mimeType?.startsWith("text/", ignoreCase = true) == true) {
@@ -364,7 +367,7 @@ private fun DetectedMediaRow(
                     Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy link",
                         modifier = Modifier.size(18.dp))
                 }
-                if (detectorCategory(item) == DetectorCategory.VIDEOS) {
+                if (showLibraryAction && detectorCategory(item) == DetectorCategory.VIDEOS) {
                     IconButton(
                         onClick = { onAddToLibrary(item) },
                         enabled = canSaveToLibrary && !isSaved &&

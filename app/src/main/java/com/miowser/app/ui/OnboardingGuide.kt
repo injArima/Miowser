@@ -98,11 +98,20 @@ private val onboardingPages = listOf(
 @Composable
 fun OnboardingGuide(
     revisiting: Boolean,
+    libraryEnabled: Boolean,
     onDismiss: () -> Unit,
     onFinished: () -> Unit
 ) {
+    val visiblePages = remember(libraryEnabled) {
+        if (libraryEnabled) onboardingPages else onboardingPages.dropLast(1).mapIndexed { index, page ->
+            if (index == 0) page.copy(points = listOf(
+                "Your Hub keeps Downloads and browser tools together.",
+                "Tap the globe from the Hub whenever you want to browse."
+            )) else page
+        }
+    }
     var pageIndex by remember { mutableIntStateOf(0) }
-    val page = onboardingPages[pageIndex]
+    val page = visiblePages[pageIndex]
 
     Surface(
         modifier = Modifier.fillMaxSize().testTag("onboarding_guide"),
@@ -190,7 +199,7 @@ fun OnboardingGuide(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                onboardingPages.indices.forEach { index ->
+                visiblePages.indices.forEach { index ->
                     Box(
                         Modifier.padding(horizontal = 4.dp).size(if (index == pageIndex) 10.dp else 7.dp)
                             .background(
@@ -216,11 +225,11 @@ fun OnboardingGuide(
                 }
                 Button(
                     onClick = {
-                        if (pageIndex == onboardingPages.lastIndex) onFinished() else pageIndex++
+                        if (pageIndex == visiblePages.lastIndex) onFinished() else pageIndex++
                     },
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text(if (pageIndex == onboardingPages.lastIndex) "Start using Miowser" else "Next")
+                    Text(if (pageIndex == visiblePages.lastIndex) "Start using Miowser" else "Next")
                 }
             }
         }
