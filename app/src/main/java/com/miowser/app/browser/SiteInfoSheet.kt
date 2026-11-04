@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -45,6 +46,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
@@ -100,8 +102,13 @@ fun SiteInfoSheet(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .heightIn(max = maxHeight * 0.9f)
+                    // Leave room above the expanded sheet for the status bar and its handle.
+                    // The scroll viewport owns this bound, so a drag at the end cannot lift
+                    // the final card into the system bars or draw outside the sheet.
+                    .heightIn(max = maxHeight * 0.78f)
+                    .clipToBounds()
                     .verticalScroll(rememberScrollState())
+                    .navigationBarsPadding()
                     .padding(start = 16.dp, end = 16.dp, bottom = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
