@@ -162,6 +162,7 @@ import com.miowser.app.ui.OverflowMenuSheet
 import com.miowser.app.ui.Screen
 import com.miowser.app.ui.SettingsPage
 import com.miowser.app.ui.SitePermissionsPage
+import com.miowser.app.ui.TabNavigationEntry
 import com.miowser.app.ui.ConfirmationAction
 import com.miowser.app.ui.ConfirmationTone
 import com.miowser.app.ui.MiowserConfirmationDialog
@@ -1685,6 +1686,35 @@ fun BrowserScreen(
     fun goForward() {
         activeTab?.liveWebView?.let { if (it.canGoForward()) it.goForward() }
     }
+    fun tabNavigationHistory(forward: Boolean): List<TabNavigationEntry> {
+        val tab = activeTab ?: return emptyList()
+        if (tab.isPrivate) return emptyList()
+        val snapshot = runCatching { tab.liveWebView?.copyBackForwardList() }.getOrNull()
+            ?: return emptyList()
+        val currentIndex = snapshot.currentIndex
+        return directedNavigationIndices(snapshot.size, currentIndex, forward).mapNotNull { index ->
+            val item = snapshot.getItemAtIndex(index) ?: return@mapNotNull null
+            val itemUrl = item.url.orEmpty()
+            TabNavigationEntry(
+                index = index,
+                title = if (index == currentIndex) tab.title else item.title.orEmpty(),
+                url = if (index == currentIndex) tab.url.ifBlank { itemUrl } else itemUrl,
+                favicon = item.favicon,
+                current = index == currentIndex
+            )
+        }
+    }
+    fun navigateTabHistory(entry: TabNavigationEntry) {
+        val view = activeTab?.liveWebView ?: return
+        val snapshot = runCatching { view.copyBackForwardList() }.getOrNull() ?: return
+        val target = snapshot.getItemAtIndex(entry.index) ?: return
+        // Ignore a stale popup if the tab navigated while it was open; never jump to a different
+        // page that merely inherited the selected entry's old numeric position.
+        if (target.url.orEmpty() != entry.url) return
+        val offset = entry.index - snapshot.currentIndex
+        if (offset == 0) view.reload()
+        else if (view.canGoBackOrForward(offset)) view.goBackOrForward(offset)
+    }
     fun goHome() {
         activeTab?.let { tab ->
             val target = configuredBrowserHomeTarget()
@@ -1857,10 +1887,16 @@ fun BrowserScreen(
             bottomBar = {
                 Box(modifier = Modifier.onSizeChanged { bottomBarHeightPx = it.height }) {
                     BottomBar(
+                        activeTabId = activeTab?.id,
                         canGoBack = activeTab?.canGoBack == true,
                         canGoForward = activeTab?.canGoForward == true,
                         onBack = { goBack() },
                         onForward = { goForward() },
+                        tabHistoryEnabled = activeTab?.isPrivate == false,
+                        loadBackHistory = { tabNavigationHistory(forward = false) },
+                        loadForwardHistory = { tabNavigationHistory(forward = true) },
+                        onNavigateHistory = ::navigateTabHistory,
+                        onOpenHistory = { activeScreen = Screen.HISTORY },
                         onBookmarks = { activeScreen = Screen.BOOKMARKS },
                         onHome = { goHome() },
                         onHomeLongClick = {

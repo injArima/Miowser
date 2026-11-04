@@ -34,8 +34,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -73,10 +76,16 @@ import com.miowser.app.ui.theme.ExpressiveTokens
  */
 @Composable
 fun BottomBar(
+    activeTabId: Long?,
     canGoBack: Boolean,
     canGoForward: Boolean,
     onBack: () -> Unit,
     onForward: () -> Unit,
+    tabHistoryEnabled: Boolean,
+    loadBackHistory: () -> List<TabNavigationEntry>,
+    loadForwardHistory: () -> List<TabNavigationEntry>,
+    onNavigateHistory: (TabNavigationEntry) -> Unit,
+    onOpenHistory: () -> Unit,
     onBookmarks: () -> Unit,
     onHome: () -> Unit,
     onHomeLongClick: () -> Unit,
@@ -88,6 +97,21 @@ fun BottomBar(
     ready: Boolean = true
 ) {
     val motion = LocalMotionPolicy.current
+    var historyDirection by remember { mutableStateOf<HistoryDirection?>(null) }
+    var historyEntries by remember { mutableStateOf(emptyList<TabNavigationEntry>()) }
+    LaunchedEffect(activeTabId) {
+        historyDirection = null
+        historyEntries = emptyList()
+    }
+
+    fun showTabHistory(direction: HistoryDirection, load: () -> List<TabNavigationEntry>) {
+        val loaded = load()
+        if (loaded.size > 1) {
+            historyEntries = loaded
+            historyDirection = direction
+        }
+    }
+
     val homeInteraction = remember { MutableInteractionSource() }
     val homePressed by homeInteraction.collectIsPressedAsState()
     val homePressColor = animateColorAsState(
@@ -113,11 +137,55 @@ fun BottomBar(
                     .padding(horizontal = sidePadding, vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-            IconButton(onClick = onBack, enabled = ready && canGoBack) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.nav_back))
+            Box {
+                BrowserNavigationButton(
+                    enabled = ready && canGoBack,
+                    icon = Icons.AutoMirrored.Rounded.ArrowBack,
+                    contentDescription = stringResource(R.string.nav_back),
+                    longClickLabel = stringResource(R.string.nav_back_history),
+                    onClick = onBack,
+                    onLongClick = if (tabHistoryEnabled) {
+                        { showTabHistory(HistoryDirection.BACK, loadBackHistory) }
+                    } else null
+                )
+                TabNavigationHistoryMenu(
+                    expanded = historyDirection == HistoryDirection.BACK,
+                    entries = historyEntries,
+                    onDismiss = { historyDirection = null },
+                    onSelect = { entry ->
+                        historyDirection = null
+                        onNavigateHistory(entry)
+                    },
+                    onOpenHistory = {
+                        historyDirection = null
+                        onOpenHistory()
+                    }
+                )
             }
-            IconButton(onClick = onForward, enabled = ready && canGoForward) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = stringResource(R.string.nav_forward))
+            Box {
+                BrowserNavigationButton(
+                    enabled = ready && canGoForward,
+                    icon = Icons.AutoMirrored.Rounded.ArrowForward,
+                    contentDescription = stringResource(R.string.nav_forward),
+                    longClickLabel = stringResource(R.string.nav_forward_history),
+                    onClick = onForward,
+                    onLongClick = if (tabHistoryEnabled) {
+                        { showTabHistory(HistoryDirection.FORWARD, loadForwardHistory) }
+                    } else null
+                )
+                TabNavigationHistoryMenu(
+                    expanded = historyDirection == HistoryDirection.FORWARD,
+                    entries = historyEntries,
+                    onDismiss = { historyDirection = null },
+                    onSelect = { entry ->
+                        historyDirection = null
+                        onNavigateHistory(entry)
+                    },
+                    onOpenHistory = {
+                        historyDirection = null
+                        onOpenHistory()
+                    }
+                )
             }
             IconButton(onClick = onBookmarks, enabled = ready) {
                 Icon(
@@ -170,6 +238,38 @@ fun BottomBar(
             }
             }
         }
+    }
+}
+
+private enum class HistoryDirection { BACK, FORWARD }
+
+@Composable
+private fun BrowserNavigationButton(
+    enabled: Boolean,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    longClickLabel: String,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)?
+) {
+    Box(
+        modifier = Modifier
+            .size(ExpressiveTokens.minimumTouchTarget)
+            .clip(CircleShape)
+            .combinedClickable(
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick,
+                onLongClickLabel = if (onLongClick != null) longClickLabel else null,
+                onLongClick = onLongClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            tint = LocalContentColor.current.copy(alpha = if (enabled) 1f else 0.38f)
+        )
     }
 }
 

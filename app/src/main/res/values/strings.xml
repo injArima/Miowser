@@ -8,6 +8,8 @@
     <string name="search_with_miowser">Search with Miowser</string>
     <string name="nav_back">Back</string>
     <string name="nav_forward">Forward</string>
+    <string name="nav_back_history">Show back history for this tab</string>
+    <string name="nav_forward_history">Show forward history for this tab</string>
     <string name="nav_bookmarks">Bookmarks</string>
     <string name="nav_home">Home</string>
     <string name="nav_more">More</string>
