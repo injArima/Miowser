@@ -17,11 +17,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -165,7 +167,7 @@ fun HistoryPage(
 
         LazyColumn(
             modifier = modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 16.dp)
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp)
         ) {
             grouped.entries.forEachIndexed { index, (date, dayEntries) ->
                 item(key = "header-$date") {
@@ -175,9 +177,10 @@ fun HistoryPage(
                         onDelete = { pendingDelete = PendingBulkDelete.WholeDay(date, dayEntries) }
                     )
                 }
-                items(dayEntries, key = { it.url }) { entry ->
-                    HistoryCard(
+                itemsIndexed(dayEntries, key = { _, entry -> entry.url }) { itemIndex, entry ->
+                    HistoryListItem(
                         entry = entry,
+                        position = segmentedPosition(itemIndex, dayEntries.lastIndex),
                         onClick = { onOpenUrl(entry.url) },
                         onRemove = { onRemove(entry) }
                     )
@@ -272,22 +275,41 @@ private fun HistorySearchField(query: String, onQueryChange: (String) -> Unit) {
 }
 
 @Composable
-private fun HistoryCard(
+private fun HistoryListItem(
     entry: HistoryEntry,
+    position: SegmentedPosition,
     onClick: () -> Unit,
     onRemove: () -> Unit
 ) {
+    val shape = when (position) {
+        SegmentedPosition.ONLY -> RoundedCornerShape(24.dp)
+        SegmentedPosition.FIRST -> RoundedCornerShape(
+            topStart = 24.dp,
+            topEnd = 24.dp,
+            bottomStart = 6.dp,
+            bottomEnd = 6.dp
+        )
+        SegmentedPosition.MIDDLE -> RoundedCornerShape(6.dp)
+        SegmentedPosition.LAST -> RoundedCornerShape(
+            topStart = 6.dp,
+            topEnd = 6.dp,
+            bottomStart = 24.dp,
+            bottomEnd = 24.dp
+        )
+    }
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 5.dp)
+            .padding(bottom = if (position == SegmentedPosition.LAST || position == SegmentedPosition.ONLY) 0.dp else 2.dp)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.52f))
+        shape = shape,
+        color = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         Row(
-            modifier = Modifier.padding(start = 12.dp, top = 11.dp, end = 6.dp, bottom = 11.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 80.dp)
+                .padding(start = 12.dp, top = 10.dp, end = 4.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             HistorySiteIcon(entry = entry)
@@ -295,7 +317,7 @@ private fun HistoryCard(
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = entry.title.ifBlank { displayUrl(entry.url) },
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -303,7 +325,7 @@ private fun HistoryCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = displayUrl(entry.url),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -311,7 +333,7 @@ private fun HistoryCard(
                     )
                     Text(
                         text = "  •  ${entry.visitedAtTime()}",
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1
                     )
@@ -321,7 +343,8 @@ private fun HistoryCard(
                 Icon(
                     Icons.Rounded.Close,
                     contentDescription = "Remove ${entry.title.ifBlank { entry.url }} from history",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
@@ -348,17 +371,17 @@ private fun HistorySiteIcon(entry: HistoryEntry) {
     }
 
     Surface(
-        modifier = Modifier.size(52.dp),
-        shape = RoundedCornerShape(15.dp),
+        modifier = Modifier.size(44.dp),
+        shape = RoundedCornerShape(14.dp),
         color = container,
-        border = BorderStroke(1.dp, content.copy(alpha = 0.35f))
+        border = BorderStroke(1.dp, content.copy(alpha = 0.24f))
     ) {
         Box(contentAlignment = Alignment.Center) {
             if (favicon != null) {
                 Image(
                     bitmap = favicon!!.asImageBitmap(),
                     contentDescription = null,
-                    modifier = Modifier.size(32.dp),
+                    modifier = Modifier.size(28.dp),
                     contentScale = ContentScale.Fit
                 )
             } else {
@@ -375,32 +398,51 @@ private fun HistorySiteIcon(entry: HistoryEntry) {
 
 @Composable
 private fun DateHeader(date: LocalDate, isFirst: Boolean, onDelete: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 20.dp, top = if (isFirst) 10.dp else 22.dp, end = 10.dp, bottom = 3.dp),
-        verticalAlignment = Alignment.CenterVertically
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(top = if (isFirst) 8.dp else 20.dp)
     ) {
-        Text(
-            text = relativeDateLabel(date),
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Text(
-            text = "  •  ${date.format(SHORT_DATE_FORMAT)}",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f)
-        )
-        IconButton(onClick = onDelete) {
-            Icon(
-                Icons.Rounded.Delete,
-                contentDescription = "Delete ${formatDateHeader(date)}",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+        if (!isFirst) {
+            HorizontalDivider(
+                modifier = Modifier.padding(bottom = 8.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
             )
         }
+        Row(
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = relativeDateLabel(date),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = date.format(SHORT_DATE_FORMAT),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(onClick = onDelete) {
+                Icon(
+                    Icons.Rounded.Delete,
+                    contentDescription = "Delete ${formatDateHeader(date)}",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
     }
+}
+
+private enum class SegmentedPosition { ONLY, FIRST, MIDDLE, LAST }
+
+private fun segmentedPosition(index: Int, lastIndex: Int): SegmentedPosition = when {
+    lastIndex == 0 -> SegmentedPosition.ONLY
+    index == 0 -> SegmentedPosition.FIRST
+    index == lastIndex -> SegmentedPosition.LAST
+    else -> SegmentedPosition.MIDDLE
 }
 
 private val HEADER_DATE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("MMMM d, yyyy")
