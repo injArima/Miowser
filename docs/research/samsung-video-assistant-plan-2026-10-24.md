@@ -60,6 +60,32 @@ No feature modules were deleted merely to reduce file count. The earlier Video
 Lab build and rejected toolbar-arming route were already absent before this
 cleanup. Historical Samsung evidence and implementation reports are retained.
 
+## Detection coverage update — 5 November 2026
+
+The later frame relay permits the same screen-anchored, single-tap action for
+eligible videos in cross-origin and nested frames. This update broadens the
+document-start detector without changing the playback engine or adding another
+button:
+
+- Observe open shadow roots and route frames inside them. Discover dynamically
+  attached open roots with a bounded, resumable DOM sweep, so a large page does
+  not permanently hide a player beyond the first scan batch.
+- Let a newly playing audible video replace an idle, muted, ended or offscreen
+  preview when the per-frame tracking table is full.
+- Renew an active embedded-frame candidate every 2.5 seconds, including while
+  playback is stalled and no media events arrive; retain the slower 10-second
+  telemetry heartbeat otherwise.
+- Compare visible video area across the page and embedded frames, while keeping
+  a recently tapped main-page player ahead of a competing frame. This prevents
+  an old offscreen player from masking the currently visible embedded player.
+
+The source APK inspection established Samsung's engine-level media-start and
+visibility callbacks, but its native Chromium internals are unavailable to
+Android WebView. These DOM-side checks improve coverage; they cannot promise
+detection of closed shadow roots, protected/DRM players, canvas-only playback,
+inaccessible frames or frames that disallow fullscreen. Device playback checks
+remain with the user per the collaboration preference.
+
 Only static source/reference review was performed for this cleanup. Existing
 fixtures were adjusted to the smaller data contract; **no build, test runner,
 emulator or device checks were run**, as requested. No app data was accessed.

@@ -351,7 +351,8 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             frame = null;
             if (disposed || !policy.enabled || !api.bound() || document.visibilityState === 'hidden' ||
                 !document.fullscreenEnabled || document.fullscreenElement || pending) { hide(); return; }
-            var view = viewport(), best = null, bestScore = -1, bestInteraction = -1;
+            var view = viewport(), best = null, bestScore = -1, bestVisibleArea = 0,
+                bestInteraction = -1;
             api.records().forEach(function (record) {
                 if (!eligible(record)) return;
                 var box = clip(record), width = box.right - box.left, height = box.bottom - box.top;
@@ -359,6 +360,10 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 var interaction = record.lastInteraction || 0, score = width * height;
                 if (interaction > bestInteraction || (interaction === bestInteraction && score > bestScore)) {
                     best = record; bestScore = score; bestInteraction = interaction;
+                    bestVisibleArea = Math.max(0, Math.min(box.right, view.left + view.width) -
+                        Math.max(box.left, view.left)) *
+                        Math.max(0, Math.min(box.bottom, view.top + view.height) -
+                        Math.max(box.top, view.top));
                 }
             });
             if (policy.embedded) {
@@ -376,14 +381,18 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                     lastFrameCandidateId = best.id;
                     api.frameCandidate({x: (visibleLeft + visibleRight) / 2,
                         y: (visibleTop + visibleBottom) / 2, width: window.innerWidth,
-                        height: window.innerHeight, area: bestScore, elementId: best.id});
+                        height: window.innerHeight,
+                        area: (visibleRight - visibleLeft) * (visibleBottom - visibleTop),
+                        elementId: best.id});
                 }
                 return;
             }
             external.forEach(function (candidate, id) {
                 if (!eligible(candidate)) { external.delete(id); return; }
-                if (!best || (best.embedded && candidate.area > bestScore)) {
-                    best = candidate; bestScore = candidate.area;
+                if (!best || best.embedded && candidate.area > bestVisibleArea ||
+                    candidate.area > bestVisibleArea &&
+                    performance.now() - bestInteraction > 5000) {
+                    best = candidate; bestVisibleArea = candidate.area;
                 }
             });
             if (!best || (best.embedded && !policy.nativeDisplay)) { hide(); return; }
@@ -439,6 +448,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         return {
             cancelEntryPlayback: cancelEntryPlayback,
             wake: wake, scroll: scroll, layoutChanged: layoutChanged,
+            needsFrameHeartbeat: function () { return policy.embedded && frameCandidateVisible; },
             nativeReady: function (version, ok) {
                 if (version !== displayVersion || !policy.nativeDisplay || !selected || !button || button.hidden) return;
                 nativeReady = ok === true;

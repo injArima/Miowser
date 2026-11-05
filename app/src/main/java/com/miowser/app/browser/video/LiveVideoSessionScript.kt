@@ -15,7 +15,8 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
     var controls = null, fullscreenSerial = 0, lifecycleSerial = -1;
     var trackIds = new WeakMap(), nextTrackId = 0;
     var listeners = [];
-    var frameRoutes = new Map();
+    var frameRoutes = new Map(), shadowObservers = new Map(), shadowSweep = null,
+        lastHeartbeatAt = 0, lastShadowScanAt = 0;
     var MAX_VIDEOS = 8, UPDATE_MS = 500;
 
     function send(message) {
@@ -28,9 +29,14 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         if (videos.size > 0 || frameRoutes.size > 0) send({type: 'hello', documentId: documentId});
     }
     function childFrame(source) {
-        var frames = document.querySelectorAll('iframe,frame');
-        for (var i = 0; i < Math.min(frames.length, 32); i++) {
-            if (frames[i].contentWindow === source) return frames[i];
+        var roots = [document];
+        shadowObservers.forEach(function (_, root) { roots.push(root); });
+        var checked = 0;
+        for (var r = 0; r < roots.length && checked < 32; r++) {
+            var frames = roots[r].querySelectorAll('iframe,frame');
+            for (var i = 0; i < frames.length && checked < 32; i++, checked++) {
+                if (frames[i].contentWindow === source) return frames[i];
+            }
         }
         return null;
     }
@@ -226,8 +232,6 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         if (videos.size === 0 && frameRoutes.size === 0) {
             send({type: 'retire', documentId: documentId, navigation: binding.navigation, token: binding.token});
             binding = null;
-            clearInterval(heartbeat);
-            heartbeat = null;
         }
     }
     function schedule() {
@@ -249,7 +253,16 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         if (!video || video.tagName !== 'VIDEO' || !video.isConnected) return;
         var id = ids.get(video);
         if (id && videos.has(id)) { schedule(); return; }
-        if (videos.size >= MAX_VIDEOS) return;
+        if (videos.size >= MAX_VIDEOS) {
+            if (video.paused || video.ended || video.muted || !(video.volume > 0)) return;
+            var idle = null;
+            videos.forEach(function (record) {
+                if (!idle && (record.video.paused || record.video.ended || record.video.muted ||
+                    record.ratio === 0)) idle = record;
+            });
+            if (!idle) return;
+            unwatch(idle);
+        }
         id = id || 'v' + (++nextId);
         ids.set(video, id);
         var record = {id: id, video: video, source: null, object: null, sourceRevision: 0,
@@ -273,21 +286,75 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         record.cleanups.push(function () { video.removeEventListener('pointerdown', interaction); });
         if (intersection) intersection.observe(video);
         if (resize) resize.observe(video);
-        if (heartbeat === null) heartbeat = setInterval(function () {
-            if (document.visibilityState !== 'hidden' && videos.size > 0) {
+        if (!binding) hello();
+        schedule();
+    }
+    function startHeartbeat() {
+        if (heartbeat !== null) return;
+        heartbeat = setInterval(function () {
+            var now = performance.now();
+            // A player can attach an open shadow root to an existing host without
+            // causing a light-DOM mutation. Rediscover it at a bounded cadence.
+            if (document.visibilityState !== 'hidden' && now - lastShadowScanAt >= 5000) {
+                lastShadowScanAt = now;
+                scanOpenRoots(document);
+            }
+            if (document.visibilityState !== 'hidden' && videos.size > 0 &&
+                (now - lastHeartbeatAt >= 10000 || assistant && assistant.needsFrameHeartbeat())) {
+                lastHeartbeatAt = now;
                 if (!binding) hello();
                 schedule();
             }
-        }, 10000);
-        if (!binding) hello();
-        schedule();
+        }, 2500);
     }
     function scan(root) {
         if (root.tagName === 'VIDEO') watch(root);
         if (root.querySelectorAll) {
             var found = root.querySelectorAll('video');
-            for (var i = 0; i < found.length && videos.size < MAX_VIDEOS; i++) watch(found[i]);
+            for (var i = 0; i < found.length; i++) watch(found[i]);
         }
+        scanOpenRoots(root);
+    }
+    function scanOpenRoots(root) {
+        // Document observers do not cross shadow boundaries. Watch open roots only;
+        // closed roots remain outside the page API and are not probed.
+        var walker = root === document && shadowSweep ||
+            document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+        var node = root === document && shadowSweep ? walker.currentNode :
+            root.nodeType === 1 ? root : walker.nextNode(), visited = 0;
+        while (node && visited++ < 4096) {
+            if (node.shadowRoot && !shadowObservers.has(node.shadowRoot)) {
+                var shadow = node.shadowRoot;
+                var watcher = new MutationObserver(processMutations);
+                watcher.observe(shadow, {childList: true, subtree: true,
+                    attributes: true, attributeFilter: ['src']});
+                shadow.addEventListener('play', onPlay, true);
+                shadowObservers.set(shadow, {observer: watcher, host: node});
+                scan(shadow);
+            }
+            node = walker.nextNode();
+        }
+        if (root === document) shadowSweep = node ? walker : null;
+    }
+    function onPlay(event) { watch(event.target); }
+    function processMutations(mutations) {
+        videos.forEach(function (record) { if (!record.video.isConnected) unwatch(record); });
+        shadowObservers.forEach(function (entry, root) {
+            if (entry.host.isConnected) return;
+            entry.observer.disconnect(); root.removeEventListener('play', onPlay, true);
+            shadowObservers.delete(root);
+        });
+        mutations.forEach(function (mutation) {
+            if (mutation.type === 'attributes') {
+                var target = mutation.target;
+                watch(target.tagName === 'SOURCE' ? target.parentElement : target);
+            }
+            for (var i = 0; i < mutation.addedNodes.length; i++) {
+                var added = mutation.addedNodes[i];
+                if (added.nodeType === 1) scan(added);
+            }
+        });
+        schedule();
     }
     function reconnectChildren() {
         for (var i = 0; i < window.frames.length; i++) {
@@ -303,6 +370,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
     function start() {
         if (running) return;
         running = true;
+        startHeartbeat();
         if (window.__miowserCreateVideoButton) assistant = window.__miowserCreateVideoButton({
             records: function () { return videos; },
             bound: function () { return running && binding !== null; },
@@ -376,38 +444,13 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             schedule();
         }, {threshold: [0, 0.05, 0.1, 0.25, 0.5, 0.75, 1]});
         if (window.ResizeObserver) resize = new ResizeObserver(schedule);
-        observer = new MutationObserver(function (mutations) {
-            // Remove detached elements before adding replacements, so a full table can make room.
-            videos.forEach(function (record) { if (!record.video.isConnected) unwatch(record); });
-            mutations.forEach(function (mutation) {
-                if (mutation.type === 'attributes') {
-                    var target = mutation.target;
-                    watch(target.tagName === 'SOURCE' ? target.parentElement : target);
-                }
-                for (var i = 0; i < mutation.addedNodes.length && videos.size < MAX_VIDEOS; i++) {
-                    var node = mutation.addedNodes[i];
-                    if (node.nodeType === 1) scan(node);
-                }
-            });
-            schedule();
-        });
+        observer = new MutationObserver(processMutations);
         observer.observe(document.documentElement || document, {childList: true, subtree: true,
             attributes: true, attributeFilter: ['src']});
         scan(document);
         listen(document, 'DOMContentLoaded', function () { scan(document); connect(); });
         // A late-starting player must not be permanently crowded out by eight idle previews.
-        listen(document, 'play', function (event) {
-            var video = event.target;
-            if (!video || video.tagName !== 'VIDEO' || videos.has(ids.get(video))) return;
-            if (videos.size >= MAX_VIDEOS) {
-                var candidate = null;
-                videos.forEach(function (record) {
-                    if (!candidate && (record.video.paused || record.video.ended || record.ratio === 0)) candidate = record;
-                });
-                if (candidate) unwatch(candidate);
-            }
-            watch(video);
-        }, true);
+        listen(document, 'play', onPlay, true);
         listen(document, 'visibilitychange', visibility);
         listen(window, 'message', onFrameMessage);
         function scrollDisplay() { if (assistant) assistant.scroll(); schedule(); }
@@ -435,6 +478,11 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         clearInterval(heartbeat);
         heartbeat = null;
         if (observer) observer.disconnect();
+        shadowObservers.forEach(function (entry, root) {
+            entry.observer.disconnect(); root.removeEventListener('play', onPlay, true);
+        });
+        shadowObservers.clear();
+        shadowSweep = null;
         if (intersection) intersection.disconnect();
         if (resize) resize.disconnect();
         observer = intersection = resize = null;
