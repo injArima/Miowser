@@ -2064,7 +2064,7 @@ private fun PlayerSubtitleTrackList(
 
 @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
 @Composable
-private fun PlayerSubtitleInspectPanel(
+internal fun PlayerSubtitleInspectPanel(
     style: PlayerSubtitleStyle,
     chosen: DetectedMedia?,
     timeline: List<CuesWithTiming>,
@@ -2129,7 +2129,7 @@ private fun PlayerSubtitleInspectPanel(
 }
 
 @Composable
-private fun PlayerSubtitleControls(
+internal fun PlayerSubtitleControls(
     style: PlayerSubtitleStyle,
     onChange: (PlayerSubtitleStyle) -> Unit,
     adjusting: Boolean,

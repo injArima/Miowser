@@ -7,6 +7,7 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.media.AudioManager
+import android.os.SystemClock
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -31,6 +32,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,6 +42,9 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.res.ResourcesCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.extractor.text.CuesWithTiming
 import com.miowser.app.MainActivity
 import com.miowser.app.browser.loadSubtitleForPlayback
@@ -121,22 +126,69 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
     var externalSubtitleCues by remember { mutableStateOf<List<CuesWithTiming>>(emptyList()) }
     var externalSubtitleError by remember { mutableStateOf<String?>(null) }
     var externalSubtitleLoading by remember { mutableStateOf(false) }
-    val subtitleStyle = remember(context) { PlayerSubtitleStyleStore.load(context) }
+    var externalSubtitleLoadAttempt by remember { mutableIntStateOf(0) }
+    var subtitleStyle by remember(context) { mutableStateOf(PlayerSubtitleStyleStore.load(context)) }
+    var subtitleDelayMs by remember { mutableLongStateOf(subtitleStyle.delayMs) }
+    val effectiveSubtitleStyle = subtitleStyle.copy(delayMs = subtitleDelayMs)
+    var subtitleAdjustAnchorMs by remember { mutableStateOf<Long?>(null) }
+    var resumeAfterSubtitleAdjust by remember { mutableStateOf(false) }
+    val latestSubtitleStyle by rememberUpdatedState(subtitleStyle)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(subtitleStyle) {
+        delay(250)
+        PlayerSubtitleStyleStore.save(context, subtitleStyle)
+    }
+    DisposableEffect(context, lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) PlayerSubtitleStyleStore.save(context, latestSubtitleStyle)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            PlayerSubtitleStyleStore.save(context, latestSubtitleStyle)
+        }
+    }
     val subtitleTypeface = remember(context, subtitleStyle.font) {
         captionFontResource(subtitleStyle.font)?.let { ResourcesCompat.getFont(context, it) }
     }
     val subtitleAvailable = video.captions.isNotEmpty() || detectedSubtitles.isNotEmpty()
     val selectedDetectedSubtitle = detectedSubtitles.firstOrNull { it.url == selectedSubtitleUrl }
 
+    fun finishSubtitleAdjustment() {
+        if (subtitleAdjustAnchorMs == null) return
+        subtitleAdjustAnchorMs = null
+        if (resumeAfterSubtitleAdjust) controller.playPause()
+        resumeAfterSubtitleAdjust = false
+    }
+    fun beginSubtitleAdjustment() {
+        if (selectedDetectedSubtitle == null || externalSubtitleCues.none { it.cues.isNotEmpty() }) return
+        val playback = controller.state.value
+        subtitleAdjustAnchorMs = browserSubtitlePositionMs(playback, owner, SystemClock.elapsedRealtime())
+            ?: return
+        resumeAfterSubtitleAdjust = playback.session?.state?.playing == true
+        if (resumeAfterSubtitleAdjust) controller.pause()
+    }
+    fun alignSubtitleToCue(cueStartTimeUs: Long) {
+        val anchorMs = subtitleAdjustAnchorMs ?: return
+        subtitleDelayMs = subtitleDelayForCue(anchorMs, cueStartTimeUs)
+        finishSubtitleAdjustment()
+    }
+    LaunchedEffect(overlays.target, subtitleAdjustAnchorMs) {
+        if (subtitleAdjustAnchorMs != null && overlays.target != PlayerOverlay.SUBTITLES) {
+            finishSubtitleAdjustment()
+        }
+    }
+
     LaunchedEffect(detectedSubtitles, video.captions.isEmpty()) {
         if (selectedSubtitleUrl != null && detectedSubtitles.none { it.url == selectedSubtitleUrl }) {
+            finishSubtitleAdjustment()
             selectedSubtitleUrl = null
         }
         if (!subtitleChoiceMade && video.captions.isEmpty() && detectedSubtitles.size == 1) {
             selectedSubtitleUrl = detectedSubtitles.single().url
         }
     }
-    LaunchedEffect(selectedDetectedSubtitle, userAgent) {
+    LaunchedEffect(selectedDetectedSubtitle, userAgent, externalSubtitleLoadAttempt) {
         externalSubtitleCues = emptyList()
         externalSubtitleError = null
         externalSubtitleLoading = false
@@ -244,7 +296,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                 if (state.audioOnly) Box(Modifier.fillMaxSize().background(Color.Black))
                 if (!state.audioOnly && selectedSubtitleUrl != null && externalSubtitleCues.isNotEmpty()) {
                     BrowserDetectedSubtitleLayer(controller, owner, selectedSubtitleUrl,
-                        externalSubtitleCues, subtitleStyle, subtitleTypeface)
+                        externalSubtitleCues, effectiveSubtitleStyle, subtitleTypeface)
                 }
                 if (state.controlsEnabled) PlayerGestureSurface(locked, visible, landscape,
                     positionMs = { controller.state.value.let { s ->
@@ -389,33 +441,71 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                 }
             }) { _, panelModifier, initialFocus ->
                 PlayerSubtitleWorkspace({ overlays.dismiss() }, panelModifier, initialFocus,
-                    tracks = { contentModifier, _ ->
+                    tracks = { contentModifier, inspect ->
                         LazyColumn(contentModifier) {
                             state.message?.let { item("error") { Text(it, color = MaterialTheme.colorScheme.error) } }
                             externalSubtitleError?.let { error ->
                                 item("subtitle_error") { Text(error, color = MaterialTheme.colorScheme.error) }
+                                item("subtitle_retry") {
+                                    TextButton(onClick = { externalSubtitleLoadAttempt++ }) {
+                                        Text("Retry subtitle")
+                                    }
+                                }
                             }
                             if (externalSubtitleLoading) item("subtitle_loading") { Text("Loading subtitle…") }
                             item("off") { PlayerSubtitleChoiceRow("Off", selectedSubtitleUrl == null && video.captions.none { it.selected }, {
+                                finishSubtitleAdjustment()
                                 subtitleChoiceMade = true; selectedSubtitleUrl = null
                                 act { controller.selectCaption(null) }
                             }) }
                             itemsIndexed(video.captions, key = { _, track -> track.id }) { index, track ->
                                 PlayerSubtitleChoiceRow(track.displayLabel("Subtitle", index),
                                     selectedSubtitleUrl == null && track.selected, {
+                                        finishSubtitleAdjustment()
                                         subtitleChoiceMade = true; selectedSubtitleUrl = null
                                         act { controller.selectCaption(track.id) }
                                     })
+                            }
+                            if (video.captions.isNotEmpty()) item("website_captions_note") {
+                                Text("Website captions use the site's own appearance and timing.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.White.copy(alpha = 0.68f))
                             }
                             if (detectedSubtitles.isNotEmpty()) {
                                 item("detected_heading") { Text("Detected subtitle files", style = MaterialTheme.typography.labelLarge) }
                                 itemsIndexed(detectedSubtitles, key = { _, item -> item.url }) { _, item ->
                                     PlayerSubtitleChoiceRow(detectedSubtitleLabel(item), selectedSubtitleUrl == item.url, {
-                                        subtitleChoiceMade = true; selectedSubtitleUrl = item.url
+                                        finishSubtitleAdjustment()
+                                        subtitleChoiceMade = true
+                                        if (selectedSubtitleUrl == item.url) externalSubtitleLoadAttempt++
+                                        else selectedSubtitleUrl = item.url
                                         if (video.captions.isNotEmpty()) act { controller.selectCaption(null) }
+                                        inspect()
                                     }, detail = item.pageUrl.substringAfter("://").substringBefore('/'))
                                 }
                             }
+                        }
+                    }, inspect = { contentModifier ->
+                        PlayerSubtitleInspectPanel(effectiveSubtitleStyle, selectedDetectedSubtitle,
+                            externalSubtitleCues, externalSubtitleError,
+                            !externalSubtitleLoading && externalSubtitleCues.isNotEmpty(),
+                            subtitleAdjustAnchorMs, ::alignSubtitleToCue, contentModifier)
+                    }, settings = { contentModifier, inspect ->
+                        Column(contentModifier) {
+                            if (selectedDetectedSubtitle == null) {
+                                Text("Appearance and timing controls apply to detected subtitle files.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.White.copy(alpha = 0.68f))
+                            }
+                            PlayerSubtitleControls(effectiveSubtitleStyle, { updated ->
+                                    subtitleDelayMs = updated.delayMs
+                                    subtitleStyle = updated.copy(delayMs = subtitleStyle.delayMs)
+                                },
+                                subtitleAdjustAnchorMs != null,
+                                selectedDetectedSubtitle != null &&
+                                    externalSubtitleCues.any { it.cues.isNotEmpty() },
+                                { beginSubtitleAdjustment(); inspect() }, ::finishSubtitleAdjustment,
+                                Modifier.fillMaxWidth().weight(1f))
                         }
                     })
             }
