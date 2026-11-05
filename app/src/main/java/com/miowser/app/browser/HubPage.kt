@@ -62,6 +62,7 @@ import com.miowser.app.ui.MiowserDropdownMenu
 import com.miowser.app.ui.ConfirmationAction
 import com.miowser.app.ui.ConfirmationTone
 import com.miowser.app.ui.MiowserConfirmationDialog
+import com.miowser.app.ui.sheetVerticalEdgeFade
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -122,7 +123,8 @@ fun HubDownloadsContent(
     modifier: Modifier = Modifier,
     emptyMessage: String = "No downloads yet.",
     bottomContentPadding: Dp = 0.dp,
-    uiVisible: Boolean = true
+    uiVisible: Boolean = true,
+    sheetFadeColor: Color? = null
 ) {
     if (downloads.isEmpty()) {
         Box(modifier = modifier, contentAlignment = Alignment.Center) {
@@ -136,7 +138,8 @@ fun HubDownloadsContent(
         val listState = rememberLazyListState()
         LazyColumn(
             state = listState,
-            modifier = modifier.testTag("downloads_list"),
+            modifier = (if (sheetFadeColor != null) modifier.sheetVerticalEdgeFade(listState, sheetFadeColor)
+                else modifier).testTag("downloads_list"),
             contentPadding = PaddingValues(bottom = bottomContentPadding)
         ) {
             items(downloads, key = { it.id }) { download ->

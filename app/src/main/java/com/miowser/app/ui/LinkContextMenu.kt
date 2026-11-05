@@ -50,9 +50,11 @@ fun LinkContextMenu(
 ) {
     var selectingText by remember(url, linkText) { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = onDismiss,
+        modifier = Modifier.miowserSheetSurface(MaterialTheme.colorScheme.outlineVariant),
         dragHandle = { CompactSheetDragHandle() },
         shape = MiowserBottomSheetShape) {
         if (selectingText && !linkText.isNullOrBlank()) {
+            val textScroll = rememberScrollState()
             Text("Select text", style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
             Text("Touch and hold to select part of the link text.",
@@ -63,7 +65,8 @@ fun LinkContextMenu(
                 Text(
                     text = linkText,
                     modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp)
-                        .verticalScroll(rememberScrollState())
+                        .sheetVerticalEdgeFade(textScroll, MaterialTheme.colorScheme.surfaceContainerLow)
+                        .verticalScroll(textScroll)
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 )
             }

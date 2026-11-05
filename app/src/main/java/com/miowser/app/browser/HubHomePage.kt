@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -160,6 +161,7 @@ import com.miowser.app.ui.ConfirmationAction
 import com.miowser.app.ui.ConfirmationTone
 import com.miowser.app.ui.MiowserConfirmationDialog
 import com.miowser.app.ui.MiowserSnackbarHost
+import com.miowser.app.ui.sheetVerticalEdgeFade
 import com.miowser.app.ui.theme.ExpressiveTokens
 import com.miowser.app.ui.theme.AppThemeMode
 import com.miowser.app.ui.theme.AppThemePreference
@@ -668,7 +670,12 @@ fun HubHomePage(
     )
     if (choosingImportParent) ExpressiveBottomSheet(onDismissRequest = { choosingImportParent = false }) {
         ExpressiveSheetHeading("Choose parent folder")
-        androidx.compose.foundation.lazy.LazyColumn {
+        val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+        androidx.compose.foundation.lazy.LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp)
+                .sheetVerticalEdgeFade(listState, MaterialTheme.colorScheme.surface)
+        ) {
             items(LibraryFolders.orderedEntries().size) { index ->
                 val folder = LibraryFolders.orderedEntries()[index]
                 TextButton(onClick = {

@@ -18,6 +18,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -41,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import com.miowser.app.MainActivity
 import com.miowser.app.player.*
 import com.miowser.app.ui.MiowserMenuItem
+import com.miowser.app.ui.sheetVerticalEdgeFade
 import com.miowser.app.ui.theme.LocalMotionPolicy
 import com.miowser.app.ui.theme.MiowserPlayerTheme
 import com.miowser.app.ui.theme.MotionTokens
@@ -315,7 +317,9 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                 volumeEnabled = audio?.isVolumeFixed != true,
                 onVolumeInteraction = { if (controller.state.value.session?.state?.muted == true) controller.setMuted(false) })
             if (audioPanel && state.controlsEnabled) PlayerTrackSheet("Audio", { audioPanel = false }) { listModifier ->
-                LazyColumn(listModifier) {
+                val listState = rememberLazyListState()
+                LazyColumn(listModifier.sheetVerticalEdgeFade(listState, Color(0xFF151313)),
+                    state = listState) {
                     state.message?.let { item("error") { Text(it, color = MaterialTheme.colorScheme.error) } }
                     itemsIndexed(video.audioTracks, key = { _, track -> track.id }) { index, track ->
                         PlayerTrackChoiceRow(track.displayLabel("Audio", index), track.language, track.selected,

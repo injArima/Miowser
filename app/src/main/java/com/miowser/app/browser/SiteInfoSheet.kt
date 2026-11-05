@@ -59,6 +59,8 @@ import com.miowser.app.adblock.SiteProtectionMode
 import com.miowser.app.ui.CompactSheetDragHandle
 import com.miowser.app.ui.ExpressiveSectionCard
 import com.miowser.app.ui.MiowserBottomSheetShape
+import com.miowser.app.ui.miowserSheetSurface
+import com.miowser.app.ui.sheetVerticalEdgeFade
 import java.text.DateFormat
 import kotlin.math.roundToInt
 
@@ -91,9 +93,11 @@ fun SiteInfoSheet(
     }
     var elementChangesExpanded by remember(host) { mutableStateOf(false) }
     val draftSeconds = (mediaMinimumDraft / 30f).roundToInt() * 30
+    val scrollState = rememberScrollState()
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        modifier = Modifier.miowserSheetSurface(MaterialTheme.colorScheme.outlineVariant),
         dragHandle = { CompactSheetDragHandle() },
         shape = MiowserBottomSheetShape,
         containerColor = MaterialTheme.colorScheme.surface
@@ -107,7 +111,8 @@ fun SiteInfoSheet(
                     // the final card into the system bars or draw outside the sheet.
                     .heightIn(max = maxHeight * 0.78f)
                     .clipToBounds()
-                    .verticalScroll(rememberScrollState())
+                    .sheetVerticalEdgeFade(scrollState, MaterialTheme.colorScheme.surface)
+                    .verticalScroll(scrollState)
                     .navigationBarsPadding()
                     .padding(start = 16.dp, end = 16.dp, bottom = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)

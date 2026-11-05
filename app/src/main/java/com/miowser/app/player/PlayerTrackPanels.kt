@@ -19,6 +19,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.miowser.app.ui.CompactSheetDragHandle
 import com.miowser.app.ui.MiowserBottomSheetShape
+import com.miowser.app.ui.miowserSheetSurface
 
 /** Original subtitle workspace, with unsupported sections omitted rather than disabled. */
 @OptIn(ExperimentalLayoutApi::class)
@@ -82,6 +83,7 @@ internal fun PlayerSubtitleWorkspace(
 @Composable
 internal fun PlayerTrackSheet(title: String, onDismiss: () -> Unit, content: @Composable (Modifier) -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss,
+        modifier = Modifier.miowserSheetSurface(Color.White.copy(alpha = 0.25f)),
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         dragHandle = { CompactSheetDragHandle() }, containerColor = Color(0xFF151313),
         contentColor = Color.White, shape = MiowserBottomSheetShape) {

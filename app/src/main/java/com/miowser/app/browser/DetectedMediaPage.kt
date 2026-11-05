@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -63,6 +64,8 @@ import com.miowser.app.downloader.rendererResourceKind
 import com.miowser.app.grabber.DetectedMedia
 import com.miowser.app.grabber.DiscoveryProgress
 import com.miowser.app.grabber.MediaType
+import com.miowser.app.ui.miowserSheetSurface
+import com.miowser.app.ui.sheetVerticalEdgeFade
 import com.miowser.app.grabber.groupHlsRenditions
 import com.miowser.app.grabber.meetsMinimumDuration
 import com.miowser.app.ui.ExpressiveEmptyState
@@ -194,6 +197,7 @@ fun DetectedMediaPage(
 
     if (showScanSettings) {
         ModalBottomSheet(onDismissRequest = { showScanSettings = false },
+            modifier = Modifier.miowserSheetSurface(MaterialTheme.colorScheme.outlineVariant),
             dragHandle = { com.miowser.app.ui.CompactSheetDragHandle() },
             shape = com.miowser.app.ui.MiowserBottomSheetShape) {
             Column(
@@ -455,6 +459,7 @@ internal fun SubtitleViewer(item: DetectedMedia, userAgent: String, onDismiss: (
         }
     }
     ModalBottomSheet(onDismissRequest = onDismiss,
+        modifier = Modifier.miowserSheetSurface(MaterialTheme.colorScheme.outlineVariant),
         dragHandle = { com.miowser.app.ui.CompactSheetDragHandle() },
         shape = com.miowser.app.ui.MiowserBottomSheetShape) {
         BoxWithConstraints {
@@ -477,10 +482,13 @@ internal fun SubtitleViewer(item: DetectedMedia, userAgent: String, onDismiss: (
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     val lines = remember(preview) { preview!!.text.lines() }
+                    val listState = rememberLazyListState()
                     LazyColumn(
+                        state = listState,
                         modifier = Modifier.fillMaxWidth()
                             .heightIn(max = previewHeight)
-                            .clip(RoundedCornerShape(14.dp)),
+                            .clip(RoundedCornerShape(14.dp))
+                            .sheetVerticalEdgeFade(listState, MaterialTheme.colorScheme.surfaceContainerLow),
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         itemsIndexed(lines) { _, line ->

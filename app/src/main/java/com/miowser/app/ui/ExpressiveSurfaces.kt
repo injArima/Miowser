@@ -50,6 +50,7 @@ fun ExpressiveBottomSheet(
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
+        modifier = Modifier.miowserSheetSurface(MaterialTheme.colorScheme.outlineVariant),
         dragHandle = { CompactSheetDragHandle() },
         shape = MiowserBottomSheetShape,
         containerColor = MaterialTheme.colorScheme.surface

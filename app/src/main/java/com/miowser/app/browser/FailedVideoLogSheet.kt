@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -49,6 +50,7 @@ import com.miowser.app.library.FailedVideoLog
 import com.miowser.app.library.FailedVideoRecord
 import com.miowser.app.ui.ExpressiveBottomSheet
 import com.miowser.app.ui.ExpressiveSheetHeading
+import com.miowser.app.ui.sheetVerticalEdgeFade
 import com.miowser.app.ui.ConfirmationAction
 import com.miowser.app.ui.ConfirmationTone
 import com.miowser.app.ui.MiowserConfirmationDialog
@@ -122,8 +124,11 @@ internal fun FailedVideoLogSheet(
                     modifier = Modifier.padding(vertical = 24.dp)
                 )
             } else {
+                val listState = rememberLazyListState()
                 LazyColumn(
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp),
+                    state = listState,
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp)
+                        .sheetVerticalEdgeFade(listState, MaterialTheme.colorScheme.surface),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(records, key = FailedVideoRecord::id) { record ->

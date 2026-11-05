@@ -203,6 +203,7 @@ fun OverflowMenuSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        modifier = Modifier.miowserSheetSurface(MaterialTheme.colorScheme.outlineVariant),
         sheetState = sheetState,
         sheetGesturesEnabled = false,
         dragHandle = {
@@ -259,7 +260,8 @@ fun OverflowMenuSheet(
               }
           }
       Column((if (expandedContentState.currentState || expandedContentState.targetState)
-          contentModifier.nestedScroll(collapseOnOverscroll).verticalScroll(scrollState)
+          contentModifier.sheetVerticalEdgeFade(scrollState, MaterialTheme.colorScheme.surfaceContainerLow)
+              .nestedScroll(collapseOnOverscroll).verticalScroll(scrollState)
           else contentModifier).padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
         Surface(shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surfaceContainer,

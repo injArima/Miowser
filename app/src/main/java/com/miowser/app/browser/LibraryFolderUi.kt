@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.rounded.Delete
 import com.miowser.app.ui.ConfirmationAction
 import com.miowser.app.ui.ConfirmationTone
 import com.miowser.app.ui.MiowserConfirmationDialog
+import com.miowser.app.ui.sheetVerticalEdgeFade
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.DriveFolderUpload
 import androidx.compose.material.icons.rounded.Language
@@ -217,7 +219,10 @@ internal fun LibraryFolderStrip(
     if (choosingSubfolderParent) {
         ExpressiveBottomSheet(onDismissRequest = { choosingSubfolderParent = false }) {
             ExpressiveSheetHeading("Choose parent folder", "The new folder will appear inside this folder.")
-            LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp)) {
+            val listState = rememberLazyListState()
+            LazyColumn(state = listState,
+                modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp)
+                    .sheetVerticalEdgeFade(listState, MaterialTheme.colorScheme.surface)) {
                 items(LibraryFolders.orderedEntries(), key = LibraryFolder::id) { folder ->
                     FolderChoiceRow(LibraryFolders.path(folder), onClick = {
                         choosingSubfolderParent = false
@@ -323,8 +328,11 @@ private fun LibraryDefaultFolderSheet(
     val defaultFolder = LibraryFolders.entries.firstOrNull { it.id == LibraryFolders.defaultFolderId }
     ExpressiveBottomSheet(onDismissRequest = onDismiss) {
         ExpressiveSheetHeading("Default folder", "New videos start here before folder rules organize them.")
+        val listState = rememberLazyListState()
         LazyColumn(
-            modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp),
+            state = listState,
+            modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp)
+                .sheetVerticalEdgeFade(listState, MaterialTheme.colorScheme.surface),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             defaultFolder?.let { folder ->

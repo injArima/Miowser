@@ -23,6 +23,7 @@ import com.miowser.app.downloader.Download
 import com.miowser.app.downloader.DownloadStatus
 import com.miowser.app.ui.CompactSheetDragHandle
 import com.miowser.app.ui.MiowserBottomSheetShape
+import com.miowser.app.ui.miowserSheetSurface
 
 /** Browser-side view of work that is still in progress or needs attention. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -49,6 +50,7 @@ fun BrowserDownloadsSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        modifier = Modifier.miowserSheetSurface(MaterialTheme.colorScheme.outlineVariant),
         dragHandle = { CompactSheetDragHandle() },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -78,6 +80,7 @@ fun BrowserDownloadsSheet(
                 onRefreshLink = onRefreshLink,
                 onPlayLocal = {},
                 modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp, max = maxListHeight),
+                sheetFadeColor = MaterialTheme.colorScheme.surfaceContainerLow,
                 emptyMessage = "No active or failed downloads. Open all downloads to see completed files."
             )
         }

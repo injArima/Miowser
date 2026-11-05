@@ -1,6 +1,7 @@
 package com.miowser.app.player
 import com.miowser.app.ui.theme.LocalMotionPolicy
 import com.miowser.app.ui.theme.MotionTokens
+import com.miowser.app.ui.sheetVerticalEdgeFade
 import androidx.compose.ui.platform.testTag
 
 import android.app.Activity
@@ -53,6 +54,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -2316,7 +2318,9 @@ private fun PlayerTrackSelectionSheet(
         return
     }
     PlayerTrackSheet(kind.title, onDismiss) { listModifier ->
-        LazyColumn(listModifier) {
+        val listState = rememberLazyListState()
+        LazyColumn(listModifier.sheetVerticalEdgeFade(listState, Color(0xFF151313)),
+            state = listState) {
                 item(key = "auto") {
                     PlayerTrackChoiceRow(
                         label = "Auto",
