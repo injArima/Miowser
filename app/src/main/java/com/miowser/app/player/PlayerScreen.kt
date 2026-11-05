@@ -1420,7 +1420,7 @@ internal fun remotePlayerMediaItem(request: PlaybackRequest.Remote): MediaItem =
         .setMimeType(request.mediaType.toExoMimeTypeHint())
         .build()
 
-private fun captionFontResource(font: CaptionFontChoice): Int? = when (font) {
+internal fun captionFontResource(font: CaptionFontChoice): Int? = when (font) {
     CaptionFontChoice.SYSTEM -> null
     CaptionFontChoice.HELVETICA_LIKE -> R.font.subtitle_arimo
     CaptionFontChoice.ROBOTO -> R.font.subtitle_roboto

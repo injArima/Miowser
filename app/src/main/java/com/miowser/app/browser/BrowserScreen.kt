@@ -3399,6 +3399,9 @@ fun BrowserScreen(
                     tabs.firstOrNull { it.id == fullscreen.tabId }?.let { owner ->
                         BrowserVideoPlayerOverlay(owner.browserVideoPlayer, owner.title, ::exitWebFullscreen,
                             sourceLabel = SiteProtection.host(owner.url).orEmpty(),
+                            detectedSubtitles = com.miowser.app.player.detectedSubtitlesForPage(
+                                owner.url, owner.detectedMedia),
+                            userAgent = owner.liveWebView?.settings?.userAgentString ?: "Miowser",
                             backgroundPlaybackEnabled = backgroundPlaybackEnabled,
                             onAudioOnlyChanged = { browserVideoAudioOnly = it })
                     }

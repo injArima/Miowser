@@ -39,20 +39,28 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.res.ResourcesCompat
+import androidx.media3.extractor.text.CuesWithTiming
 import com.miowser.app.MainActivity
+import com.miowser.app.browser.loadSubtitleForPlayback
+import com.miowser.app.grabber.DetectedMedia
 import com.miowser.app.player.*
 import com.miowser.app.ui.MiowserMenuItem
 import com.miowser.app.ui.sheetVerticalEdgeFade
 import com.miowser.app.ui.theme.LocalMotionPolicy
 import com.miowser.app.ui.theme.MiowserPlayerTheme
 import com.miowser.app.ui.theme.MotionTokens
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Original player UI backed by the retained HTML video. This route never creates ExoPlayer. */
 @Composable
 internal fun BrowserVideoPlayerOverlay(controller: BrowserPlaybackControls, title: String,
     onExit: () -> Unit, sourceLabel: String = "", backgroundPlaybackEnabled: Boolean = true,
+    detectedSubtitles: List<DetectedMedia> = emptyList(), userAgent: String = "Miowser",
     onAudioOnlyChanged: (Boolean) -> Unit = {}) {
     val browserState by controller.state.collectAsState()
     val state = remember(browserState) { browserVideoPresentation(browserState) }
@@ -64,7 +72,7 @@ internal fun BrowserVideoPlayerOverlay(controller: BrowserPlaybackControls, titl
         } else state.owner?.let { owner ->
             key(owner) {
                 BrowserVideoControlsContent(controller, state, title, sourceLabel, onExit,
-                    backgroundPlaybackEnabled, onAudioOnlyChanged)
+                    backgroundPlaybackEnabled, detectedSubtitles, userAgent, onAudioOnlyChanged)
             }
         }
     }
@@ -74,6 +82,7 @@ internal fun BrowserVideoPlayerOverlay(controller: BrowserPlaybackControls, titl
 @OptIn(ExperimentalLayoutApi::class)
 private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, state: BrowserVideoPresentation,
     title: String, sourceLabel: String, onExit: () -> Unit, backgroundPlaybackEnabled: Boolean,
+    detectedSubtitles: List<DetectedMedia>, userAgent: String,
     onAudioOnlyChanged: (Boolean) -> Unit) {
     val video = state.video ?: return
     val owner = state.owner ?: return
@@ -107,6 +116,42 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
     var pendingRotation by remember { mutableStateOf<Boolean?>(null) }
     val modal = overlays.isPresent || adjustments || audioPanel || guidanceVisible
     val latestAudioOnly by rememberUpdatedState(state.audioOnly)
+    var selectedSubtitleUrl by remember { mutableStateOf<String?>(null) }
+    var subtitleChoiceMade by remember { mutableStateOf(false) }
+    var externalSubtitleCues by remember { mutableStateOf<List<CuesWithTiming>>(emptyList()) }
+    var externalSubtitleError by remember { mutableStateOf<String?>(null) }
+    var externalSubtitleLoading by remember { mutableStateOf(false) }
+    val subtitleStyle = remember(context) { PlayerSubtitleStyleStore.load(context) }
+    val subtitleTypeface = remember(context, subtitleStyle.font) {
+        captionFontResource(subtitleStyle.font)?.let { ResourcesCompat.getFont(context, it) }
+    }
+    val subtitleAvailable = video.captions.isNotEmpty() || detectedSubtitles.isNotEmpty()
+    val selectedDetectedSubtitle = detectedSubtitles.firstOrNull { it.url == selectedSubtitleUrl }
+
+    LaunchedEffect(detectedSubtitles, video.captions.isEmpty()) {
+        if (selectedSubtitleUrl != null && detectedSubtitles.none { it.url == selectedSubtitleUrl }) {
+            selectedSubtitleUrl = null
+        }
+        if (!subtitleChoiceMade && video.captions.isEmpty() && detectedSubtitles.size == 1) {
+            selectedSubtitleUrl = detectedSubtitles.single().url
+        }
+    }
+    LaunchedEffect(selectedDetectedSubtitle, userAgent) {
+        externalSubtitleCues = emptyList()
+        externalSubtitleError = null
+        externalSubtitleLoading = false
+        val subtitle = selectedDetectedSubtitle ?: return@LaunchedEffect
+        externalSubtitleLoading = true
+        try {
+            val text = loadSubtitleForPlayback(subtitle, userAgent)
+            val cues = withContext(Dispatchers.Default) { parseExternalSubtitle(text) }
+            if (cues.isEmpty()) externalSubtitleError = "No timed cues were found in this subtitle."
+            else externalSubtitleCues = cues
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) {
+            externalSubtitleError = error.message ?: "Could not load this subtitle."
+        } finally { externalSubtitleLoading = false }
+    }
 
     LaunchedEffect(state.audioOnly) { onAudioOnlyChanged(state.audioOnly) }
     DisposableEffect(controller, state.audioOnly, title, backgroundPlaybackEnabled) {
@@ -161,8 +206,8 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
         overlays.clear(); scrubbing = false; feedback = null; speedHold.stop(controller); holdingSpeed = false
         if (!state.controlsEnabled) locked = false
     }
-    LaunchedEffect(video.captions.isEmpty(), video.audioTracks.size > 1) {
-        if (video.captions.isEmpty()) overlays.clear()
+    LaunchedEffect(subtitleAvailable, video.audioTracks.size > 1) {
+        if (!subtitleAvailable) overlays.clear()
         if (video.audioTracks.size <= 1) audioPanel = false
     }
     LaunchedEffect(feedbackSequence) { if (feedback != null) { delay(1_000); feedback = null } }
@@ -197,6 +242,10 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val viewportHeight = maxHeight
                 if (state.audioOnly) Box(Modifier.fillMaxSize().background(Color.Black))
+                if (!state.audioOnly && selectedSubtitleUrl != null && externalSubtitleCues.isNotEmpty()) {
+                    BrowserDetectedSubtitleLayer(controller, owner, selectedSubtitleUrl,
+                        externalSubtitleCues, subtitleStyle, subtitleTypeface)
+                }
                 if (state.controlsEnabled) PlayerGestureSurface(locked, visible, landscape,
                     positionMs = { controller.state.value.let { s ->
                         val v = s.session?.state
@@ -266,7 +315,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                                         act { controller.setScale(BrowserVideoScale.valueOf(mode.name)) }
                                     },
                                     speedMenu, { speedMenu = it; interaction++ }, { rate -> speedMenu = false; act { controller.setSpeed(rate.toDouble()) } },
-                                    subtitleFocus, "Subtitles", true, if (video.captions.isNotEmpty()) ({ closeMenus(); overlays.open(PlayerOverlay.SUBTITLES); interaction++ }) else null,
+                                    subtitleFocus, "Subtitles", true, if (subtitleAvailable) ({ closeMenus(); overlays.open(PlayerOverlay.SUBTITLES); interaction++ }) else null,
                                     "Audio tracks", true, if (video.audioTracks.size > 1) ({ closeMenus(); audioPanel = true; interaction++ }) else null,
                                     "Quality", false, null,
                                     onAdjustmentsRequested = { closeMenus(); adjustments = true; interaction++ },
@@ -334,7 +383,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                     withFrameNanos { }
                     val current = controller.state.value
                     if (overlays.revision == revision && !overlays.isPresent && owner.matches(current) &&
-                        current.controlsEnabled && current.session?.state?.captions?.isNotEmpty() == true) {
+                        current.controlsEnabled && subtitleAvailable) {
                         runCatching { subtitleFocus.requestFocus() }
                     }
                 }
@@ -343,9 +392,29 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                     tracks = { contentModifier, _ ->
                         LazyColumn(contentModifier) {
                             state.message?.let { item("error") { Text(it, color = MaterialTheme.colorScheme.error) } }
-                            item("off") { PlayerSubtitleChoiceRow("Off", video.captions.none { it.selected }, { act { controller.selectCaption(null) } }) }
+                            externalSubtitleError?.let { error ->
+                                item("subtitle_error") { Text(error, color = MaterialTheme.colorScheme.error) }
+                            }
+                            if (externalSubtitleLoading) item("subtitle_loading") { Text("Loading subtitle…") }
+                            item("off") { PlayerSubtitleChoiceRow("Off", selectedSubtitleUrl == null && video.captions.none { it.selected }, {
+                                subtitleChoiceMade = true; selectedSubtitleUrl = null
+                                act { controller.selectCaption(null) }
+                            }) }
                             itemsIndexed(video.captions, key = { _, track -> track.id }) { index, track ->
-                                PlayerSubtitleChoiceRow(track.displayLabel("Subtitle", index), track.selected, { act { controller.selectCaption(track.id) } })
+                                PlayerSubtitleChoiceRow(track.displayLabel("Subtitle", index),
+                                    selectedSubtitleUrl == null && track.selected, {
+                                        subtitleChoiceMade = true; selectedSubtitleUrl = null
+                                        act { controller.selectCaption(track.id) }
+                                    })
+                            }
+                            if (detectedSubtitles.isNotEmpty()) {
+                                item("detected_heading") { Text("Detected subtitle files", style = MaterialTheme.typography.labelLarge) }
+                                itemsIndexed(detectedSubtitles, key = { _, item -> item.url }) { _, item ->
+                                    PlayerSubtitleChoiceRow(detectedSubtitleLabel(item), selectedSubtitleUrl == item.url, {
+                                        subtitleChoiceMade = true; selectedSubtitleUrl = item.url
+                                        if (video.captions.isNotEmpty()) act { controller.selectCaption(null) }
+                                    }, detail = item.pageUrl.substringAfter("://").substringBefore('/'))
+                                }
                             }
                         }
                     })

@@ -7,8 +7,13 @@ internal const val DETECTED_VTT_TRACK_ID = "miowser-vtt:"
 
 /** The caller supplies one tab's detections; embedded players can report a different frame URL. */
 internal fun detectedSubtitleTracks(video: DetectedMedia, detections: List<DetectedMedia>): List<DetectedMedia> {
+    return detectedSubtitlesForPage(video.pageUrl, detections).filter { it.url != video.url }
+}
+
+/** Subtitle resources observed in this browser tab, preferring the current page. */
+internal fun detectedSubtitlesForPage(pageUrl: String, detections: List<DetectedMedia>): List<DetectedMedia> {
     val candidates = detections.asSequence()
-        .filter { it.url != video.url && it.type == MediaType.SUBTITLE }
+        .filter { it.type == MediaType.SUBTITLE }
         .filter { subtitle ->
             val path = subtitle.url.substringBefore('?').substringBefore('#')
             listOf(".vtt", ".srt").any { path.endsWith(it, ignoreCase = true) ||
@@ -20,7 +25,7 @@ internal fun detectedSubtitleTracks(video: DetectedMedia, detections: List<Detec
         .distinctBy { it.url }
         .take(24)
         .toList()
-    val samePage = candidates.filter { it.pageUrl == video.pageUrl }
+    val samePage = candidates.filter { it.pageUrl == pageUrl }
     return samePage.ifEmpty { candidates }
 }
 
