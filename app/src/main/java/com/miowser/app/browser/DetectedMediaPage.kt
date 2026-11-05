@@ -64,7 +64,6 @@ import com.miowser.app.downloader.rendererResourceKind
 import com.miowser.app.grabber.DetectedMedia
 import com.miowser.app.grabber.DiscoveryProgress
 import com.miowser.app.grabber.MediaType
-import com.miowser.app.ui.miowserSheetSurface
 import com.miowser.app.ui.sheetVerticalEdgeFade
 import com.miowser.app.grabber.groupHlsRenditions
 import com.miowser.app.grabber.meetsMinimumDuration
@@ -197,7 +196,6 @@ fun DetectedMediaPage(
 
     if (showScanSettings) {
         ModalBottomSheet(onDismissRequest = { showScanSettings = false },
-            modifier = Modifier.miowserSheetSurface(MaterialTheme.colorScheme.outlineVariant),
             dragHandle = { com.miowser.app.ui.CompactSheetDragHandle() },
             shape = com.miowser.app.ui.MiowserBottomSheetShape) {
             Column(
@@ -459,7 +457,6 @@ internal fun SubtitleViewer(item: DetectedMedia, userAgent: String, onDismiss: (
         }
     }
     ModalBottomSheet(onDismissRequest = onDismiss,
-        modifier = Modifier.miowserSheetSurface(MaterialTheme.colorScheme.outlineVariant),
         dragHandle = { com.miowser.app.ui.CompactSheetDragHandle() },
         shape = com.miowser.app.ui.MiowserBottomSheetShape) {
         BoxWithConstraints {

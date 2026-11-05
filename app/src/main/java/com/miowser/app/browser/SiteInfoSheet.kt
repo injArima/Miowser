@@ -59,7 +59,6 @@ import com.miowser.app.adblock.SiteProtectionMode
 import com.miowser.app.ui.CompactSheetDragHandle
 import com.miowser.app.ui.ExpressiveSectionCard
 import com.miowser.app.ui.MiowserBottomSheetShape
-import com.miowser.app.ui.miowserSheetSurface
 import com.miowser.app.ui.sheetVerticalEdgeFade
 import java.text.DateFormat
 import kotlin.math.roundToInt
@@ -97,7 +96,6 @@ fun SiteInfoSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        modifier = Modifier.miowserSheetSurface(MaterialTheme.colorScheme.outlineVariant),
         dragHandle = { CompactSheetDragHandle() },
         shape = MiowserBottomSheetShape,
         containerColor = MaterialTheme.colorScheme.surface

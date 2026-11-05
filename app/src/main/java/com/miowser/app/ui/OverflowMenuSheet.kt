@@ -72,6 +72,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -203,7 +204,6 @@ fun OverflowMenuSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        modifier = Modifier.miowserSheetSurface(MaterialTheme.colorScheme.outlineVariant),
         sheetState = sheetState,
         sheetGesturesEnabled = false,
         dragHandle = {
@@ -237,6 +237,7 @@ fun OverflowMenuSheet(
         shape = MiowserBottomSheetShape
     ) {
       val contentModifier = Modifier.fillMaxWidth().heightIn(max = screenHeight * 0.88f)
+          .clipToBounds()
           .pointerInput(expanded, editMode) {
               if (!expanded && !editMode) {
                   var drag = 0f

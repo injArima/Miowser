@@ -50,7 +50,6 @@ fun LinkContextMenu(
 ) {
     var selectingText by remember(url, linkText) { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = onDismiss,
-        modifier = Modifier.miowserSheetSurface(MaterialTheme.colorScheme.outlineVariant),
         dragHandle = { CompactSheetDragHandle() },
         shape = MiowserBottomSheetShape) {
         if (selectingText && !linkText.isNullOrBlank()) {

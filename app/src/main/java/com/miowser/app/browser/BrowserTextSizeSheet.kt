@@ -23,7 +23,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.miowser.app.ui.CompactSheetDragHandle
 import com.miowser.app.ui.MiowserBottomSheetShape
-import com.miowser.app.ui.miowserSheetSurface
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -34,7 +33,6 @@ internal fun BrowserTextSizeSheet(
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss,
-        modifier = Modifier.miowserSheetSurface(MaterialTheme.colorScheme.outlineVariant),
         dragHandle = { CompactSheetDragHandle() }, shape = MiowserBottomSheetShape) {
         Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {

@@ -1,20 +1,29 @@
 package com.miowser.app.ui
 
 import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.border
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 
-/** Clip sheet contents at the curved top edge and paint the rim over them. */
-fun Modifier.miowserSheetSurface(outline: Color): Modifier =
-    clip(MiowserBottomSheetShape)
-        .border(1.dp, outline.copy(alpha = 0.32f), MiowserBottomSheetShape)
+/** Draw only the top rim; the Material sheet keeps ownership of its shape and layout. */
+fun Modifier.sheetTopRim(outline: Color): Modifier = drawWithContent {
+    drawContent()
+    val radius = 28.dp.toPx().coerceAtMost(size.width / 2f).coerceAtMost(size.height)
+    if (radius <= 0f) return@drawWithContent
+    val rim = Path().apply {
+        moveTo(0f, radius)
+        quadraticTo(0f, 0f, radius, 0f)
+        lineTo(size.width - radius, 0f)
+        quadraticTo(size.width, 0f, size.width, radius)
+    }
+    drawPath(rim, outline.copy(alpha = 0.32f), style = Stroke(width = 1.dp.toPx()))
+}
 
 /** Place this outside verticalScroll so the fade stays fixed to its viewport. */
 fun Modifier.sheetVerticalEdgeFade(scroll: ScrollState, surface: Color): Modifier =

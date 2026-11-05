@@ -20,7 +20,9 @@ val MiowserBottomSheetShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.d
 @Composable
 fun CompactSheetDragHandle() {
     Box(
-        modifier = Modifier.fillMaxWidth().padding(top = 7.dp, bottom = 18.dp),
+        modifier = Modifier.fillMaxWidth()
+            .sheetTopRim(MaterialTheme.colorScheme.outlineVariant)
+            .padding(top = 7.dp, bottom = 18.dp),
         contentAlignment = Alignment.Center
     ) {
         Box(
