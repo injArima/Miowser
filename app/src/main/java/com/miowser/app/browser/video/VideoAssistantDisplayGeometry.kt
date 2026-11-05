@@ -1,6 +1,6 @@
 package com.miowser.app.browser.video
 
-/** Runtime-only normalized coordinates for a main-frame WebView visual viewport. */
+/** Runtime-only normalized coordinates for the WebView visual viewport. */
 internal data class VideoAssistantDisplayGeometry(
     val version: Long,
     val left: Double,
@@ -8,13 +8,18 @@ internal data class VideoAssistantDisplayGeometry(
     val width: Double,
     val height: Double,
     val viewportWidth: Double,
-    val viewportHeight: Double
+    val viewportHeight: Double,
+    val pressX: Double? = null,
+    val pressY: Double? = null
 ) {
     fun fits(viewWidth: Int, viewHeight: Int): Boolean {
         if (version !in 1..9_007_199_254_740_991L || viewWidth <= 0 || viewHeight <= 0 ||
             listOf(left, top, width, height, viewportWidth, viewportHeight).any { !it.isFinite() } ||
             left < 0 || top < 0 || width <= 0 || height <= 0 || left + width > 1.001 || top + height > 1.001 ||
-            viewportWidth !in 1.0..32768.0 || viewportHeight !in 1.0..32768.0) return false
+            viewportWidth !in 1.0..32768.0 || viewportHeight !in 1.0..32768.0 ||
+            (pressX == null) != (pressY == null) ||
+            (pressX != null && pressY != null &&
+                (pressX !in 0.0..1.0 || pressY !in 0.0..1.0))) return false
         val scaleX = viewWidth / viewportWidth
         val scaleY = viewHeight / viewportHeight
         val hitWidth = width * viewWidth

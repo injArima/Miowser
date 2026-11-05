@@ -1,6 +1,6 @@
 package com.miowser.app.browser.video
 
-/** Per-document telemetry and a frame-local button. No URL extraction or native-player handoff. */
+/** Per-document telemetry and frame-aware browser-session playback. */
 internal const val LIVE_VIDEO_SESSION_SCRIPT = """
 (function () {
     'use strict';
@@ -15,6 +15,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
     var controls = null, fullscreenSerial = 0, lifecycleSerial = -1;
     var trackIds = new WeakMap(), nextTrackId = 0;
     var listeners = [];
+    var frameRoutes = new Map();
     var MAX_VIDEOS = 8, UPDATE_MS = 500;
 
     function send(message) {
@@ -23,7 +24,127 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             if (text.length <= 24576) bridge.postMessage(text);
         } catch (ignored) {}
     }
-    function hello() { if (videos.size > 0) send({type: 'hello', documentId: documentId}); }
+    function hello() {
+        if (videos.size > 0 || frameRoutes.size > 0) send({type: 'hello', documentId: documentId});
+    }
+    function childFrame(source) {
+        var frames = document.querySelectorAll('iframe,frame');
+        for (var i = 0; i < Math.min(frames.length, 32); i++) {
+            if (frames[i].contentWindow === source) return frames[i];
+        }
+        return null;
+    }
+    function routeFrame(document, message) {
+        var route = frameRoutes.get(document);
+        if (route) route.source.postMessage(message, '*');
+        else if (window !== window.top && message.miowserVideoPrepare)
+            window.parent.postMessage({miowserVideoPrepared: true, documentId: document,
+                elementId: message.elementId, version: message.version, request: message.request,
+                ok: false}, '*');
+    }
+    function onFrameMessage(event) {
+        var data = event.data;
+        if (!running || !data || typeof data !== 'object' ||
+            typeof data.documentId !== 'string' || data.documentId.length < 1 || data.documentId.length > 80) return;
+        if (event.source === window.parent && window !== window.top) {
+            if (data.miowserVideoPrepare === true || data.miowserVideoCancel === true) {
+                if (!Number.isSafeInteger(data.request) || data.request < 1 ||
+                    !Number.isSafeInteger(data.version) || data.version < 1) return;
+                if (data.documentId === documentId) {
+                    if (data.miowserVideoCancel === true) assistant && assistant.embeddedCancel(data.request);
+                    else {
+                        var prepared = assistant && assistant.embeddedPress(data.request, data.elementId);
+                        window.parent.postMessage({miowserVideoPrepared: true, documentId: documentId,
+                            elementId: data.elementId, version: data.version, request: data.request, ok: !!prepared,
+                            x: prepared && prepared.x, y: prepared && prepared.y,
+                            width: prepared && prepared.width, height: prepared && prepared.height}, '*');
+                    }
+                } else routeFrame(data.documentId, data);
+            }
+            return;
+        }
+        var frame = childFrame(event.source);
+        if (!frame) return;
+        if (data.miowserVideoPrepared === true) {
+            var pending = frameRoutes.get(data.documentId);
+            if (!pending || pending.source !== event.source) return;
+            if (data.elementId !== pending.elementId) return;
+            if (data.ok === true) {
+                var preparedRect = frame.getBoundingClientRect();
+                if (![data.x, data.y, data.width, data.height].every(Number.isFinite) ||
+                    data.width <= 0 || data.height <= 0 || data.x < 0 || data.y < 0 ||
+                    data.x > data.width || data.y > data.height) data.ok = false;
+                else {
+                    data.x = preparedRect.left + data.x * preparedRect.width / data.width;
+                    data.y = preparedRect.top + data.y * preparedRect.height / data.height;
+                    data.width = window.innerWidth; data.height = window.innerHeight;
+                    var preparedView = window.visualViewport;
+                    var vx = preparedView ? preparedView.offsetLeft : 0;
+                    var vy = preparedView ? preparedView.offsetTop : 0;
+                    var vw = preparedView ? preparedView.width : window.innerWidth;
+                    var vh = preparedView ? preparedView.height : window.innerHeight;
+                    if (data.x < vx || data.x > vx + vw || data.y < vy || data.y > vy + vh)
+                        data.ok = false;
+                }
+            }
+            if (window === window.top) {
+                if (assistant) assistant.externalPressReady(data.documentId, data.elementId, data.version, data.request,
+                    data.ok === true, data.x, data.y);
+            } else window.parent.postMessage(data, '*');
+            return;
+        }
+        if (data.miowserVideoFrame !== true) return;
+        var previous = frameRoutes.get(data.documentId);
+        if (data.active !== true) {
+            if (previous && previous.source === event.source) {
+                clearTimeout(previous.timeout); frameRoutes.delete(data.documentId);
+                if (window === window.top) {
+                    if (assistant) assistant.externalCandidate({documentId: data.documentId, active: false});
+                } else window.parent.postMessage(data, '*');
+                schedule();
+            }
+            return;
+        }
+        if (frameRoutes.size >= 8 && !previous) return;
+        if (typeof data.elementId !== 'string' || data.elementId.length < 1 || data.elementId.length > 80) return;
+        if (![data.x, data.y, data.width, data.height, data.area].every(Number.isFinite) ||
+            data.width <= 0 || data.height <= 0 || data.width > 32768 || data.height > 32768 ||
+            data.x < 0 || data.y < 0 || data.x > data.width || data.y > data.height ||
+            data.area < 0 || data.area > 1073741824) return;
+        var rect = frame.getBoundingClientRect();
+        var x = rect.left + data.x * rect.width / data.width;
+        var y = rect.top + data.y * rect.height / data.height;
+        var view = window.visualViewport;
+        var left = view ? view.offsetLeft : 0, top = view ? view.offsetTop : 0;
+        var right = left + (view ? view.width : window.innerWidth);
+        var bottom = top + (view ? view.height : window.innerHeight);
+        if (rect.width < 120 || rect.height < 80 || x < rect.left || x > rect.right ||
+            y < rect.top || y > rect.bottom || x < left || x > right || y < top || y > bottom) return;
+        if (previous) clearTimeout(previous.timeout);
+        var route = {source: event.source, elementId: data.elementId, timeout: null};
+        route.timeout = setTimeout(function () {
+            if (frameRoutes.get(data.documentId) !== route) return;
+            frameRoutes.delete(data.documentId);
+            if (window === window.top) {
+                if (assistant) assistant.externalCandidate({documentId: data.documentId, active: false});
+            } else window.parent.postMessage({miowserVideoFrame: true, documentId: data.documentId,
+                active: false}, '*');
+            schedule();
+        }, 4000);
+        frameRoutes.set(data.documentId, route);
+        var mapped = {miowserVideoFrame: true, documentId: data.documentId, active: true,
+            x: x, y: y, width: window.innerWidth, height: window.innerHeight,
+            area: data.area * rect.width * rect.height / (data.width * data.height), elementId: data.elementId};
+        if (window === window.top) {
+            if (!binding) hello();
+            if (assistant) {
+                assistant.externalCandidate({documentId: data.documentId, elementId: data.elementId, active: true,
+                    embedded: true, target: {x: x, y: y}, area: mapped.area, seenAt: performance.now()});
+                assistant.lease();
+            }
+            schedule();
+        } else window.parent.postMessage(mapped, '*');
+    }
     function finite(value) { return Number.isFinite(value) ? value : null; }
     function trackId(track) {
         var id = trackIds.get(track);
@@ -102,7 +223,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         if (!running || !binding) return;
         packet('state');
         lastSent = performance.now();
-        if (videos.size === 0) {
+        if (videos.size === 0 && frameRoutes.size === 0) {
             send({type: 'retire', documentId: documentId, navigation: binding.navigation, token: binding.token});
             binding = null;
             clearInterval(heartbeat);
@@ -195,8 +316,32 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             },
             pressReady: function (data) {
                 if (!running || !binding) return;
-                send({type: 'assistantPressReady', documentId: documentId, navigation: binding.navigation,
-                    token: binding.token, version: data.version, request: data.request, ok: data.ok});
+                var reply = {type: 'assistantPressReady', documentId: documentId, navigation: binding.navigation,
+                    token: binding.token, version: data.version, request: data.request, ok: data.ok};
+                if (data.ok && Number.isFinite(data.pressX) && Number.isFinite(data.pressY)) {
+                    reply.pressX = data.pressX; reply.pressY = data.pressY;
+                }
+                send(reply);
+            },
+            frameCandidate: function (candidate) {
+                if (window === window.top) return;
+                var message = {miowserVideoFrame: true, documentId: documentId, active: !!candidate};
+                if (candidate) Object.keys(candidate).forEach(function (key) { message[key] = candidate[key]; });
+                window.parent.postMessage(message, '*');
+            },
+            prepareExternal: function (document, elementId, version, request) {
+                if (!frameRoutes.has(document)) {
+                    if (assistant) assistant.externalPressReady(document, elementId, version, request, false);
+                } else routeFrame(document, {miowserVideoPrepare: true, documentId: document,
+                    elementId: elementId, version: version, request: request});
+            },
+            cancelExternal: function (document, request) {
+                routeFrame(document, {miowserVideoCancel: true, documentId: document,
+                    version: 1, request: request});
+            },
+            lease: function (version) {
+                if (binding) send({type: 'assistantLease', documentId: documentId,
+                    navigation: binding.navigation, token: binding.token, version: version});
             },
             entering: function () { return ++fullscreenSerial; },
             fullscreen: function (record, attempt, active) {
@@ -264,6 +409,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             watch(video);
         }, true);
         listen(document, 'visibilitychange', visibility);
+        listen(window, 'message', onFrameMessage);
         function scrollDisplay() { if (assistant) assistant.scroll(); schedule(); }
         function layoutDisplay() { if (assistant) assistant.layoutChanged(); schedule(); }
         listen(document, 'pointerup', function (event) { if (assistant) assistant.wake(event); }, {passive: true});
@@ -294,6 +440,8 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         observer = intersection = resize = null;
         videos.forEach(function (record) { record.cleanups.forEach(function (cleanup) { cleanup(); }); });
         videos.clear();
+        frameRoutes.forEach(function (route) { clearTimeout(route.timeout); });
+        frameRoutes.clear();
         listeners.forEach(function (cleanup) { cleanup(); });
         listeners = [];
         binding = null;

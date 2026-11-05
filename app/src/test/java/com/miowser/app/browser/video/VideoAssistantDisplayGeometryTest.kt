@@ -25,6 +25,14 @@ class VideoAssistantDisplayGeometryTest {
             geometry.copy(viewportWidth = Double.POSITIVE_INFINITY), geometry.copy(version = -1))
             .forEach { assertFalse(it.fits(1080, 1971)) }
     }
+    @Test fun embeddedPressTargetMustStayInsideTheCurrentViewport() {
+        assertTrue(geometry().copy(pressX = .25, pressY = .75).fits(1080, 1971))
+        listOf(geometry().copy(pressX = .25), geometry().copy(pressY = .75),
+            geometry().copy(pressX = -.1, pressY = .5),
+            geometry().copy(pressX = .5, pressY = Double.NaN),
+            geometry().copy(pressX = .5, pressY = 1.1))
+            .forEach { assertFalse(it.fits(1080, 1971)) }
+    }
     @Test fun portraitMetadataIsRejectedAfterRotationUntilNewGeometryArrives() {
         assertFalse(geometry().fits(1971, 1080))
         assertTrue(VideoAssistantDisplayGeometry(2, .5, .5, 60.0 / 700.8,

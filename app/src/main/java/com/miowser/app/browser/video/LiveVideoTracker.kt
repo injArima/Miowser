@@ -14,9 +14,6 @@ import org.json.JSONObject
 import java.util.IdentityHashMap
 import java.util.UUID
 
-internal fun videoAssistantButtonEnabledForFrame(enabled: Boolean, mainFrame: Boolean): Boolean =
-    enabled && mainFrame
-
 /** Frame-bound telemetry, commands and recovery for the optional browser-backed player. */
 internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     initialButtonPolicy: VideoAssistantButtonPolicy = VideoAssistantButtonPolicy(),
@@ -141,17 +138,26 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
                     }
                     val geometry = VideoAssistantDisplayGeometry(version, json.optDouble("left"), json.optDouble("top"),
                         json.optDouble("width"), json.optDouble("height"), json.optDouble("viewportWidth"),
-                        json.optDouble("viewportHeight"))
+                        json.optDouble("viewportHeight"),
+                        json.optDouble("pressX").takeIf { json.has("pressX") },
+                        json.optDouble("pressY").takeIf { json.has("pressY") })
                     display.present(geometry, android.graphics.Color.parseColor(buttonPolicy.background),
                         android.graphics.Color.parseColor(buttonPolicy.foreground), buttonPolicy.reducedMotion) { ok ->
                         if (nativeDisplay === display && channels[proxy] === channel && displayVersion == version)
                             displayReply("nativeDisplayReady", version, ok)
                     }
                 }
+                "assistantLease" -> {
+                    if (mainFrame && channel.mainFrame && buttonPolicy.enabled &&
+                        displayChannel?.first === proxy && displayChannel?.second === channel &&
+                        json.optLong("version", -1) == displayVersion) nativeDisplay?.keepAlive()
+                }
                 "assistantPressReady" -> {
                     if (!mainFrame || !channel.mainFrame || !buttonPolicy.enabled ||
                         displayChannel?.first !== proxy || json.optLong("version", -1) != displayVersion) return
-                    nativeDisplay?.acknowledgePress(displayVersion, json.optLong("request", -1), json.optBoolean("ok"))
+                    nativeDisplay?.acknowledgePress(displayVersion, json.optLong("request", -1), json.optBoolean("ok"),
+                        json.optDouble("pressX").takeIf { json.has("pressX") },
+                        json.optDouble("pressY").takeIf { json.has("pressY") })
                 }
                 "state", "retire", "fullscreenError", "fullscreenActive", "fullscreenEnded", "fullscreenResumed", "controlStarted", "controlAck" -> {
                     if (type == "fullscreenError") {
@@ -277,10 +283,10 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
         }
     }
 
-    private fun policyJson(channel: Channel) = JSONObject().put("enabled",
-        videoAssistantButtonEnabledForFrame(buttonPolicy.enabled, channel.mainFrame))
+    private fun policyJson(channel: Channel) = JSONObject().put("enabled", buttonPolicy.enabled)
         .put("background", buttonPolicy.background).put("foreground", buttonPolicy.foreground)
         .put("reducedMotion", buttonPolicy.reducedMotion)
+        .put("embedded", !channel.mainFrame)
         .put("nativeDisplay", nativeDisplay != null && channel.mainFrame)
         .put("screenRightInset", BrowserFloatingActionLayout.VIDEO_RIGHT_INSET_DP)
         .put("screenBottomInset", BrowserFloatingActionLayout.VIDEO_BOTTOM_INSET_DP)

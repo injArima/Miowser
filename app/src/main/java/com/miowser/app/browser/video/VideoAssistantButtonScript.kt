@@ -1,6 +1,6 @@
 package com.miowser.app.browser.video
 
-/** Main-document bridge for the native screen-anchored action and its trusted fullscreen click. */
+/** Frame-local media selection with one screen-anchored native action. */
 internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
 (function () {
     'use strict';
@@ -10,6 +10,9 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         var restore = null, entryTimeout = null;
         var displayVersion = 0, displayKey = '', nativeReady = false, focused = false;
         var pressGuard = null, pressTimer = null;
+        var external = new Map(), frameCandidateVisible = false, lastFrameCandidateAt = 0,
+            lastFrameCandidateId = null;
+        var pendingExternal = null;
         function cancelPress() {
             if (pressTimer !== null) clearTimeout(pressTimer); pressTimer = null;
             pressGuard = null;
@@ -27,7 +30,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             // Block site handlers/default link navigation even if its DOM hit changed.
             event.stopImmediatePropagation();
             if (event.type === 'click') {
-                event.preventDefault(); cancelPress(); click(event);
+                event.preventDefault(); cancelPress(); click(event, guard.record);
             }
         }
         var guardedEvents = ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'mousedown', 'mouseup', 'click'];
@@ -38,18 +41,24 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         function cancelAnimation() {
             if (animation) animation.cancel(); animation = null;
         }
-        function nativeDisplay(visible, fade, x, y, size, view) {
+        function nativeDisplay(visible, fade, x, y, size, view, target) {
             if (!policy.nativeDisplay || !api.display) return;
             var data = {visible: visible, fade: !!fade};
             if (visible) {
                 data.left = (x - view.left) / view.width; data.top = (y - view.top) / view.height;
                 data.width = size / view.width; data.height = size / view.height;
                 data.viewportWidth = view.width; data.viewportHeight = view.height;
+                if (target) {
+                    data.pressX = (target.x - view.left) / view.width;
+                    data.pressY = (target.y - view.top) / view.height;
+                }
             }
             var key = JSON.stringify(data) + policy.background + policy.foreground + policy.reducedMotion;
             if (key === displayKey) return;
             displayKey = key; data.version = ++displayVersion; nativeReady = false;
-            if (visible && button) { cancelAnimation(); button.style.setProperty('opacity', '1'); }
+            if (visible && button && !(selected && selected.embedded)) {
+                cancelAnimation(); button.style.setProperty('opacity', '1');
+            }
             api.display(data);
         }
         function wake(event) {
@@ -134,9 +143,14 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         }
         function hide() {
             cancelPress();
+            if (pendingExternal && api.cancelExternal) api.cancelExternal(pendingExternal.documentId, pendingExternal.request);
+            pendingExternal = null;
             selected = null;
             focused = false;
             cancelAnimation(); nativeDisplay(false, false);
+            if (policy.embedded && frameCandidateVisible && api.frameCandidate) {
+                frameCandidateVisible = false; lastFrameCandidateId = null; api.frameCandidate(null);
+            }
             if (button) {
                 button.hidden = true; button.disabled = true;
                 setStyles(button, {'visibility': 'hidden', 'pointer-events': 'none'});
@@ -155,6 +169,8 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             return {left: rect.left, top: rect.top, right: rect.left + rect.width, bottom: rect.top + rect.height};
         }
         function eligible(record) {
+            if (record.embedded) return performance.now() - record.seenAt < 3500 &&
+                record.target && Number.isFinite(record.target.x) && Number.isFinite(record.target.y);
             var video = record.video;
             // Mirror Samsung's inspected assistant gate: the selected media client must be
             // actively playing and audible. Muted autoplay previews therefore never qualify.
@@ -247,10 +263,11 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             api.failed();
             schedule();
         }
-        function click(event) {
+        function click(event, expected) {
             // Page scripts cannot programmatically activate this action.
             if (!event.isTrusted || disposed || pending || !policy.enabled || !api.bound() ||
-                document.fullscreenElement || !selected || !eligible(selected)) return;
+                document.fullscreenElement || !selected || selected.embedded ||
+                (expected && selected !== expected) || !eligible(selected)) return;
             var view = viewport(), currentBox = clip(selected, view);
             if ((currentBox.right - currentBox.left) * view.scale < 120 ||
                 (currentBox.bottom - currentBox.top) * view.scale < 80) { hide(); return; }
@@ -344,7 +361,32 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                     best = record; bestScore = score; bestInteraction = interaction;
                 }
             });
-            if (!best) { hide(); return; }
+            if (policy.embedded) {
+                selected = best;
+                if (!best) { hide(); return; }
+                var videoBox = clip(best), visibleLeft = Math.max(videoBox.left, view.left),
+                    visibleTop = Math.max(videoBox.top, view.top),
+                    visibleRight = Math.min(videoBox.right, view.left + view.width),
+                    visibleBottom = Math.min(videoBox.bottom, view.top + view.height);
+                if (visibleRight - visibleLeft < 120 / view.scale ||
+                    visibleBottom - visibleTop < 80 / view.scale) { hide(); return; }
+                if (api.frameCandidate && (performance.now() - lastFrameCandidateAt >= 900 ||
+                    !frameCandidateVisible || lastFrameCandidateId !== best.id)) {
+                    lastFrameCandidateAt = performance.now(); frameCandidateVisible = true;
+                    lastFrameCandidateId = best.id;
+                    api.frameCandidate({x: (visibleLeft + visibleRight) / 2,
+                        y: (visibleTop + visibleBottom) / 2, width: window.innerWidth,
+                        height: window.innerHeight, area: bestScore, elementId: best.id});
+                }
+                return;
+            }
+            external.forEach(function (candidate, id) {
+                if (!eligible(candidate)) { external.delete(id); return; }
+                if (!best || (best.embedded && candidate.area > bestScore)) {
+                    best = candidate; bestScore = candidate.area;
+                }
+            });
+            if (!best || (best.embedded && !policy.nativeDisplay)) { hide(); return; }
             makeButton();
             if (!host.isConnected) document.documentElement.appendChild(host);
             var size = 60 / view.scale;
@@ -361,19 +403,19 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             var appearing = button.hidden;
             setStyles(button, {'left': x + 'px', 'top': y + 'px',
                 'width': size + 'px', 'height': size + 'px', 'color': policy.foreground,
-                'visibility': 'visible', 'pointer-events': 'auto'});
+                'visibility': 'visible', 'pointer-events': best.embedded ? 'none' : 'auto'});
             setStyles(plate, {'width': (48 / view.scale) + 'px', 'height': (48 / view.scale) + 'px',
                 'background-color': policy.background});
             setStyles(icon, {'width': (28 / view.scale) + 'px', 'height': (28 / view.scale) + 'px'});
             selected = best;
             button.hidden = false; button.disabled = false;
             if (appearing) {
-                cancelAnimation(); button.style.setProperty('opacity', '1');
-                if (!reduced() && button.animate) animation = button.animate(
+                cancelAnimation(); button.style.setProperty('opacity', best.embedded ? '0' : '1');
+                if (!best.embedded && !reduced() && button.animate) animation = button.animate(
                     [{opacity: 0}, {opacity: 1}], {duration: 300, easing: 'ease-out'});
             }
             if (focused) nativeDisplay(false, false);
-            else nativeDisplay(true, false, x, y, size, view);
+            else nativeDisplay(true, false, x, y, size, view, best.embedded ? best.target : null);
         }
         function schedule() {
             if (disposed) return;
@@ -400,12 +442,14 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             nativeReady: function (version, ok) {
                 if (version !== displayVersion || !policy.nativeDisplay || !selected || !button || button.hidden) return;
                 nativeReady = ok === true;
+                if (!nativeReady && selected.embedded) { hide(); return; }
                 cancelAnimation(); button.style.setProperty('opacity', nativeReady ? '0' : '1');
             },
             nativeLost: function () {
                 cancelPress();
                 nativeReady = false; displayKey = '';
-                if (button && selected && !button.hidden) button.style.setProperty('opacity', '1');
+                if (button && selected && !selected.embedded && !button.hidden)
+                    button.style.setProperty('opacity', '1');
                 schedule();
             },
             nativePress: function (version, request) {
@@ -413,8 +457,15 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                     policy.nativeDisplay && nativeReady && selected && eligible(selected) &&
                     button && !button.hidden && !button.disabled && !pending && !document.fullscreenElement;
                 cancelPress();
+                if (ok && selected.embedded) {
+                    pendingExternal = {documentId: selected.documentId, elementId: selected.elementId,
+                        version: version, request: request};
+                    if (api.prepareExternal) api.prepareExternal(selected.documentId, selected.elementId, version, request);
+                    return;
+                }
                 if (ok) {
-                    pressGuard = {request: request, left: parseFloat(button.style.left), top: parseFloat(button.style.top)};
+                    pressGuard = {request: request, record: selected,
+                        left: parseFloat(button.style.left), top: parseFloat(button.style.top)};
                     pressGuard.right = pressGuard.left + parseFloat(button.style.width);
                     pressGuard.bottom = pressGuard.top + parseFloat(button.style.height);
                     pressTimer = setTimeout(cancelPress, 1500);
@@ -422,6 +473,52 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 if (api.pressReady) api.pressReady({version: version, request: request, ok: !!ok});
             },
             nativePressCancel: function (request) {
+                if (pendingExternal && pendingExternal.request === request) {
+                    if (api.cancelExternal) api.cancelExternal(pendingExternal.documentId, request);
+                    pendingExternal = null;
+                }
+                if (pressGuard && pressGuard.request === request) cancelPress();
+            },
+            externalCandidate: function (candidate) {
+                if (candidate.active) external.set(candidate.documentId, candidate);
+                else external.delete(candidate.documentId);
+                schedule();
+            },
+            lease: function () {
+                if (selected && selected.embedded && policy.nativeDisplay && api.lease)
+                    api.lease(displayVersion);
+            },
+            externalPressReady: function (documentId, elementId, version, request, ok, x, y) {
+                if (!pendingExternal || pendingExternal.documentId !== documentId ||
+                    pendingExternal.elementId !== elementId || pendingExternal.version !== version ||
+                    pendingExternal.request !== request) return;
+                pendingExternal = null;
+                var view = viewport();
+                var pressX = (x - view.left) / view.width, pressY = (y - view.top) / view.height;
+                if (api.pressReady) api.pressReady({version: version, request: request,
+                    ok: !!ok && version === displayVersion && selected && selected.documentId === documentId &&
+                        selected.elementId === elementId &&
+                        pressX >= 0 && pressX <= 1 && pressY >= 0 && pressY <= 1,
+                    pressX: pressX, pressY: pressY});
+            },
+            embeddedPress: function (request, elementId) {
+                var record = selected;
+                if (!policy.embedded || !policy.enabled || !api.bound() || !record ||
+                    record.id !== elementId || !eligible(record) ||
+                    !Number.isSafeInteger(request) || request < 1) return null;
+                var box = clip(record), view = viewport();
+                var left = Math.max(box.left, view.left), right = Math.min(box.right, view.left + view.width),
+                    top = Math.max(box.top, view.top), bottom = Math.min(box.bottom, view.top + view.height);
+                if (right - left < 120 / view.scale || bottom - top < 80 / view.scale) return null;
+                var x = (left + right) / 2, y = (top + bottom) / 2;
+                if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+                cancelPress();
+                pressGuard = {request: request, record: record,
+                    left: x - 12, right: x + 12, top: y - 12, bottom: y + 12};
+                pressTimer = setTimeout(cancelPress, 1500);
+                return {x: x, y: y, width: window.innerWidth, height: window.innerHeight};
+            },
+            embeddedCancel: function (request) {
                 if (pressGuard && pressGuard.request === request) cancelPress();
             },
             policy: function (next) {
@@ -430,6 +527,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                     background: next && /^#[0-9a-f]{6}$/i.test(next.background) ? next.background : '#303038',
                     foreground: next && /^#[0-9a-f]{6}$/i.test(next.foreground) ? next.foreground : '#FFFFFF',
                     reducedMotion: next && next.reducedMotion === true,
+                    embedded: next && next.embedded === true,
                     nativeDisplay: next && next.nativeDisplay === true,
                     screenRightInset: next && Number.isFinite(next.screenRightInset) && next.screenRightInset >= 0 && next.screenRightInset <= 256 ? next.screenRightInset : 10,
                     screenBottomInset: next && Number.isFinite(next.screenBottomInset) && next.screenBottomInset >= 0 && next.screenBottomInset <= 256 ? next.screenBottomInset : 70};

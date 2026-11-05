@@ -12,9 +12,7 @@ class VideoAssistantButtonScriptTest {
     }
 
     @Test
-    fun `deprecated frame-local presentation is absent`() {
+    fun `deprecated frame local presentation is absent`() {
         assertFalse(VIDEO_ASSISTANT_BUTTON_SCRIPT.contains("frameConstrained"))
-        assertTrue(videoAssistantButtonEnabledForFrame(enabled = true, mainFrame = true))
-        assertFalse(videoAssistantButtonEnabledForFrame(enabled = true, mainFrame = false))
     }
 }

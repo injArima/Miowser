@@ -34,6 +34,7 @@ internal class NativeVideoAssistantDisplay(context: Context) : FrameLayout(conte
     private var expiry: Runnable? = null
     private var onLost: (() -> Unit)? = null
     private val hit = RectF()
+    private var pressPoint: android.graphics.PointF? = null
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
     private var visibleVersion: Long? = null
     private var presentationReady = false
@@ -68,6 +69,9 @@ internal class NativeVideoAssistantDisplay(context: Context) : FrameLayout(conte
         hit.set((geometry.left * width).toFloat(), (geometry.top * height).toFloat(),
             ((geometry.left + geometry.width) * width).toFloat(),
             ((geometry.top + geometry.height) * height).toFloat())
+        pressPoint = if (geometry.pressX != null && geometry.pressY != null)
+            android.graphics.PointF((geometry.pressX * width).toFloat(), (geometry.pressY * height).toFloat())
+        else null
         val size = (hitWidth * BrowserFloatingActionLayout.VIDEO_FACE_DP / BrowserFloatingActionLayout.VIDEO_TOUCH_DP).roundToInt()
         if (face.layoutParams.width != size || face.layoutParams.height != size) face.layoutParams = LayoutParams(size, size)
         face.x = (geometry.left * width + (hitWidth - size) / 2).toFloat()
@@ -105,6 +109,7 @@ internal class NativeVideoAssistantDisplay(context: Context) : FrameLayout(conte
     fun dismiss(animate: Boolean) {
         cancelPress()
         visibleVersion = null
+        pressPoint = null
         presentationReady = false
         generation++
         expiry?.let(::removeCallbacks)
@@ -138,7 +143,11 @@ internal class NativeVideoAssistantDisplay(context: Context) : FrameLayout(conte
             if (version != null && inputTarget != null && sendInput != null) {
                 press = Press(version, ++nextPress, MotionEvent.obtainNoHistory(event))
                 renewExpiry()
-                pressTimeout = Runnable { cancelPress() }.also { postDelayed(it, 700) }
+                // A frame-owned player needs an extra bounded message round trip before
+                // Chromium receives this same physical gesture.
+                pressTimeout = Runnable { cancelPress() }.also {
+                    postDelayed(it, if (pressPoint == null) 700 else 1_500)
+                }
                 preparePress()
             }
             return true
@@ -165,10 +174,15 @@ internal class NativeVideoAssistantDisplay(context: Context) : FrameLayout(conte
         return true
     }
 
-    fun acknowledgePress(version: Long, request: Long, ok: Boolean) {
+    fun acknowledgePress(version: Long, request: Long, ok: Boolean, pressX: Double? = null, pressY: Double? = null) {
         val current = press ?: return
         if (!current.requested || current.version != version || current.request != request) return
-        if (!ok || visibleVersion != version) { cancelPress(); return }
+        if (!ok || visibleVersion != version || (pressX == null) != (pressY == null) ||
+            (pressX != null && pressY != null && (pressX !in 0.0..1.0 || pressY !in 0.0..1.0))) {
+            cancelPress(); return
+        }
+        if (pressX != null && pressY != null) pressPoint = android.graphics.PointF(
+            (pressX * width).toFloat(), (pressY * height).toFloat())
         current.ready = true
         forwardPress()
     }
@@ -195,7 +209,10 @@ internal class NativeVideoAssistantDisplay(context: Context) : FrameLayout(conte
             // These are copies of this gesture's real DOWN/UP, with original timing and
             // source. Chromium generates the trusted click; never call JavaScript click().
             if (target.isAttachedToWindow) for (event in listOf(current.down, up)) {
-                event.offsetLocation((here[0] - there[0]).toFloat(), (here[1] - there[1]).toFloat())
+                val point = pressPoint
+                if (point == null) event.offsetLocation((here[0] - there[0]).toFloat(), (here[1] - there[1]).toFloat())
+                else event.offsetLocation(point.x - event.x + here[0] - there[0],
+                    point.y - event.y + here[1] - there[1])
                 target.dispatchTouchEvent(event)
             }
         } finally {

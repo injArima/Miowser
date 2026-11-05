@@ -27,9 +27,11 @@ Recorded from the user's instruction on 2026-10-25.
 - Anchor the native floating button to the browser screen, directly above the
   reserved Jump-to-top slot, even when Jump to top is hidden. Keep the 48 dp face,
   60 dp touch target and 28 dp mark. Do not show a second, frame-local DOM button.
-- Qualify the action from an actively playing, audible main-document video. Muted
-  autoplay previews, paused/ended videos, hidden pages and embedded-frame-only
-  videos do not get a button. Keep the screen anchor while the qualified video
-  scrolls offscreen; do not auto-hide it merely because of inactivity.
+- Qualify the action from actively playing, audible video. Muted autoplay previews,
+  paused/ended videos and hidden pages do not get a button. Embedded-frame playback
+  may show the same screen-anchored action when its live frame can receive the
+  physical tap and enter fullscreen in one step. Keep the screen anchor while a
+  qualified main-document video scrolls offscreen; do not auto-hide it merely
+  because of inactivity.
 - Use the [current implementation and cleanup overview](research/samsung-video-assistant-plan-2026-10-24.md)
   for present behavior; older reports describe historical checkpoints.
