@@ -211,6 +211,32 @@ class Tab(
 
     /** Everything the grabber has found on the current page. Cleared on every new navigation. */
     val detectedMedia = mutableStateListOf<DetectedMedia>()
+    internal var anikotoCatalog by mutableStateOf<AnikotoCatalog?>(null)
+        private set
+
+    internal fun refreshAnikotoCatalog() {
+        val view = liveWebView ?: return
+        if (destroyed || rendererUnavailable || !view.settings.javaScriptEnabled ||
+            !AnikotoAdapter.accepts(view.url.orEmpty())) return
+        val generation = detectionGeneration.get()
+        val pageUrl = view.url
+        view.evaluateJavascript(AnikotoAdapter.snapshotScript) { raw ->
+            if (destroyed || rendererUnavailable || liveWebView !== view ||
+                generation != detectionGeneration.get() || view.url != pageUrl) return@evaluateJavascript
+            AnikotoAdapter.parse(raw)?.let { anikotoCatalog = it }
+        }
+    }
+
+    internal fun selectAnikotoServer(server: AnikotoServer, onResult: (Boolean) -> Unit) {
+        val view = liveWebView
+        val catalog = anikotoCatalog
+        if (view == null || catalog == null || !AnikotoAdapter.accepts(view.url.orEmpty()) ||
+            server !in catalog.servers) {
+            onResult(false)
+            return
+        }
+        AnikotoAdapter.selectServer(view, server, onResult)
+    }
     private val detectionIndexes = mutableMapOf<String, Int>()
     private var grabberBridge: GrabberBridge? = null
     private var elementPickerBridge: ElementPickerBridge? = null
@@ -366,6 +392,7 @@ class Tab(
      * already-empty list is a no-op.
      */
     fun clearDetections() {
+        anikotoCatalog = null
         blockedHosts.clear()
         blockedRequests.set(0)
         blockedPopups.set(0)
@@ -1033,6 +1060,13 @@ class Tab(
                 onPageLoadFinished = { loadedUrl, loadedTitle ->
                     isLoading = false
                     liveVideoTracker?.onPageCommitted()
+                    if (AnikotoAdapter.accepts(loadedUrl)) {
+                        val generation = detectionGeneration.get()
+                        mainHandler.postDelayed({
+                            if (!destroyed && generation == detectionGeneration.get())
+                                refreshAnikotoCatalog()
+                        }, 700L)
+                    }
                     if (isDesktopMode && desktopViewportScript == null) {
                         view.applyDesktopViewportNow()
                     }

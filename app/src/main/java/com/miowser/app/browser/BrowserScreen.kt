@@ -2256,6 +2256,23 @@ fun BrowserScreen(
                     onScan = { depth, pageLimit -> activeTab.startDiscovery(depth, pageLimit) },
                     onCancelScan = { activeTab.cancelDiscovery() },
                     minimumDurationSeconds = minimumMediaLengthSeconds,
+                    anikotoAvailable = AnikotoAdapter.accepts(activeTab.url),
+                    anikotoCatalog = activeTab.anikotoCatalog,
+                    onRefreshAnikoto = { activeTab.refreshAnikotoCatalog() },
+                    onOpenAnikotoEpisode = { episode ->
+                        activeScreen = null
+                        if (activeTab.url != episode.url) activeTab.navigateTo(episode.url)
+                    },
+                    onOpenAnikotoSeason = { season ->
+                        activeScreen = null
+                        activeTab.navigateTo(season.url)
+                    },
+                    onSelectAnikotoServer = { server ->
+                        activeScreen = null
+                        activeTab.selectAnikotoServer(server) { selected ->
+                            if (!selected) showActionSnackbar("Server no longer available. Reload this page.")
+                        }
+                    },
                     onBack = { activeScreen = null }
                 )
             }
