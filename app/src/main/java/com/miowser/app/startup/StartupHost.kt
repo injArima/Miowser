@@ -28,12 +28,16 @@ fun StartupHost(
             shortcutRequest = shortcutRequest,
             onShortcutHandled = onShortcutHandled
         )
-        else -> StartupLoading(error = state == StartupState.Error, onRetry = { AppStartup.start(context) })
+        else -> StartupLoading(
+            error = state == StartupState.Error,
+            openingBrowser = shortcutRequest != null,
+            onRetry = { AppStartup.start(context) }
+        )
     }
 }
 
 @Composable
-fun StartupLoading(error: Boolean, onRetry: () -> Unit) {
+fun StartupLoading(error: Boolean, openingBrowser: Boolean = false, onRetry: () -> Unit) {
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
         .testTag(if (error) "startup_error" else "startup_loading").safeDrawingPadding().padding(24.dp),
         verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
@@ -45,7 +49,7 @@ fun StartupLoading(error: Boolean, onRetry: () -> Unit) {
         } else {
             CircularProgressIndicator()
             Spacer(Modifier.height(16.dp))
-            Text("Loading your Library…")
+            Text(if (openingBrowser) "Opening browser…" else "Loading your Library…")
         }
     }
 }

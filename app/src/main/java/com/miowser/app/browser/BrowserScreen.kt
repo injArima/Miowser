@@ -315,7 +315,9 @@ fun BrowserScreen(
         onboardingReturnToSettings = false
     }
     var openingTabs by remember { mutableStateOf(false) }
-    var showingHub by rememberSaveable { mutableStateOf(true) }
+    // A launcher browser action must enter the browser on the first rendered frame.
+    // The shortcut's tab operation can still wait for saved tabs to restore below.
+    var showingHub by rememberSaveable { mutableStateOf(shortcutRequest == null) }
     val libraryEnabled = AppSettings.current.libraryBehavior.isAvailable
     var hubSection by rememberSaveable {
         mutableStateOf(if (libraryEnabled) HubSection.LIBRARY else HubSection.DOWNLOADS)
@@ -961,6 +963,14 @@ fun BrowserScreen(
     var pendingStartupUrl by remember { mutableStateOf<String?>(null) }
     // Keep the load running if Back returns to Hub; never publish a partial restored session.
     LaunchedEffect(showingHub) { if (!showingHub) browserRequested = true }
+    LaunchedEffect(shortcutRequest?.sequence) {
+        if (shortcutRequest == null) return@LaunchedEffect
+        showingHub = false
+        if (activeScreen != Screen.ONBOARDING) activeScreen = null
+        playbackRequest = null
+        playbackFromLibrary = false
+        showOverflowMenu = false
+    }
     LaunchedEffect(showingHub) {
         if (!showingHub && AppSettings.current.adBlockEnabled && !defaultFiltersReady)
             remindRefreshWhenFiltersReady = true
@@ -1085,11 +1095,6 @@ fun BrowserScreen(
                 activeTabId = createAndInsertTab(AppSettings.current.searchUrl(query), null).id
             }
         }
-        if (activeScreen != Screen.ONBOARDING) activeScreen = null
-        playbackRequest = null
-        playbackFromLibrary = false
-        showOverflowMenu = false
-        showingHub = false
         onShortcutHandled()
     }
 
