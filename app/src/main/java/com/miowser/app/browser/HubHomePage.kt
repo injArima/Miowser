@@ -163,6 +163,8 @@ import com.miowser.app.ui.MiowserSnackbarHost
 import com.miowser.app.ui.theme.ExpressiveTokens
 import com.miowser.app.ui.theme.AppThemeMode
 import com.miowser.app.ui.theme.AppThemePreference
+import com.miowser.app.settings.AppSettings
+import com.miowser.app.settings.LibraryBehavior
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.lifecycle.Lifecycle
@@ -237,6 +239,9 @@ fun HubHomePage(
     var librarySortMenuExpanded by remember { mutableStateOf(false) }
     var showClearLibraryConfirmation by remember { mutableStateOf(false) }
     var libraryHealthVisible by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(libraryEnabled) {
+        if (!libraryEnabled) libraryHealthVisible = false
+    }
     var hubMenuExpanded by remember { mutableStateOf(false) }
     var viewMenuExpanded by remember { mutableStateOf(false) }
     val viewPrefs = remember(context) { context.getSharedPreferences("hub_library_view", android.content.Context.MODE_PRIVATE) }
@@ -721,6 +726,12 @@ private fun HubBottomNavigation(
     var librarySettingsExpanded by remember { mutableStateOf(false) }
     var downloadSettingsExpanded by remember { mutableStateOf(false) }
     var failedVideoLogExpanded by remember { mutableStateOf(false) }
+    LaunchedEffect(libraryEnabled) {
+        if (!libraryEnabled) {
+            librarySettingsExpanded = false
+            failedVideoLogExpanded = false
+        }
+    }
     val view = LocalView.current
     val labels = mapOf(
         HubSection.LIBRARY to stringResource(R.string.nav_library),
@@ -1081,6 +1092,8 @@ private fun HubMoreContent(
     onOpenBackupRestore: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val libraryBehavior = AppSettings.current.libraryBehavior
     Column(
         modifier = modifier.testTag("hub_more").verticalScroll(rememberScrollState())
             .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 88.dp),
@@ -1105,6 +1118,25 @@ private fun HubMoreContent(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
+        }
+
+        ExpressiveChoiceSetting(
+            title = "Library",
+            description = when (libraryBehavior) {
+                LibraryBehavior.AUTOMATIC -> "Played media and progress are saved automatically."
+                LibraryBehavior.MANUAL_ONLY ->
+                    "Only media you add or import is kept. Saved videos still update their progress."
+                LibraryBehavior.DISABLED ->
+                    "The Library is hidden. Your existing entries are kept for later."
+            }
+        ) {
+            LibraryBehavior.entries.forEach { behavior ->
+                FilterChip(
+                    selected = behavior == libraryBehavior,
+                    onClick = { AppSettings.update(context) { it.copy(libraryBehavior = behavior) } },
+                    label = { Text(behavior.label) }
+                )
             }
         }
 

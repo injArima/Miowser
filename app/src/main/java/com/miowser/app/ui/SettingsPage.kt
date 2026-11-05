@@ -45,7 +45,6 @@ import com.miowser.app.BuildConfig
 import com.miowser.app.settings.DownloadThreadCount
 import com.miowser.app.settings.HomePageMode
 import com.miowser.app.settings.InactiveTabRetention
-import com.miowser.app.settings.LibraryBehavior
 import com.miowser.app.settings.NewTabConfirmation
 import com.miowser.app.settings.SearchEngine
 import com.miowser.app.settings.Settings
@@ -229,24 +228,6 @@ fun SettingsPage(
             }
 
             SettingsSection("Media") {
-                val libraryDescription = when (settings.libraryBehavior) {
-                    LibraryBehavior.AUTOMATIC ->
-                        "Played media, progress, artwork, quality, and subtitles are saved automatically."
-                    LibraryBehavior.MANUAL_ONLY ->
-                        "Only media you explicitly add or import is kept. Existing Library playback still updates its progress."
-                    LibraryBehavior.DISABLED ->
-                        "The Library is hidden and no Library data is written. Existing entries are kept for later."
-                }
-                OptionBlock("Library", libraryDescription) {
-                    ChoiceRow(
-                        LibraryBehavior.entries,
-                        settings.libraryBehavior,
-                        { it.label }
-                    ) { behavior ->
-                        onUpdate(settings.copy(libraryBehavior = behavior))
-                    }
-                }
-                SectionDivider()
                 SettingRow(
                     "Background playback",
                     "Allow headphone mode to keep playing when Miowser is minimized or the screen is off.",

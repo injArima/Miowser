@@ -2519,7 +2519,9 @@ fun BrowserScreen(
                 onBottomBarHeightChanged = { hubBottomBarHeightPx = it },
                 onLibraryIdleChanged = { libraryIdle = it },
                 uiVisible = playbackRequest == null && activeScreen == null && !showBackupRestore,
-                selectedSection = if (libraryEnabled) hubSection else HubSection.DOWNLOADS,
+                selectedSection = if (!libraryEnabled && hubSection == HubSection.LIBRARY) {
+                    HubSection.DOWNLOADS
+                } else hubSection,
                 onSectionSelected = { hubSection = it },
                 selectedDownloadSection = hubDownloadSection,
                 onDownloadSectionSelected = { section ->
