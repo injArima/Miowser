@@ -290,6 +290,7 @@ fun BrowserScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
     val clipboard = LocalClipboard.current
     val motion = LocalMotionPolicy.current
+    val elementPickerPalette = ElementPickerPalette.from(MaterialTheme.colorScheme)
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
     // The overflow (hamburger) menu is the only thing left that's a transient sheet rather than
@@ -1296,6 +1297,7 @@ fun BrowserScreen(
         elementPickerTabId = tab.id
         elementPickerSelection = null
         val started = tab.startElementPicker(
+            palette = elementPickerPalette,
             onSelection = { selection ->
                 if (elementPickerTabId == tab.id && activeTabId == tab.id) {
                     elementPickerSelection = selection

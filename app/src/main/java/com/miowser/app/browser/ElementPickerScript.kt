@@ -3,6 +3,9 @@ package com.miowser.app.browser
 import android.os.Handler
 import android.os.Looper
 import android.webkit.JavascriptInterface
+import androidx.compose.material3.ColorScheme
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import com.miowser.app.adblock.ElementRuleAction
 import org.json.JSONObject
 
@@ -10,6 +13,33 @@ data class ElementPickerSelection(
     val selectors: List<String>,
     val labels: List<String>
 )
+
+internal data class ElementPickerPalette(
+    val surface: Color,
+    val foreground: Color,
+    val outline: Color,
+    val accent: Color,
+    val accentSurface: Color,
+    val onAccentSurface: Color,
+    val error: Color,
+    val errorSurface: Color,
+    val onErrorSurface: Color
+) {
+    companion object {
+        fun from(colors: ColorScheme) = ElementPickerPalette(
+            colors.surfaceContainerHigh, colors.onSurface, colors.outlineVariant,
+            colors.primary, colors.primaryContainer, colors.onPrimaryContainer,
+            colors.error, colors.errorContainer, colors.onErrorContainer
+        )
+    }
+}
+
+private fun Color.pickerCss(): String = "#%06X".format(toArgb() and 0xFFFFFF)
+
+private fun Color.pickerHighlight(): String {
+    val value = toArgb()
+    return "rgba(${value shr 16 and 0xFF},${value shr 8 and 0xFF},${value and 0xFF},.16)"
+}
 
 internal class ElementPickerBridge {
     private data class Session(
@@ -64,7 +94,7 @@ internal class ElementPickerBridge {
     }
 }
 
-internal fun elementPickerStartScript(token: String): String {
+internal fun elementPickerStartScript(token: String, palette: ElementPickerPalette): String {
     val quotedToken = javascriptStringLiteral(token)
     return """
         (function() {
@@ -75,24 +105,26 @@ internal fun elementPickerStartScript(token: String): String {
             var overlay = document.createElement('div');
             overlay.setAttribute('data-miowser-picker', '1');
             overlay.style.cssText = 'position:fixed;z-index:2147483647;pointer-events:none;' +
-                'border:3px solid #f5d77a;background:rgba(245,215,122,.18);border-radius:6px;' +
+                'border:3px solid ${palette.accent.pickerCss()};background:${palette.accent.pickerHighlight()};border-radius:8px;' +
                 'box-sizing:border-box;display:none;';
             (document.documentElement || document.body).appendChild(overlay);
             var toolbar = document.createElement('div');
             toolbar.setAttribute('data-miowser-picker', '1');
             toolbar.style.cssText = 'position:fixed;z-index:2147483647;display:none;' +
-                'width:216px;height:48px;pointer-events:auto;';
+                'width:min(224px,calc(100vw - 16px));height:56px;pointer-events:auto;';
             var shadow = toolbar.attachShadow({mode:'closed'});
             shadow.innerHTML = '<style>' +
                 ':host{all:initial}div{display:flex;gap:4px;align-items:center;padding:4px;' +
-                'border-radius:15px;background:#252129;box-shadow:0 5px 18px #0008;' +
-                'box-sizing:border-box;width:216px;height:48px}' +
+                'border-radius:18px;background:${palette.surface.pickerCss()};color:${palette.foreground.pickerCss()};' +
+                'border:1px solid ${palette.outline.pickerCss()};box-shadow:0 6px 20px #0004;' +
+                'box-sizing:border-box;width:100%;height:56px}' +
                 'button{all:unset;display:flex;align-items:center;justify-content:center;' +
-                'width:48px;height:40px;border-radius:10px;color:#fff;cursor:pointer;' +
+                'flex:1;min-width:0;height:46px;border-radius:14px;color:inherit;cursor:pointer;' +
                 'font:600 22px sans-serif;touch-action:manipulation}' +
                 'svg{width:24px;height:24px;fill:currentColor}' +
-                'button:disabled{opacity:.35;cursor:default}button:focus-visible{outline:2px solid #f5d77a}' +
-                'button[data-action="HIDE"]{color:#f5d77a}button[data-action="DELETE"]{color:#ffc5c5}' +
+                'button:disabled{opacity:.35;cursor:default}button:focus-visible{outline:2px solid ${palette.accent.pickerCss()}}' +
+                'button[data-action="HIDE"]{background:${palette.accentSurface.pickerCss()};color:${palette.onAccentSurface.pickerCss()}}' +
+                'button[data-action="DELETE"]{background:${palette.errorSurface.pickerCss()};color:${palette.onErrorSurface.pickerCss()}}' +
                 '</style><div role="toolbar" aria-label="Page element actions">' +
                 '<button type="button" data-action="smaller" aria-label="Select smaller element" title="Smaller"><svg viewBox="0 0 24 24"><path d="M5 11h14v2H5z"/></svg></button>' +
                 '<button type="button" data-action="larger" aria-label="Select larger container" title="Larger"><svg viewBox="0 0 24 24"><path d="M11 5h2v14h-2zM5 11h14v2H5z"/></svg></button>' +
@@ -183,11 +215,12 @@ internal fun elementPickerStartScript(token: String): String {
                 overlay.style.top = Math.max(0, rect.top) + 'px';
                 overlay.style.width = Math.max(0, Math.min(innerWidth, rect.right) - Math.max(0, rect.left)) + 'px';
                 overlay.style.height = Math.max(0, Math.min(innerHeight, rect.bottom) - Math.max(0, rect.top)) + 'px';
-                var top = rect.top >= 58 ? rect.top - 56 :
-                    (rect.bottom + 56 <= innerHeight ? rect.bottom + 8 :
-                        Math.max(8, Math.min(innerHeight - 56, rect.top + 8)));
-                toolbar.style.left = Math.max(8, Math.min(innerWidth - 224,
-                    rect.left + (rect.width - 216) / 2)) + 'px';
+                var top = rect.top >= 64 ? rect.top - 64 :
+                    (rect.bottom + 64 <= innerHeight ? rect.bottom + 8 :
+                        Math.max(8, Math.min(innerHeight - 64, rect.top + 8)));
+                var toolbarWidth = Math.min(224, Math.max(0, innerWidth - 16));
+                toolbar.style.left = Math.max(8, Math.min(innerWidth - toolbarWidth - 8,
+                    rect.left + (rect.width - toolbarWidth) / 2)) + 'px';
                 toolbar.style.top = Math.max(8, top) + 'px';
                 toolbar.style.display = 'block';
             }

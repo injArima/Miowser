@@ -1297,7 +1297,8 @@ class Tab(
         liveWebView?.evaluateJavascript("window.scrollTo({top: 0, left: 0, behavior: 'smooth'});", null)
     }
 
-    fun startElementPicker(
+    internal fun startElementPicker(
+        palette: ElementPickerPalette,
         onSelection: (ElementPickerSelection) -> Unit,
         onAction: (Int, com.miowser.app.adblock.ElementRuleAction) -> Unit
     ): Boolean {
@@ -1307,7 +1308,7 @@ class Tab(
         val picker = elementPickerBridge ?: return false
         val token = UUID.randomUUID().toString()
         picker.begin(token, onSelection, onAction)
-        view.evaluateJavascript(elementPickerStartScript(token), null)
+        view.evaluateJavascript(elementPickerStartScript(token, palette), null)
         return true
     }
 
