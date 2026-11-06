@@ -76,7 +76,7 @@ internal fun AnikotoEpisodeSheet(
                             Text("Current episode · servers", style = MaterialTheme.typography.titleSmall,
                                 modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
                         }
-                        items(catalog.servers, key = { "server-${it.language}-${it.id}-${it.episodeId}" }) { server ->
+                        items(catalog.servers, key = { "server-${it.language}-${it.episodeId}-${it.linkId}" }) { server ->
                             Surface(onClick = { onSelectServer(server) },
                                 shape = RoundedCornerShape(12.dp),
                                 color = if (server.active) MaterialTheme.colorScheme.secondaryContainer

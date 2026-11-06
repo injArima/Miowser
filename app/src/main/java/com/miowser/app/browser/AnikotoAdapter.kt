@@ -32,7 +32,8 @@ internal object AnikotoAdapter {
       });
       var servers = Array.from(document.querySelectorAll('#w-servers .type[data-type] li[data-sv-id]')).slice(0, 60).map(function(li) {
         return { language: li.closest('.type')?.dataset.type || '', id: li.dataset.svId || '',
-          episodeId: li.dataset.epId || '', label: li.textContent.trim().slice(0, 80),
+          episodeId: li.dataset.epId || '', linkId: li.dataset.linkId || '',
+          label: li.textContent.trim().slice(0, 80),
           active: li.classList.contains('active') };
       });
       var seasons = Array.from(document.querySelectorAll('#ani-seasons a[href*="/watch/"]')).slice(0, 40).map(function(a) {
@@ -68,12 +69,15 @@ internal object AnikotoAdapter {
                 val language = server.optString("language")
                 val id = server.optString("id")
                 val episodeId = server.optString("episodeId")
+                val linkId = server.optString("linkId")
                 if (language !in setOf("sub", "dub") || !id.matches(Regex("[a-zA-Z0-9_-]{1,40}")) ||
-                    !episodeId.matches(Regex("[0-9]{1,20}"))) continue
-                add(AnikotoServer(language, id, episodeId, server.optString("label").take(80),
+                    !episodeId.matches(Regex("[0-9]{1,20}")) ||
+                    !linkId.matches(Regex("[a-zA-Z0-9+/_=-]{1,512}"))) continue
+                add(AnikotoServer(language, id, episodeId, linkId,
+                    server.optString("label").take(80),
                     server.optBoolean("active")))
             }
-        }
+        }.distinctBy { Triple(it.language, it.episodeId, it.linkId) }
         val seasonsJson = json.optJSONArray("seasons")
         val seasons = buildList {
             for (index in 0 until minOf(seasonsJson?.length() ?: 0, 40)) {
@@ -90,15 +94,19 @@ internal object AnikotoAdapter {
         val language = server.language
         val id = server.id
         val episodeId = server.episodeId
+        val linkId = server.linkId
         if (language !in setOf("sub", "dub") || !id.matches(Regex("[a-zA-Z0-9_-]{1,40}")) ||
-            !episodeId.matches(Regex("[0-9]{1,20}"))) {
+            !episodeId.matches(Regex("[0-9]{1,20}")) ||
+            !linkId.matches(Regex("[a-zA-Z0-9+/_=-]{1,512}"))) {
             onResult(false)
             return
         }
         view.evaluateJavascript("""(function() {
-          var root = document.querySelector('#w-servers .type[data-type="$language"]');
-          var item = root && Array.from(root.querySelectorAll('li[data-sv-id]')).find(function(li) {
-            return li.dataset.svId === '$id' && li.dataset.epId === '$episodeId';
+          var root = document.querySelector('#w-servers .type[data-type=${JSONObject.quote(language)}]');
+          var item = root && Array.from(root.querySelectorAll('li[data-link-id]')).find(function(li) {
+            return li.dataset.svId === ${JSONObject.quote(id)} &&
+              li.dataset.epId === ${JSONObject.quote(episodeId)} &&
+              li.dataset.linkId === ${JSONObject.quote(linkId)};
           });
           if (!item) return false;
           item.click();
@@ -128,6 +136,7 @@ internal data class AnikotoServer(
     val language: String,
     val id: String,
     val episodeId: String,
+    val linkId: String,
     val label: String,
     val active: Boolean
 )

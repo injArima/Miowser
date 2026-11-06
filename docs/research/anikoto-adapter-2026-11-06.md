@@ -3,7 +3,7 @@
 Inspection of `https://anikototv.to/watch/one-piece-odmau/ep-1` on 2026-11-06 showed:
 
 - `#w-episodes a[data-num]` contains the episode number, title on its parent `li`, watch URL, and separate `data-sub` / `data-dub` availability flags. The page rendered 1,180 episodes across range filters.
-- `#w-servers .type[data-type="sub|dub"] li[data-sv-id]` contains the current episode's server choices. The same server ID can appear under both audio types, so the language is part of the choice identity.
+- `#w-servers .type[data-type="sub|dub"] li[data-sv-id]` contains the current episode's server choices. A server ID can repeat even within one audio type and episode; the page's `data-link-id` distinguishes the actual choice. Identical link choices are collapsed before rendering.
 - `#ani-seasons` is the site's container for other seasons, but was empty for the inspected show. The adapter accepts watch links from that container when populated.
 - Server IDs and the site's opaque episode/server request tokens are not media URLs. A server choice is activated through the site's own click handler; Miowser's existing media detection then observes any playable stream.
 
