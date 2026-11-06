@@ -82,6 +82,9 @@ internal fun PlayerTopBar(
     audioOnly: Boolean,
     onToggleAudioOnly: () -> Unit,
     onOpenPlaylist: (() -> Unit)?,
+    onOpenSiteServers: (() -> Unit)? = null,
+    onOpenSiteLanguages: (() -> Unit)? = null,
+    onSaveShow: (() -> Unit)? = null,
     playlistFocus: FocusRequester,
     playlistPosition: Int,
     playlistSize: Int,
@@ -100,8 +103,19 @@ internal fun PlayerTopBar(
     ) {
         val compact = maxWidth < 340.dp
         val gap = if (compact) 0.dp else 4.dp
+        val separateSiteRow = maxWidth < 500.dp &&
+            (onOpenSiteServers != null || onOpenSiteLanguages != null || onSaveShow != null)
+        Column {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Spacer(Modifier.weight(1f))
+            if (!separateSiteRow) {
+                if (onOpenSiteServers != null) RoundPlayerButton(Icons.Rounded.Storage,
+                    "Choose server", onOpenSiteServers)
+                if (onOpenSiteLanguages != null) RoundPlayerButton(Icons.Rounded.Language,
+                    "Choose Sub or Dub", onOpenSiteLanguages)
+                if (onSaveShow != null) RoundPlayerButton(Icons.Rounded.VideoLibrary,
+                    "Save show", onSaveShow)
+            }
             if (onDownload != null) {
                 RoundPlayerButton(Icons.Rounded.Download, "Download video", onDownload)
                 Spacer(Modifier.width(gap))
@@ -146,6 +160,16 @@ internal fun PlayerTopBar(
                 Spacer(Modifier.width(gap))
             }
             RoundPlayerButton(Icons.AutoMirrored.Rounded.ArrowBack, "Close player", onDismiss)
+        }
+        if (separateSiteRow) Row(Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End) {
+            if (onOpenSiteServers != null) RoundPlayerButton(Icons.Rounded.Storage,
+                "Choose server", onOpenSiteServers)
+            if (onOpenSiteLanguages != null) RoundPlayerButton(Icons.Rounded.Language,
+                "Choose Sub or Dub", onOpenSiteLanguages)
+            if (onSaveShow != null) RoundPlayerButton(Icons.Rounded.VideoLibrary,
+                "Save show", onSaveShow)
+        }
         }
     }
 }

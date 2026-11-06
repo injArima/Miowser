@@ -56,7 +56,7 @@ internal fun AnikotoEpisodeSheet(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("" to "All", "sub" to "Sub", "dub" to "Dub").forEach { (value, label) ->
+                listOf("" to "All", "dub" to "Dub", "sub" to "Sub").forEach { (value, label) ->
                     FilterChip(selected = language == value, onClick = { language = value },
                         label = { Text(label) })
                 }

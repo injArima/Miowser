@@ -1062,10 +1062,14 @@ class Tab(
                     liveVideoTracker?.onPageCommitted()
                     if (AnikotoAdapter.accepts(loadedUrl)) {
                         val generation = detectionGeneration.get()
-                        mainHandler.postDelayed({
-                            if (!destroyed && generation == detectionGeneration.get())
-                                refreshAnikotoCatalog()
-                        }, 700L)
+                        listOf(700L, 1_700L, 3_200L).forEach { delayMs ->
+                            mainHandler.postDelayed({
+                                if (!destroyed && generation == detectionGeneration.get() &&
+                                    (anikotoCatalog?.episodes?.isNotEmpty() != true ||
+                                        anikotoCatalog?.servers?.isNotEmpty() != true))
+                                    refreshAnikotoCatalog()
+                            }, delayMs)
+                        }
                     }
                     if (isDesktopMode && desktopViewportScript == null) {
                         view.applyDesktopViewportNow()

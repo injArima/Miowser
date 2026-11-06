@@ -55,6 +55,7 @@ internal fun LibraryEntry.toPlaybackRequest(
     freshCookies: String?,
     fallbackUserAgent: String
 ): PlaybackRequest = when (sourceKind) {
+    LibrarySourceKind.SITE_SERIES -> error("A saved show must resolve its episode before playback")
     LibrarySourceKind.REMOTE_STREAM -> PlaybackRequest.Remote(
         url = mediaUri,
         pageUrl = pageUrl ?: mediaUri,

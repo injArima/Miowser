@@ -22,7 +22,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
-import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Construction
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Download
@@ -71,7 +70,6 @@ import com.miowser.app.grabber.meetsMinimumDuration
 import com.miowser.app.ui.ExpressiveEmptyState
 import com.miowser.app.ui.SimplePageScaffold
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 /** Browser media list, grouped by file kind. Scan configuration is kept off the results surface. */
@@ -91,12 +89,6 @@ internal fun DetectedMediaPage(
     onScan: (depth: Int, pageLimit: Int) -> Unit,
     onCancelScan: () -> Unit,
     minimumDurationSeconds: Int,
-    anikotoAvailable: Boolean = false,
-    anikotoCatalog: AnikotoCatalog? = null,
-    onRefreshAnikoto: () -> Unit = {},
-    onOpenAnikotoEpisode: (AnikotoEpisode) -> Unit = {},
-    onOpenAnikotoSeason: (AnikotoSeason) -> Unit = {},
-    onSelectAnikotoServer: (AnikotoServer) -> Unit = {},
     onBack: () -> Unit
 ) {
     var depth by remember { mutableIntStateOf(1) }
@@ -104,14 +96,6 @@ internal fun DetectedMediaPage(
     var showScanSettings by remember { mutableStateOf(false) }
     var selectedCategory by remember { mutableStateOf<DetectorCategory?>(null) }
     var selectedSubtitle by remember { mutableStateOf<DetectedMedia?>(null) }
-    var showAnikotoEpisodes by remember { mutableStateOf(false) }
-
-    LaunchedEffect(anikotoAvailable) {
-        if (anikotoAvailable) repeat(3) {
-            onRefreshAnikoto()
-            delay(if (it == 0) 500 else 1_000)
-        }
-    }
 
     val durationFilteredItems = items.filter { it.meetsMinimumDuration(minimumDurationSeconds) }
     val visibleItems = groupHlsRenditions(durationFilteredItems)
@@ -123,12 +107,6 @@ internal fun DetectedMediaPage(
         title = "Detected media",
         onBack = onBack,
         actions = {
-            if (anikotoAvailable) IconButton(onClick = {
-                onRefreshAnikoto()
-                showAnikotoEpisodes = true
-            }) {
-                Icon(Icons.AutoMirrored.Rounded.PlaylistPlay, contentDescription = "Anikoto episodes")
-            }
             IconButton(onClick = { showScanSettings = true }) {
                 Icon(Icons.Rounded.Construction, contentDescription = "Scan settings")
             }
@@ -266,14 +244,6 @@ internal fun DetectedMediaPage(
     selectedSubtitle?.let { subtitle ->
         SubtitleViewer(subtitle, userAgent, onDismiss = { selectedSubtitle = null })
     }
-    if (showAnikotoEpisodes) AnikotoEpisodeSheet(
-        catalog = anikotoCatalog,
-        onRefresh = onRefreshAnikoto,
-        onOpenEpisode = { showAnikotoEpisodes = false; onOpenAnikotoEpisode(it) },
-        onOpenSeason = { showAnikotoEpisodes = false; onOpenAnikotoSeason(it) },
-        onSelectServer = { showAnikotoEpisodes = false; onSelectAnikotoServer(it) },
-        onDismiss = { showAnikotoEpisodes = false }
-    )
 }
 
 @Composable

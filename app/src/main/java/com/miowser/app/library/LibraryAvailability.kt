@@ -8,6 +8,6 @@ import android.content.Context
  * lightweight preflight actively misleading.
  */
 fun isLibraryEntryAvailable(context: Context, entry: LibraryEntry, force: Boolean = false): Boolean {
-    if (entry.sourceKind == LibrarySourceKind.REMOTE_STREAM) return true
+    if (entry.sourceKind != LibrarySourceKind.LOCAL_FILE) return true
     return LocalInspectionCache.available(context, entry.mediaUri, force)
 }
