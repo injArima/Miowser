@@ -29,9 +29,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.semantics.testTagsAsResourceId
-import com.miowser.app.ui.theme.MiowserTheme
 import com.miowser.app.ui.theme.AppThemeMode
 import com.miowser.app.ui.theme.AppThemePreference
+import com.miowser.app.ui.theme.MiowserTheme
+import com.miowser.app.ui.theme.UiSpacing
 
 /**
  * App entry point. Edge-to-edge and the Compose theme are wired here from day one
@@ -161,7 +162,7 @@ private fun MiowserApp(
         ) {
             Box(Modifier.fillMaxSize()) {
                 com.miowser.app.startup.StartupHost(shortcutRequest, onShortcutHandled)
-                PersistenceNotice(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(12.dp))
+                PersistenceNotice(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(UiSpacing.m))
             }
         }
     }

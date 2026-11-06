@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import com.miowser.app.ui.CompactSheetDragHandle
 import com.miowser.app.ui.MiowserBottomSheetShape
 import kotlin.math.roundToInt
+import com.miowser.app.ui.theme.UiSpacing
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,8 +35,8 @@ internal fun BrowserTextSizeSheet(
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss,
         dragHandle = { CompactSheetDragHandle() }, shape = MiowserBottomSheetShape) {
-        Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.fillMaxWidth().padding(start = UiSpacing.xxl, end = UiSpacing.xxl, bottom = UiSpacing.xxl),
+            verticalArrangement = Arrangement.spacedBy(UiSpacing.m)) {
             Text("Text size", style = MaterialTheme.typography.titleLarge)
             Text("Adjust the text on this tab without changing page zoom.",
                 style = MaterialTheme.typography.bodyMedium,

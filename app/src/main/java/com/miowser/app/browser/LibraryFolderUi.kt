@@ -1,8 +1,5 @@
 package com.miowser.app.browser
 
-import com.miowser.app.ui.theme.LocalMotionPolicy
-import com.miowser.app.ui.theme.MotionTokens
-
 import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -67,6 +64,11 @@ import com.miowser.app.ui.ExpressiveSheetHeading
 import com.miowser.app.ui.MiowserMenuDivider
 import com.miowser.app.ui.MiowserMenuItem
 import com.miowser.app.ui.MiowserDropdownMenu
+import com.miowser.app.ui.theme.LocalMotionPolicy
+import com.miowser.app.ui.theme.MotionTokens
+import com.miowser.app.ui.theme.UiControlSize
+import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.UiSpacing
 
 internal const val UNFILED_FOLDER_ID = ""
 
@@ -115,13 +117,13 @@ internal fun LibraryFolderStrip(
     }
 
     Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = UiSpacing.m, end = UiSpacing.s, top = UiSpacing.xs, bottom = UiSpacing.xs),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(
             modifier = Modifier.weight(1f).horizontalScroll(folderScrollState),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)
         ) {
             if (defaultFolder == null) {
                 UnfiledFolderChip(selectedId == UNFILED_FOLDER_ID, isDefault = true,
@@ -242,7 +244,7 @@ private fun UnfiledFolderChip(selected: Boolean, isDefault: Boolean,
     onSelected: () -> Unit, onChooseDefault: () -> Unit) {
     var menuOpen by remember { mutableStateOf(false) }
     FilterChip(selected = selected, onClick = onSelected, label = {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(UiSpacing.xs)) {
             if (isDefault) Icon(Icons.Rounded.Star, contentDescription = "Default folder", modifier = Modifier.size(16.dp))
             Text("Unfiled")
         }
@@ -276,7 +278,7 @@ private fun FolderTabChip(
         selected = selected,
         onClick = onSelected,
         label = {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(UiSpacing.xs)) {
                 if (isDefault) Icon(Icons.Rounded.Star, contentDescription = "Default folder", modifier = Modifier.size(16.dp))
                 Text(
                     if (isDefault && folder.parentId != null) LibraryFolders.path(folder) else folder.name,
@@ -292,7 +294,7 @@ private fun FolderTabChip(
                     },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Rounded.MoreVert, contentDescription = "${folder.name} folder options", modifier = Modifier.size(20.dp))
+                    Icon(Icons.Rounded.MoreVert, contentDescription = "${folder.name} folder options", modifier = Modifier.size(UiIconSize.menu))
                 }
                 MiowserDropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     MiowserMenuItem(text = { Text("Rename folder") },
@@ -372,9 +374,9 @@ private fun FolderChoiceRow(
         color = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.padding(horizontal = UiSpacing.l, vertical = UiSpacing.m),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(UiSpacing.m)
         ) {
             Icon(
                 if (isUnfiled) Icons.Rounded.FolderOpen else Icons.Rounded.Folder,
@@ -383,7 +385,7 @@ private fun FolderChoiceRow(
             )
             Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
             if (isDefault) Icon(Icons.Rounded.Star, contentDescription = "Default folder",
-                tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(UiIconSize.small))
         }
     }
 }
@@ -397,7 +399,7 @@ internal fun LibraryFolderCreationFlow(parentId: String?, onFinished: () -> Unit
         onDismissRequest = onFinished,
         title = { Text(if (parentId == null) "Create primary folder" else "Create subfolder") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
                 OutlinedTextField(name, { name = it }, label = { Text("Folder name") }, singleLine = true)
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
@@ -437,7 +439,7 @@ internal fun LibrarySubfolderCard(
                 Icons.Rounded.Folder,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(UiControlSize.touchTarget)
             )
             Box(modifier = Modifier.align(Alignment.TopEnd)) {
                 IconButton(onClick = { menuOpen = true }) {
@@ -470,7 +472,7 @@ internal fun LibrarySubfolderCard(
         }
     }
     val details: @Composable () -> Unit = {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+        Column(modifier = Modifier.padding(horizontal = UiSpacing.m, vertical = UiSpacing.compact)) {
             Text(folder.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 "$videoCount ${if (videoCount == 1) "video" else "videos"}" +

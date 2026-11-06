@@ -13,6 +13,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.miowser.app.ui.theme.UiSpacing
 
 internal enum class PublicationPage(val title: String, val asset: String) {
     PRIVACY("Privacy policy", "privacy_policy.txt"),
@@ -30,7 +31,7 @@ internal fun PublicationPageContent(page: PublicationPage, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
     SimplePageScaffold(title = page.title, onBack = onBack) { modifier ->
         Column(modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 16.dp)) {
+            .padding(horizontal = UiSpacing.xl, vertical = UiSpacing.l)) {
             paragraphs.forEach { paragraph ->
                 val heading = paragraph.startsWith("# ")
                 Text(

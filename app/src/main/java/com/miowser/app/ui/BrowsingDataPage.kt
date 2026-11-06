@@ -23,13 +23,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.miowser.app.browser.BrowsingDataSelection
+import com.miowser.app.ui.theme.UiSpacing
 
 @Composable
 fun BrowsingDataPage(onClear: (BrowsingDataSelection) -> Unit, onBack: () -> Unit) {
     var selected by remember { mutableStateOf(BrowsingDataSelection()) }
     var confirm by remember { mutableStateOf(false) }
     SimplePageScaffold(title = "Clear browsing data", onBack = onBack) { modifier ->
-        Column(modifier = modifier.verticalScroll(rememberScrollState()).padding(20.dp)) {
+        Column(modifier = modifier.verticalScroll(rememberScrollState()).padding(UiSpacing.xl)) {
             Text("Choose exactly what to erase", style = MaterialTheme.typography.titleMedium)
             DataChoice("History", selected.history) { selected = selected.copy(history = it) }
             DataChoice("Cookies and website storage", selected.cookiesAndSiteStorage) {
@@ -41,7 +42,7 @@ fun BrowsingDataPage(onClear: (BrowsingDataSelection) -> Unit, onBack: () -> Uni
                 selected = selected.copy(sitePermissions = it)
             }
             Text("Saved app records", style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(top = 16.dp))
+                modifier = Modifier.padding(top = UiSpacing.l))
             Text("Downloaded files stay on your device. These choices remove their app records only.",
                 style = MaterialTheme.typography.bodySmall)
             DataChoice("Download records", selected.downloadRecords) {
@@ -51,7 +52,7 @@ fun BrowsingDataPage(onClear: (BrowsingDataSelection) -> Unit, onBack: () -> Uni
                 selected = selected.copy(libraryRecords = it)
             }
             Button(onClick = { confirm = true }, enabled = selected.hasSelection(),
-                modifier = Modifier.padding(top = 20.dp)) { Text("Clear selected data") }
+                modifier = Modifier.padding(top = UiSpacing.xl)) { Text("Clear selected data") }
         }
     }
     if (confirm) {
@@ -70,8 +71,8 @@ fun BrowsingDataPage(onClear: (BrowsingDataSelection) -> Unit, onBack: () -> Uni
 @Composable
 private fun DataChoice(label: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
     Row(modifier = Modifier.fillMaxWidth().toggleable(value = checked, role = Role.Checkbox, onValueChange = onChecked)
-        .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        .padding(vertical = UiSpacing.xs), verticalAlignment = Alignment.CenterVertically) {
         Checkbox(checked = checked, onCheckedChange = null)
-        Text(label, modifier = Modifier.padding(start = 8.dp))
+        Text(label, modifier = Modifier.padding(start = UiSpacing.s))
     }
 }

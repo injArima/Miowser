@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import com.miowser.app.ui.CompactSheetDragHandle
 import com.miowser.app.ui.MiowserBottomSheetShape
 import kotlin.math.roundToInt
+import com.miowser.app.ui.theme.UiSpacing
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,8 +36,8 @@ internal fun BrowserZoomSheet(
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss,
         dragHandle = { CompactSheetDragHandle() }, shape = MiowserBottomSheetShape) {
-        Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.fillMaxWidth().padding(start = UiSpacing.xxl, end = UiSpacing.xxl, bottom = UiSpacing.xxl),
+            verticalArrangement = Arrangement.spacedBy(UiSpacing.m)) {
             Text("Page zoom", style = MaterialTheme.typography.titleLarge)
             Text("Pinch the page or use these controls. Zoom applies to the current tab.",
                 style = MaterialTheme.typography.bodyMedium,

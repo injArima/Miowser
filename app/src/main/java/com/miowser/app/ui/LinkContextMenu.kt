@@ -28,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.miowser.app.ui.theme.UiSpacing
 
 /**
  * The long-press-on-a-link menu — a real browser convention this app didn't have at all before:
@@ -55,24 +56,24 @@ fun LinkContextMenu(
         if (selectingText && !linkText.isNullOrBlank()) {
             val textScroll = rememberScrollState()
             Text("Select text", style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                modifier = Modifier.padding(horizontal = UiSpacing.l, vertical = UiSpacing.s))
             Text("Touch and hold to select part of the link text.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp))
+                modifier = Modifier.padding(horizontal = UiSpacing.l))
             SelectionContainer {
                 Text(
                     text = linkText,
                     modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp)
                         .sheetVerticalEdgeFade(textScroll, MaterialTheme.colorScheme.surfaceContainerLow)
                         .verticalScroll(textScroll)
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .padding(horizontal = UiSpacing.l, vertical = UiSpacing.m)
                 )
             }
-            TextButton(onClick = onDismiss, modifier = Modifier.padding(horizontal = 12.dp)) {
+            TextButton(onClick = onDismiss, modifier = Modifier.padding(horizontal = UiSpacing.m)) {
                 Text("Done")
             }
-            androidx.compose.foundation.layout.Spacer(Modifier.height(4.dp))
+            androidx.compose.foundation.layout.Spacer(Modifier.height(UiSpacing.xs))
             return@ModalBottomSheet
         }
         Text(
@@ -83,12 +84,12 @@ fun LinkContextMenu(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(horizontal = UiSpacing.l, vertical = UiSpacing.s)
         )
         MiowserMenuItem(
             text = { Text("Open in new tab") },
             leadingIcon = { Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null) },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+            modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.m)
         ) {
             onDismiss()
             onOpenInNewTab()
@@ -96,7 +97,7 @@ fun LinkContextMenu(
         MiowserMenuItem(
             text = { Text("Open in background tab") },
             leadingIcon = { Icon(Icons.Rounded.Tab, contentDescription = null) },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+            modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.m)
         ) {
             onDismiss()
             onOpenInBackgroundTab()
@@ -106,13 +107,13 @@ fun LinkContextMenu(
             MiowserMenuItem(
                 text = { Text("Select text") },
                 leadingIcon = { Icon(Icons.Rounded.TextFields, contentDescription = null) },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+                modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.m)
             ) { selectingText = true }
         }
         MiowserMenuItem(
             text = { Text("Copy link") },
             leadingIcon = { Icon(Icons.Rounded.ContentCopy, contentDescription = null) },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+            modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.m)
         ) {
             onDismiss()
             onCopyLink()
@@ -120,7 +121,7 @@ fun LinkContextMenu(
         MiowserMenuItem(
             text = { Text("Share link") },
             leadingIcon = { Icon(Icons.Rounded.Share, contentDescription = null) },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+            modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.m)
         ) {
             onDismiss()
             onShareLink()
@@ -129,11 +130,11 @@ fun LinkContextMenu(
         MiowserMenuItem(
             text = { Text("Add to speed dial") },
             leadingIcon = { Icon(Icons.Rounded.GridView, contentDescription = null) },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+            modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.m)
         ) {
             onDismiss()
             onAddToSpeedDial()
         }
-        androidx.compose.foundation.layout.Spacer(Modifier.height(4.dp))
+        androidx.compose.foundation.layout.Spacer(Modifier.height(UiSpacing.xs))
     }
 }

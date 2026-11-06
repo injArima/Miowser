@@ -25,12 +25,13 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.miowser.app.adblock.AdBlockFilters
 import com.miowser.app.adblock.BlockedPageInfo
+import com.miowser.app.ui.theme.UiSpacing
 
 @Composable
 internal fun BlockedPageDetails(info: BlockedPageInfo, modifier: Modifier = Modifier) {
     var expanded by remember(info.url, info.rule) { mutableStateOf(false) }
     val currentLists = AdBlockFilters.subscriptions.associateBy { it.id }
-    Column(modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+    Column(modifier.fillMaxWidth().padding(bottom = UiSpacing.l)) {
         TextButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth().semantics {
             stateDescription = if (expanded) "Expanded" else "Collapsed"
         }) {
@@ -43,7 +44,7 @@ internal fun BlockedPageDetails(info: BlockedPageInfo, modifier: Modifier = Modi
         }
         if (expanded) Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = MaterialTheme.shapes.medium) {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.fillMaxWidth().padding(UiSpacing.l), verticalArrangement = Arrangement.spacedBy(UiSpacing.m)) {
                 if (info.sources.isEmpty()) Text("Rule source unavailable")
                 info.sources.forEach { source ->
                     val current = currentLists[source.id]

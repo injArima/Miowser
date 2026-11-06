@@ -1,7 +1,5 @@
 package com.miowser.app.ui
 
-import com.miowser.app.ui.theme.LocalMotionPolicy
-import com.miowser.app.ui.theme.MotionTokens
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
@@ -55,6 +53,12 @@ import com.miowser.app.R
 import com.miowser.app.ui.icons.HotelClassRoundedOutline
 import com.miowser.app.ui.icons.HomeRoundedOutline
 import com.miowser.app.ui.theme.ExpressiveTokens
+import com.miowser.app.ui.theme.LocalMotionPolicy
+import com.miowser.app.ui.theme.MotionTokens
+import com.miowser.app.ui.theme.UiCorners
+import com.miowser.app.ui.theme.UiElevation
+import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.UiSpacing
 
 /**
  * The real browser toolbar: Back, Forward, Bookmarks, Home, Tabs, and an overflow (hamburger)
@@ -125,7 +129,7 @@ fun BottomBar(
     // content's bottom padding to match this Surface's actual measured height, so growing it by
     // the inset amount pushes the content up to clear it automatically.
     Surface(
-        tonalElevation = 2.dp,
+        tonalElevation = UiElevation.low,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
     ) {
@@ -134,7 +138,7 @@ fun BottomBar(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = sidePadding, vertical = 8.dp),
+                    .padding(horizontal = sidePadding, vertical = UiSpacing.s),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
             Box {
@@ -285,8 +289,8 @@ private fun TabCountIcon(count: Int) {
     val description = pluralStringResource(R.plurals.open_tabs, count, count)
     Box(
         modifier = Modifier
-            .size(24.dp)
-            .border(width = 2.dp, color = tint, shape = RoundedCornerShape(5.dp))
+            .size(UiIconSize.standard)
+            .border(width = 2.dp, color = tint, shape = UiCorners.r5)
             .clearAndSetSemantics { contentDescription = description },
         contentAlignment = Alignment.Center
     ) {

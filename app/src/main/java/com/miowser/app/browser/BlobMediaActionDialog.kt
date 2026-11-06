@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.miowser.app.grabber.DetectedMedia
+import com.miowser.app.ui.theme.UiSpacing
 
 internal enum class BlobActionKind { PLAY, DOWNLOAD, ADD_TO_LIBRARY }
 internal data class PendingBlobAction(val tabId: Long, val item: DetectedMedia, val kind: BlobActionKind)
@@ -42,7 +43,7 @@ internal fun BlobMediaActionDialog(
             else -> "Download page video"
         }) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(UiSpacing.compact)) {
                 Text(
                     if (sources.isEmpty()) {
                         if (savingToLibrary) "This page video has no verified media link to save in the library yet."
@@ -70,7 +71,7 @@ internal fun BlobMediaActionDialog(
                                 shape = MaterialTheme.shapes.medium,
                                 color = MaterialTheme.colorScheme.surfaceContainerHigh
                             ) {
-                                Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
+                                Column(Modifier.padding(horizontal = UiSpacing.m, vertical = 9.dp)) {
                                     val host = runCatching { Uri.parse(source.url).host }.getOrNull()
                                         ?: "Media source"
                                     Text(

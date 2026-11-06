@@ -24,6 +24,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.miowser.app.ui.theme.UiElevation
+import com.miowser.app.ui.theme.UiSpacing
 
 internal enum class ConfirmationTone { NORMAL, CAUTION }
 
@@ -50,22 +52,22 @@ internal fun MiowserConfirmationDialog(
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.extraLarge,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            tonalElevation = 6.dp,
+            tonalElevation = UiElevation.medium,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(
                 modifier = Modifier.padding(horizontal = 22.dp, vertical = 26.dp)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
+                verticalArrangement = Arrangement.spacedBy(UiSpacing.roomy)
             ) {
                 Text(title, style = MaterialTheme.typography.titleLarge,
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                 Text(message, style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(UiSpacing.compact)) {
                     actions.chunked(2).forEachIndexed { rowIndex, rowActions ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        Row(horizontalArrangement = Arrangement.spacedBy(UiSpacing.compact),
                             modifier = Modifier.fillMaxWidth()) {
                             rowActions.forEachIndexed { columnIndex, action ->
                                 val actionIndex = rowIndex * 2 + columnIndex
@@ -100,7 +102,7 @@ internal fun MiowserConfirmationDialog(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp))
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.xs))
                             Text("Tap ${selected.label} again to confirm.",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = if (selected.tone == ConfirmationTone.CAUTION)

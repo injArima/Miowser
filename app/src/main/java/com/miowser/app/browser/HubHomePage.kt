@@ -1,7 +1,5 @@
 package com.miowser.app.browser
 
-import com.miowser.app.ui.theme.LocalMotionPolicy
-import com.miowser.app.ui.theme.MotionTokens
 import android.net.Uri
 import android.content.Intent
 import android.view.HapticFeedbackConstants
@@ -162,9 +160,6 @@ import com.miowser.app.ui.ConfirmationTone
 import com.miowser.app.ui.MiowserConfirmationDialog
 import com.miowser.app.ui.MiowserSnackbarHost
 import com.miowser.app.ui.sheetVerticalEdgeFade
-import com.miowser.app.ui.theme.ExpressiveTokens
-import com.miowser.app.ui.theme.AppThemeMode
-import com.miowser.app.ui.theme.AppThemePreference
 import com.miowser.app.settings.AppSettings
 import com.miowser.app.settings.LibraryBehavior
 import kotlinx.coroutines.Dispatchers
@@ -179,6 +174,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.awaitCancellation
 import com.miowser.app.library.LocalInspectionCache
 import java.net.URI
+import com.miowser.app.ui.theme.AppThemeMode
+import com.miowser.app.ui.theme.AppThemePreference
+import com.miowser.app.ui.theme.ExpressiveTokens
+import com.miowser.app.ui.theme.LocalMotionPolicy
+import com.miowser.app.ui.theme.MotionTokens
+import com.miowser.app.ui.theme.UiElevation
+import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.UiSpacing
 
 enum class HubSection { LIBRARY, DOWNLOADS, MORE }
 enum class HubDownloadSection { DOWNLOADING, DOWNLOADED }
@@ -371,7 +374,7 @@ fun HubHomePage(
         snackbarHost = {
             MiowserSnackbarHost(
                 hostState = importSnackbar,
-                modifier = Modifier.padding(bottom = hubBottomBarHeight + 8.dp)
+                modifier = Modifier.padding(bottom = hubBottomBarHeight + UiSpacing.s)
             )
         },
         topBar = {
@@ -493,7 +496,7 @@ fun HubHomePage(
                     OutlinedTextField(
                         value = librarySearchQuery,
                         onValueChange = { librarySearchQuery = it },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.l, vertical = 6.dp),
                         placeholder = { Text("Search videos") },
                         leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
                         trailingIcon = {
@@ -525,7 +528,7 @@ fun HubHomePage(
                 Icon(
                     Icons.Rounded.Language,
                     contentDescription = "Browse",
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(UiIconSize.featured)
                 )
             }
         }
@@ -593,7 +596,7 @@ fun HubHomePage(
                                 }
                             },
                             libraryView = libraryView,
-                            modifier = Modifier.fillMaxSize().padding(top = 8.dp)
+                            modifier = Modifier.fillMaxSize().padding(top = UiSpacing.s)
                         )
                         HubSection.DOWNLOADS -> HubDownloadsTabContent(
                             uiVisible = uiVisible,
@@ -689,8 +692,8 @@ fun HubHomePage(
     if (importingFolder) {
         AlertDialog(onDismissRequest = {}, title = { Text("Importing folder") },
             text = { Row(verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                horizontalArrangement = Arrangement.spacedBy(UiSpacing.l)) {
+                CircularProgressIndicator(modifier = Modifier.size(UiIconSize.standard))
                 Text("Finding videos and building your Library folders…")
             } }, confirmButton = {})
     }
@@ -754,7 +757,7 @@ private fun HubBottomNavigation(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp),
+            .padding(horizontal = UiSpacing.m, vertical = UiSpacing.xs),
         contentAlignment = Alignment.Center
     ) {
         val density = LocalDensity.current
@@ -799,9 +802,9 @@ private fun HubBottomNavigation(
             Surface(
                 shape = RoundedCornerShape(30.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shadowElevation = 4.dp
+                shadowElevation = UiElevation.raised
             ) {
-                Box(modifier = Modifier.padding(4.dp)) {
+                Box(modifier = Modifier.padding(UiSpacing.xs)) {
                     // The highlight and segment widths share the same transition clock.
                     Box(Modifier.matchParentSize().drawBehind {
                         val width = pillWidth.value.toPx().coerceIn(0f, size.width)
@@ -813,7 +816,7 @@ private fun HubBottomNavigation(
                     })
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        horizontalArrangement = Arrangement.spacedBy(UiSpacing.xxs)
                     ) {
                         sections.forEach { section ->
                             val label = labels.getValue(section)
@@ -912,8 +915,8 @@ private fun HubBottomNavigation(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh
             ) {
                 Row(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(UiSpacing.l),
+                    horizontalArrangement = Arrangement.spacedBy(UiSpacing.m),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(Icons.Rounded.History, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
@@ -990,8 +993,8 @@ private fun HubBottomNavigation(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh
             ) {
                 Row(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(UiSpacing.l),
+                    horizontalArrangement = Arrangement.spacedBy(UiSpacing.m),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(Icons.Rounded.FolderOpen, contentDescription = null,
@@ -1069,7 +1072,7 @@ private fun HubNavigationItem(
 @Composable
 private fun HubNavigationIcon(scale: State<Float>, color: State<Color>,
     icon: @Composable () -> Unit) {
-    Box(modifier = Modifier.padding(start = 12.dp).graphicsLayer {
+    Box(modifier = Modifier.padding(start = UiSpacing.m).graphicsLayer {
         scaleX = scale.value
         scaleY = scale.value
     }) {
@@ -1084,7 +1087,7 @@ private fun HubNavigationLabel(label: String, opacity: State<Float>, color: Stat
     BasicText(
         label,
         modifier = Modifier
-            .padding(start = 44.dp, end = 12.dp)
+            .padding(start = 44.dp, end = UiSpacing.m)
             .graphicsLayer { alpha = opacity.value }
             .clearAndSetSemantics { },
         style = MaterialTheme.typography.labelLarge,
@@ -1103,13 +1106,13 @@ private fun HubMoreContent(
     val libraryBehavior = AppSettings.current.libraryBehavior
     Column(
         modifier = modifier.testTag("hub_more").verticalScroll(rememberScrollState())
-            .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 88.dp),
+            .padding(start = UiSpacing.xl, end = UiSpacing.xl, top = UiSpacing.xl, bottom = 88.dp),
         verticalArrangement = Arrangement.spacedBy(ExpressiveTokens.sectionGap)
     ) {
         ExpressiveSectionCard(modifier = Modifier.fillMaxWidth()) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(2.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.fillMaxWidth().padding(UiSpacing.xxs),
+                horizontalArrangement = Arrangement.spacedBy(UiSpacing.comfortable),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
@@ -1207,7 +1210,7 @@ private fun HubDownloadsTabContent(
     val view = LocalView.current
     Column(modifier = modifier) {
         SingleChoiceSegmentedButtonRow(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+            modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.l, vertical = UiSpacing.s)
         ) {
             HubDownloadSection.entries.forEachIndexed { index, section ->
                 SegmentedButton(
@@ -1300,7 +1303,7 @@ private fun HubDownloadedGrid(
         }
     }
     if (downloads.isEmpty()) {
-        Box(modifier = modifier.padding(24.dp), contentAlignment = Alignment.Center) {
+        Box(modifier = modifier.padding(UiSpacing.xxl), contentAlignment = Alignment.Center) {
             ExpressiveEmptyState(
                 title = "No downloaded files",
                 description = "Completed downloads will appear here.",
@@ -1313,8 +1316,8 @@ private fun HubDownloadedGrid(
             columns = GridCells.Adaptive(minSize = 168.dp),
             modifier = modifier.testTag("downloaded_grid"),
             contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 80.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(UiSpacing.m),
+            verticalArrangement = Arrangement.spacedBy(UiSpacing.m)
         ) {
             items(downloads, key = { it.id }, contentType = { "download-card" }) { download ->
                 val savedUri = download.savedUri?.toString()
@@ -1648,7 +1651,7 @@ private fun HubLibraryContent(
         if (selectedFolder?.parentId != null) {
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 12.dp),
+                    .padding(horizontal = UiSpacing.m),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 LibraryFolders.lineage(selectedFolder.id).forEachIndexed { index, folder ->
@@ -1659,7 +1662,7 @@ private fun HubLibraryContent(
         }
         if (entries.isEmpty() && childFolders.isEmpty()) {
             Box(
-                modifier = Modifier.fillMaxWidth().weight(1f).padding(24.dp),
+                modifier = Modifier.fillMaxWidth().weight(1f).padding(UiSpacing.xxl),
                 contentAlignment = Alignment.Center
             ) {
                 ExpressiveEmptyState(
@@ -1674,7 +1677,7 @@ private fun HubLibraryContent(
             }
         } else if (visibleEntries.orEmpty().isEmpty() && childFolders.isEmpty()) {
             Box(
-                modifier = Modifier.fillMaxWidth().weight(1f).padding(24.dp),
+                modifier = Modifier.fillMaxWidth().weight(1f).padding(UiSpacing.xxl),
                 contentAlignment = Alignment.Center
             ) {
                 ExpressiveEmptyState(
@@ -1693,8 +1696,8 @@ private fun HubLibraryContent(
                 columns = if (libraryView == HubLibraryView.GRID) GridCells.Adaptive(minSize = 168.dp) else GridCells.Fixed(1),
                 modifier = Modifier.fillMaxWidth().weight(1f).testTag("library_grid"),
                 contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 80.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(UiSpacing.m),
+                verticalArrangement = Arrangement.spacedBy(UiSpacing.m)
             ) {
                 items(childFolders, key = { "folder-${it.id}" }, contentType = { "folder-card" }) { folder ->
                     LibrarySubfolderCard(

@@ -1,7 +1,6 @@
 package com.miowser.app.browser
-import com.miowser.app.ui.theme.LocalMotionPolicy
-import androidx.compose.ui.platform.testTag
 
+import androidx.compose.ui.platform.testTag
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
@@ -89,6 +88,10 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import com.miowser.app.ui.theme.LocalMotionPolicy
+import com.miowser.app.ui.theme.UiCorners
+import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.UiSpacing
 
 @Composable
 fun TabsPage(
@@ -154,9 +157,9 @@ fun TabsPage(
                 IconToggleButton(
                     checked = section == 0,
                     onCheckedChange = { section = 0 },
-                    modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(
+                    modifier = Modifier.clip(UiCorners.r14).background(
                         if (section == 0) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                        RoundedCornerShape(14.dp)
+                        UiCorners.r14
                     )
                 ) {
                     Icon(Icons.Rounded.Language, contentDescription = "Browsing tabs",
@@ -166,15 +169,15 @@ fun TabsPage(
                 IconToggleButton(
                     checked = section == 1,
                     onCheckedChange = { section = 1 },
-                    modifier = Modifier.padding(end = 8.dp).clip(RoundedCornerShape(14.dp)).background(
+                    modifier = Modifier.padding(end = UiSpacing.s).clip(UiCorners.r14).background(
                         if (section == 1) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                        RoundedCornerShape(14.dp)
+                        UiCorners.r14
                     )
                 ) {
                     IncognitoIcon(
                         tint = if (section == 1) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp).semantics { contentDescription = "Private tabs" }
+                        modifier = Modifier.size(UiIconSize.standard).semantics { contentDescription = "Private tabs" }
                     )
                 }
             }
@@ -191,13 +194,13 @@ fun TabsPage(
                 InactiveTabsCard(
                     count = inactiveTabs.size,
                     onClick = { showingInactive = true },
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                    modifier = Modifier.padding(horizontal = UiSpacing.m, vertical = UiSpacing.xs)
                 )
             }
 
             if (visibleTabs.isEmpty()) {
                 Column(
-                    modifier = Modifier.fillMaxSize().padding(32.dp),
+                    modifier = Modifier.fillMaxSize().padding(UiSpacing.xxxl),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
@@ -213,8 +216,8 @@ fun TabsPage(
                     state = gridState,
                     modifier = Modifier.fillMaxSize().testTag("tabs_grid"),
                     contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = 88.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(UiSpacing.m),
+                    verticalArrangement = Arrangement.spacedBy(UiSpacing.m)
                 ) {
                     gridItems(visibleTabs, key = { it.id }, contentType = { "tab-preview" }) { tab ->
                         SwipeCloseTabCard(
@@ -230,7 +233,7 @@ fun TabsPage(
           }
           FloatingActionButton(
               onClick = { if (section == 0) onNewTab() else onNewPrivateTab() },
-              modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
+              modifier = Modifier.align(Alignment.BottomEnd).padding(UiSpacing.l)
                   .testTag("new_tab_fab"),
               containerColor = MaterialTheme.colorScheme.primaryContainer,
               contentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -328,7 +331,7 @@ private fun SwipeCloseTabCard(
         Row(
             modifier = Modifier.matchParentSize()
                 .background(MaterialTheme.colorScheme.errorContainer)
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = UiSpacing.l),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -354,13 +357,13 @@ private fun InactiveTabsCard(count: Int, onClick: () -> Unit, modifier: Modifier
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.roomy, vertical = UiSpacing.l),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(Icons.Rounded.History, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
             Text("$count inactive ${if (count == 1) "tab" else "tabs"}",
                 style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f).padding(horizontal = 14.dp))
+                modifier = Modifier.weight(1f).padding(horizontal = UiSpacing.comfortable))
             Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = "View inactive tabs")
         }
     }
@@ -398,7 +401,7 @@ private fun InactiveTabList(
 ) {
     if (records.isEmpty()) {
         Column(
-            modifier = modifier.fillMaxSize().padding(32.dp),
+            modifier = modifier.fillMaxSize().padding(UiSpacing.xxxl),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -414,7 +417,7 @@ private fun InactiveTabList(
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(UiSpacing.compact)
     ) {
         listItems(records, key = { it.id }) { record ->
             Card(
@@ -423,7 +426,7 @@ private fun InactiveTabList(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, top = 14.dp, bottom = 14.dp, end = 6.dp),
+                    modifier = Modifier.fillMaxWidth().padding(start = UiSpacing.l, top = UiSpacing.comfortable, bottom = UiSpacing.comfortable, end = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
@@ -494,7 +497,7 @@ private fun TabPreviewCard(tab: Tab, isActive: Boolean, onClick: () -> Unit, onC
                 Icon(Icons.Rounded.Close, contentDescription = "Close ${tab.title}")
             }
         }
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+        Column(modifier = Modifier.padding(horizontal = UiSpacing.m, vertical = UiSpacing.compact)) {
             Text(tab.title.ifBlank { "New tab" }, fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (!tab.isShowingHome && tab.url.isNotBlank()) {
@@ -510,16 +513,16 @@ private fun TabPreviewCard(tab: Tab, isActive: Boolean, onClick: () -> Unit, onC
 private fun HomeTabPreview(modifier: Modifier = Modifier) {
     val dials = SpeedDials.entries.filter { it.folderId == null }.take(3)
     Column(
-        modifier = modifier.background(MaterialTheme.colorScheme.surface).padding(14.dp),
+        modifier = modifier.background(MaterialTheme.colorScheme.surface).padding(UiSpacing.comfortable),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text("Miowser", style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(top = 24.dp, bottom = 14.dp))
+            modifier = Modifier.padding(top = UiSpacing.xxl, bottom = UiSpacing.comfortable))
         Row(
             modifier = Modifier.fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(16.dp))
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh, UiCorners.r16)
+                .padding(horizontal = UiSpacing.compact, vertical = UiSpacing.s),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
@@ -529,12 +532,12 @@ private fun HomeTabPreview(modifier: Modifier = Modifier) {
                 overflow = TextOverflow.Ellipsis)
         }
         Text("Speed dial", style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 10.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            modifier = Modifier.fillMaxWidth().padding(top = 22.dp, bottom = UiSpacing.compact))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(UiSpacing.xs)) {
             dials.forEach { dial ->
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(Modifier.size(30.dp)
-                        .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(10.dp)),
+                        .background(MaterialTheme.colorScheme.primaryContainer, UiCorners.r10),
                         contentAlignment = Alignment.Center) {
                         Text(dial.title.take(1).uppercase(), style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer)
@@ -551,24 +554,24 @@ private fun HomeTabPreview(modifier: Modifier = Modifier) {
 private fun TabPreviewSkeleton(modifier: Modifier = Modifier) {
     val blockColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)
     Column(
-        modifier = modifier.semantics { contentDescription = "No tab preview available" }.padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        modifier = modifier.semantics { contentDescription = "No tab preview available" }.padding(UiSpacing.l),
+        verticalArrangement = Arrangement.spacedBy(UiSpacing.m)
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(horizontalArrangement = Arrangement.spacedBy(UiSpacing.compact), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.width(28.dp).height(28.dp)
-                .background(blockColor, RoundedCornerShape(8.dp)))
+                .background(blockColor, UiCorners.r8))
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.fillMaxWidth(0.78f).height(9.dp)
-                    .background(blockColor, RoundedCornerShape(5.dp)))
+                    .background(blockColor, UiCorners.r5))
                 Box(Modifier.fillMaxWidth(0.52f).height(8.dp)
                     .background(blockColor, RoundedCornerShape(4.dp)))
             }
         }
         Box(Modifier.fillMaxWidth().weight(1f)
-            .background(blockColor, RoundedCornerShape(12.dp)))
+            .background(blockColor, UiCorners.r12))
         Box(Modifier.fillMaxWidth(0.86f).height(10.dp)
-            .background(blockColor, RoundedCornerShape(5.dp)))
+            .background(blockColor, UiCorners.r5))
         Box(Modifier.fillMaxWidth(0.62f).height(10.dp)
-            .background(blockColor, RoundedCornerShape(5.dp)))
+            .background(blockColor, UiCorners.r5))
     }
 }

@@ -1,8 +1,6 @@
 package com.miowser.app.browser
 
 import androidx.activity.compose.BackHandler
-import com.miowser.app.ui.theme.LocalMotionPolicy
-import com.miowser.app.ui.theme.MotionTokens
 import androidx.compose.animation.animateColorAsState
 import android.graphics.Bitmap
 import androidx.compose.foundation.BorderStroke
@@ -92,6 +90,12 @@ import com.miowser.app.settings.SearchEngine
 import com.miowser.app.ui.MiowserMenuDivider
 import com.miowser.app.ui.MiowserMenuItem
 import com.miowser.app.ui.MiowserDropdownMenu
+import com.miowser.app.ui.theme.LocalMotionPolicy
+import com.miowser.app.ui.theme.MotionTokens
+import com.miowser.app.ui.theme.UiControlSize
+import com.miowser.app.ui.theme.UiCorners
+import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.UiSpacing
 
 /** Internal address kept in WebView history while the native homepage is drawn over it. */
 const val BROWSER_HOME_URL = "about:blank#miowser-home"
@@ -179,7 +183,7 @@ fun BrowserHomePage(
             },
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(UiSpacing.compact)
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column(
@@ -192,7 +196,7 @@ fun BrowserHomePage(
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(bottom = 18.dp)
+                    modifier = Modifier.padding(bottom = UiSpacing.roomy)
                 )
                 Box(modifier = Modifier.fillMaxWidth()) {
                     OutlinedTextField(
@@ -204,10 +208,10 @@ fun BrowserHomePage(
                             .focusRequester(searchFocusRequester)
                             .onFocusChanged { searchFocused = it.isFocused },
                         placeholder = { Text("Search ${searchEngine.label} or type URL") },
-                        prefix = { Spacer(Modifier.width(8.dp)) },
+                        prefix = { Spacer(Modifier.width(UiSpacing.s)) },
                         trailingIcon = {
                             Box(
-                                modifier = Modifier.size(48.dp).background(
+                                modifier = Modifier.size(UiControlSize.touchTarget).background(
                                     Brush.horizontalGradient(
                                         listOf(
                                             Color.Transparent,
@@ -220,7 +224,7 @@ fun BrowserHomePage(
                                 IconButton(
                                     onClick = { submitSearch() },
                                     enabled = searchText.isNotBlank(),
-                                    modifier = Modifier.size(40.dp)
+                                    modifier = Modifier.size(UiControlSize.compact)
                                 ) {
                                     Icon(
                                         Icons.Rounded.Search,
@@ -480,7 +484,7 @@ private fun SpeedDialTile(
                 Icons.Rounded.CheckCircle,
                 contentDescription = "Selected",
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.align(Alignment.TopEnd).size(18.dp)
+                modifier = Modifier.align(Alignment.TopEnd).size(UiIconSize.small)
             )
         }
         MiowserDropdownMenu(
@@ -594,9 +598,9 @@ private fun CompactDialTile(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(UiCorners.r14)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(horizontal = 2.dp, vertical = 4.dp),
+            .padding(horizontal = UiSpacing.xxs, vertical = UiSpacing.xs),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Surface(
@@ -627,7 +631,7 @@ private fun CompactDialTile(
 @Composable
 private fun AddSpeedDialTile(onClick: () -> Unit) {
     CompactDialTile("Add", false, onClick, onClick) {
-        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(28.dp))
+        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(UiIconSize.featured))
     }
 }
 
@@ -699,7 +703,7 @@ private fun SpeedDialEditorDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (existing == null) "Add speed dial" else "Edit speed dial") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(UiSpacing.m)) {
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },

@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.miowser.app.ui.theme.UiSpacing
 
 /** Sheets meet the bottom edge; only their exposed top edge has rounded corners. */
 val MiowserBottomSheetShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
@@ -22,7 +23,7 @@ fun CompactSheetDragHandle() {
     Box(
         modifier = Modifier.fillMaxWidth()
             .sheetTopRim(MaterialTheme.colorScheme.outlineVariant)
-            .padding(top = 7.dp, bottom = 18.dp),
+            .padding(top = 7.dp, bottom = UiSpacing.roomy),
         contentAlignment = Alignment.Center
     ) {
         Box(

@@ -25,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.miowser.app.ui.theme.ExpressiveTokens
+import com.miowser.app.ui.theme.UiSpacing
 
 /** Shared grouped container for app-owned settings and information surfaces. */
 @Composable
@@ -57,7 +58,7 @@ fun ExpressiveBottomSheet(
         Column(
             modifier = Modifier.fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(start = ExpressiveTokens.pageGutter, end = ExpressiveTokens.pageGutter, bottom = 8.dp),
+                .padding(start = ExpressiveTokens.pageGutter, end = ExpressiveTokens.pageGutter, bottom = UiSpacing.s),
             verticalArrangement = Arrangement.spacedBy(ExpressiveTokens.itemGap),
             content = content
         )
@@ -66,7 +67,7 @@ fun ExpressiveBottomSheet(
 
 @Composable
 fun ExpressiveSheetHeading(title: String, description: String? = null) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(UiSpacing.xs)) {
         Text(title, style = MaterialTheme.typography.titleLarge)
         if (description != null) {
             Text(
@@ -86,7 +87,7 @@ fun ExpressiveChoiceSetting(
     choices: @Composable RowScope.() -> Unit
 ) {
     ExpressiveSectionCard(modifier = Modifier.fillMaxWidth()) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
             Text(title, style = MaterialTheme.typography.titleSmall)
             Text(
                 description,
@@ -95,7 +96,7 @@ fun ExpressiveChoiceSetting(
             )
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(UiSpacing.s),
                 content = choices
             )
         }

@@ -60,6 +60,7 @@ import com.miowser.app.adblock.FilterListStage
 import java.io.ByteArrayOutputStream
 import java.text.DateFormat
 import java.util.Date
+import com.miowser.app.ui.theme.UiSpacing
 
 private const val MAX_IMPORTED_RULE_BYTES = 256 * 1024
 
@@ -132,12 +133,12 @@ fun AdBlockPage(
         LazyColumn(
             modifier = modifier.imePadding(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(UiSpacing.m)
         ) {
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Row(
-                        modifier = Modifier.padding(16.dp),
+                        modifier = Modifier.padding(UiSpacing.l),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
@@ -161,7 +162,7 @@ fun AdBlockPage(
             }
             item {
                 Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.padding(UiSpacing.l), verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
                         Text("Protection for this site", fontWeight = FontWeight.SemiBold)
                         if (siteHost == null) Text("Open a regular web page to change its protection.")
                         else {
@@ -203,18 +204,18 @@ fun AdBlockPage(
                 ) {
                     if (isRefreshingAll) {
                         CircularProgressIndicator(
-                            modifier = Modifier.padding(end = 8.dp),
+                            modifier = Modifier.padding(end = UiSpacing.s),
                             strokeWidth = 2.dp
                         )
                     } else {
-                        Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                        Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.padding(end = UiSpacing.s))
                     }
                     Text(if (isRefreshingAll) "Refreshing all lists..." else "Refresh all lists")
                 }
             }
 
             item {
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                HorizontalDivider(modifier = Modifier.padding(vertical = UiSpacing.xs))
                 SectionHeading(
                     title = "Your filter lists",
                     supporting = "Your enabled lists stay enabled. Lists are compiled and cached in the background, with overlapping rules stored once. Download and parsing errors are reported without changing your switches."
@@ -224,7 +225,7 @@ fun AdBlockPage(
             val customSubscriptions = subscriptions.filterNot(FilterSubscription::isBuiltIn)
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.padding(UiSpacing.l), verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
                         Text("Add lists in bulk", fontWeight = FontWeight.SemiBold)
                         Text("Paste one URL per line, up to 50 saved lists. New lists are enabled and processed in the background. Duplicate URLs are skipped. Downloads over 32 MB are rejected with an error.",
                             style = MaterialTheme.typography.bodySmall)
@@ -275,13 +276,13 @@ fun AdBlockPage(
 
             item {
                 OutlinedButton(onClick = { showAddDialog = true }, enabled = !isAddingLists && !isRefreshing, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.padding(end = UiSpacing.s))
                     Text("Add filter-list URL")
                 }
             }
 
             item {
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                HorizontalDivider(modifier = Modifier.padding(vertical = UiSpacing.xs))
                 SectionHeading(
                     title = "Custom rules",
                     supporting = "Paste one EasyList/Adblock Plus network or cosmetic rule per line, or import a plain-text filter file. Changes apply to new or reloaded pages."
@@ -292,7 +293,7 @@ fun AdBlockPage(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 180.dp)
-                        .padding(top = 8.dp),
+                        .padding(top = UiSpacing.s),
                     placeholder = { Text("||ads.example.com^\nexample.com##.sponsored") },
                     minLines = 7
                 )
@@ -301,7 +302,7 @@ fun AdBlockPage(
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)
                 ) {
                     OutlinedButton(
                         onClick = { importLauncher.launch(arrayOf("text/plain", "application/octet-stream")) },
@@ -325,7 +326,7 @@ fun AdBlockPage(
                     showCustomRulesGuide = true
                 }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.AutoMirrored.Rounded.HelpOutline, contentDescription = null,
-                        modifier = Modifier.padding(end = 8.dp))
+                        modifier = Modifier.padding(end = UiSpacing.s))
                     Text("How to use custom rules")
                 }
             }
@@ -364,7 +365,7 @@ private fun CustomRulesGuideDialog(onDismiss: () -> Unit) {
         title = { Text("How to use custom rules") },
         text = {
             Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
                 Text("Put one rule on each line. Lines beginning with ! are notes. Start with a rule for one site so it cannot hide content elsewhere.")
                 Text("Hide an element on one site:", fontWeight = FontWeight.SemiBold)
                 Text("example.com##.ad-banner", fontFamily = FontFamily.Monospace)
@@ -408,7 +409,7 @@ private fun SubscriptionRow(
     progress: FilterListProgress?
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(UiSpacing.l)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(subscription.name, fontWeight = FontWeight.Medium)
@@ -463,7 +464,7 @@ private fun SubscriptionRow(
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
-                modifier = Modifier.padding(top = 8.dp)
+                modifier = Modifier.padding(top = UiSpacing.s)
             )
             if (progress != null) {
                 val fraction = when (progress.stage) {
@@ -476,7 +477,7 @@ private fun SubscriptionRow(
                     FilterListStage.READY -> 1f
                     else -> null
                 }
-                val barModifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                val barModifier = Modifier.fillMaxWidth().padding(top = UiSpacing.s)
                 val barColor = if (progress.stage == FilterListStage.FAILED)
                     MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                 if (fraction == null) LinearProgressIndicator(modifier = barModifier, color = barColor)
@@ -544,7 +545,7 @@ private fun AddSubscriptionDialog(onAdd: (String, String) -> Unit, onDismiss: ()
         onDismissRequest = onDismiss,
         title = { Text("Add filter list") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },

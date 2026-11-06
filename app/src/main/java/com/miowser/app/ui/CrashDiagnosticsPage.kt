@@ -50,6 +50,8 @@ import com.miowser.app.settings.AppSettings
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
+import com.miowser.app.ui.theme.UiCorners
+import com.miowser.app.ui.theme.UiSpacing
 
 @Composable
 fun CrashDiagnosticsPage(onBack: () -> Unit) {
@@ -78,13 +80,13 @@ fun CrashDiagnosticsPage(onBack: () -> Unit) {
                         "No reports yet. App crashes are saved locally; Android-reported native crashes and ANRs appear after the next launch."
                     else "Crash saving is off. Turn on Save crash diagnostics in Settings to keep future reports.",
                     icon = Icons.Rounded.BugReport,
-                    modifier = Modifier.align(Alignment.Center).padding(24.dp)
+                    modifier = Modifier.align(Alignment.Center).padding(UiSpacing.xxl)
                 )
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(UiSpacing.m)
                 ) {
                     item {
                         Text(
@@ -102,7 +104,7 @@ fun CrashDiagnosticsPage(onBack: () -> Unit) {
             }
             MiowserSnackbarHost(
                 hostState = snackbar,
-                modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)
+                modifier = Modifier.align(Alignment.BottomCenter).padding(UiSpacing.l)
             )
         }
     }
@@ -169,17 +171,17 @@ fun CrashDiagnosticsPage(onBack: () -> Unit) {
 private fun CrashReportRow(report: CrashReportSummary, onClick: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        shape = RoundedCornerShape(20.dp),
+        shape = UiCorners.r20,
         color = MaterialTheme.colorScheme.surfaceContainer
     ) {
         Row(
-            modifier = Modifier.padding(18.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.padding(UiSpacing.roomy),
+            horizontalArrangement = Arrangement.spacedBy(UiSpacing.comfortable),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(Icons.Rounded.BugReport, contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(UiSpacing.xs)) {
                 Text(formatReportDate(report.createdAt), fontWeight = FontWeight.SemiBold)
                 Text(
                     formatBytes(report.bytes),

@@ -18,6 +18,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.miowser.app.ui.theme.UiCorners
+import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.UiSpacing
 
 @Composable
 fun MiowserDropdownMenu(
@@ -30,7 +33,7 @@ fun MiowserDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
         modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
+        shape = UiCorners.r16,
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         content = content
     )
@@ -51,16 +54,16 @@ fun MiowserMenuItem(
         text = text,
         onClick = onClick,
         leadingIcon = leadingIcon?.let { icon ->
-            { Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) { icon() } }
+            { Box(Modifier.size(UiIconSize.menu), contentAlignment = Alignment.Center) { icon() } }
         },
         trailingIcon = trailingIcon?.let { icon ->
-            { Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) { icon() } }
+            { Box(Modifier.size(UiIconSize.small), contentAlignment = Alignment.Center) { icon() } }
         },
         enabled = enabled,
         modifier = modifier
-            .padding(horizontal = 4.dp)
+            .padding(horizontal = UiSpacing.xs)
             .height(40.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(UiCorners.r8)
             .background(if (selected) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent),
         contentPadding = PaddingValues(horizontal = 10.dp)
     )
@@ -69,7 +72,7 @@ fun MiowserMenuItem(
 @Composable
 fun MiowserMenuDivider() {
     HorizontalDivider(
-        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+        modifier = Modifier.padding(horizontal = UiSpacing.s, vertical = 3.dp),
         color = MaterialTheme.colorScheme.outlineVariant
     )
 }

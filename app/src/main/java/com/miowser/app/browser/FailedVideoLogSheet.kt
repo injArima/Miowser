@@ -56,6 +56,9 @@ import com.miowser.app.ui.ConfirmationTone
 import com.miowser.app.ui.MiowserConfirmationDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.miowser.app.ui.theme.UiControlSize
+import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.UiSpacing
 
 private enum class VideoRecordSection { RECENT, SAVED }
 
@@ -102,7 +105,7 @@ internal fun FailedVideoLogSheet(
             "Video references",
             "Recent playback issues expire after 90 days without an action. Saved records stay until you delete them."
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
             FilterChip(
                 selected = section == VideoRecordSection.RECENT,
                 onClick = { section = VideoRecordSection.RECENT; expandedId = null },
@@ -121,7 +124,7 @@ internal fun FailedVideoLogSheet(
                 Text(
                     if (section == VideoRecordSection.RECENT) "No playback issues recorded"
                     else "No saved video records yet",
-                    modifier = Modifier.padding(vertical = 24.dp)
+                    modifier = Modifier.padding(vertical = UiSpacing.xxl)
                 )
             } else {
                 val listState = rememberLazyListState()
@@ -129,7 +132,7 @@ internal fun FailedVideoLogSheet(
                     state = listState,
                     modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp)
                         .sheetVerticalEdgeFade(listState, MaterialTheme.colorScheme.surface),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(UiSpacing.s)
                 ) {
                     items(records, key = FailedVideoRecord::id) { record ->
                         val expanded = expandedId == record.id
@@ -139,7 +142,7 @@ internal fun FailedVideoLogSheet(
                             color = MaterialTheme.colorScheme.surfaceContainerLow
                         ) {
                             Column(
-                                modifier = Modifier.padding(12.dp)
+                                modifier = Modifier.padding(UiSpacing.m)
                             ) {
                                 Surface(
                                     onClick = { expandedId = if (expanded) null else record.id },
@@ -148,8 +151,8 @@ internal fun FailedVideoLogSheet(
                                     color = MaterialTheme.colorScheme.surfaceContainerLow
                                 ) {
                                     Column(
-                                        modifier = Modifier.padding(4.dp),
-                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        modifier = Modifier.padding(UiSpacing.xs),
+                                        verticalArrangement = Arrangement.spacedBy(UiSpacing.xs)
                                     ) {
                                         Text(record.videoName, fontWeight = FontWeight.SemiBold)
                                         Text(record.pageTitle, style = MaterialTheme.typography.bodySmall)
@@ -161,11 +164,11 @@ internal fun FailedVideoLogSheet(
                                     }
                                 }
                                 if (expanded) {
-                                    Spacer(Modifier.height(10.dp))
+                                    Spacer(Modifier.height(UiSpacing.compact))
                                     val details = "Video: ${record.videoName}\nPage: ${record.pageTitle}\nWebsite: ${record.domain}\nURL: ${record.pageUrl}"
                                     Row(
                                         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(UiSpacing.m),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         RecordActionRow("Video name", record.videoName.isNotBlank(),
@@ -193,13 +196,13 @@ internal fun FailedVideoLogSheet(
                                         } else {
                                             IconButton(
                                                 onClick = { deleting = record; expandedId = null },
-                                                modifier = Modifier.size(44.dp),
+                                                modifier = Modifier.size(UiControlSize.action),
                                             ) {
                                                 Icon(
                                                     Icons.Rounded.Delete,
                                                     contentDescription = "Delete saved record",
                                                     tint = MaterialTheme.colorScheme.error,
-                                                    modifier = Modifier.size(20.dp)
+                                                    modifier = Modifier.size(UiIconSize.menu)
                                                 )
                                             }
                                         }
@@ -240,7 +243,7 @@ private fun RecordActionRow(
     onOpen: () -> Unit
 ) {
     Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(UiSpacing.s),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Surface(
@@ -252,7 +255,7 @@ private fun RecordActionRow(
             color = MaterialTheme.colorScheme.secondaryContainer
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.comfortable, vertical = 11.dp),
                 horizontalArrangement = Arrangement.spacedBy(7.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -265,12 +268,12 @@ private fun RecordActionRow(
             enabled = canOpen,
             shape = CircleShape,
             color = MaterialTheme.colorScheme.primaryContainer,
-            modifier = Modifier.size(44.dp)
+            modifier = Modifier.size(UiControlSize.action)
                 .semantics { contentDescription = "Open $label in browser" }
         ) {
             androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
                 Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null,
-                    modifier = Modifier.size(18.dp))
+                    modifier = Modifier.size(UiIconSize.small))
             }
         }
     }

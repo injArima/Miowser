@@ -50,6 +50,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import com.miowser.app.ui.theme.UiElevation
+import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.UiSpacing
 
 /** Search-only suggestions: never send an address or a partially typed URL to a provider. */
 private val partialDomain = Regex("(?i)^(?:[a-z0-9-]+\\.)+[a-z0-9-]*(?::\\d*)?(?:/.*)?$")
@@ -302,7 +305,7 @@ internal fun SearchSuggestionPopup(
             shape = MaterialTheme.shapes.large,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             tonalElevation = 3.dp,
-            shadowElevation = 8.dp
+            shadowElevation = UiElevation.high
         ) {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 suggestions.forEach { suggestion ->
@@ -313,8 +316,8 @@ internal fun SearchSuggestionPopup(
                         Row(
                             modifier = Modifier.weight(1f).heightIn(min = 48.dp)
                                 .clickable { onSelect(suggestion) }
-                                .padding(start = 16.dp, end = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                .padding(start = UiSpacing.l, end = UiSpacing.s),
+                            horizontalArrangement = Arrangement.spacedBy(UiSpacing.m),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
@@ -324,7 +327,7 @@ internal fun SearchSuggestionPopup(
                                     BrowserSuggestionKind.SEARCH -> Icons.Rounded.Search
                                 },
                                 contentDescription = null,
-                                modifier = Modifier.size(20.dp),
+                                modifier = Modifier.size(UiIconSize.menu),
                                 tint = if (suggestion.kind == BrowserSuggestionKind.SEARCH)
                                     MaterialTheme.colorScheme.onSurfaceVariant
                                 else MaterialTheme.colorScheme.primary

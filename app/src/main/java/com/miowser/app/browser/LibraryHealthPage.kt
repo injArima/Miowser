@@ -60,6 +60,8 @@ import com.miowser.app.ui.MiowserConfirmationDialog
 import com.miowser.app.ui.MiowserSnackbarHost
 import com.miowser.app.ui.SimplePageScaffold
 import kotlinx.coroutines.launch
+import com.miowser.app.ui.theme.UiCorners
+import com.miowser.app.ui.theme.UiSpacing
 
 private const val MAX_VISIBLE_ISSUES = 20
 
@@ -98,9 +100,9 @@ internal fun LibraryHealthPage(
             val current = report
             if (current == null) {
                 Column(
-                    modifier = Modifier.align(Alignment.Center).padding(24.dp),
+                    modifier = Modifier.align(Alignment.Center).padding(UiSpacing.xxl),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(UiSpacing.l)
                 ) {
                     CircularProgressIndicator()
                     Text("Checking Library records and local files…")
@@ -109,7 +111,7 @@ internal fun LibraryHealthPage(
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(UiSpacing.m)
                 ) {
                     item {
                         HealthSummary(current)
@@ -187,7 +189,7 @@ internal fun LibraryHealthPage(
             }
             MiowserSnackbarHost(
                 hostState = snackbar,
-                modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)
+                modifier = Modifier.align(Alignment.BottomCenter).padding(UiSpacing.l)
             )
         }
     }
@@ -225,13 +227,13 @@ private fun HealthSummary(report: LibraryHealthReport) {
     val healthy = report.issueCount == 0
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
+        shape = UiCorners.r24,
         color = if (healthy) MaterialTheme.colorScheme.primaryContainer
             else MaterialTheme.colorScheme.tertiaryContainer
     ) {
         Row(
-            modifier = Modifier.padding(20.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.padding(UiSpacing.xl),
+            horizontalArrangement = Arrangement.spacedBy(UiSpacing.l),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
@@ -239,7 +241,7 @@ private fun HealthSummary(report: LibraryHealthReport) {
                 contentDescription = null,
                 modifier = Modifier.size(32.dp)
             )
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(UiSpacing.xs)) {
                 Text(
                     if (healthy) "Library looks healthy" else "${report.issueCount} items need attention",
                     style = MaterialTheme.typography.titleMedium,
@@ -281,7 +283,7 @@ private fun EntryIssueSection(
         Column {
             entries.take(MAX_VISIBLE_ISSUES).forEachIndexed { index, entry ->
                 if (index > 0) HorizontalDivider()
-                Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+                Column(Modifier.fillMaxWidth().padding(vertical = UiSpacing.compact)) {
                     Text(entry.title.ifBlank { "Untitled video" }, maxLines = 1,
                         overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
                     Text(entry.sourceLabel, style = MaterialTheme.typography.bodySmall,
@@ -384,20 +386,20 @@ private fun HealthCard(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
+        shape = UiCorners.r24,
         color = MaterialTheme.colorScheme.surfaceContainer
     ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.padding(UiSpacing.roomy), verticalArrangement = Arrangement.spacedBy(UiSpacing.compact)) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(UiSpacing.m),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(icon, contentDescription = null, modifier = Modifier.size(26.dp),
                     tint = MaterialTheme.colorScheme.primary)
                 Text(title, style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
-                    Text(count, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                Surface(shape = UiCorners.r12, color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+                    Text(count, modifier = Modifier.padding(horizontal = UiSpacing.compact, vertical = UiSpacing.xs),
                         style = MaterialTheme.typography.labelLarge)
                 }
             }

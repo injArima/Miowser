@@ -23,6 +23,7 @@ import com.miowser.app.downloader.Download
 import com.miowser.app.downloader.DownloadStatus
 import com.miowser.app.ui.CompactSheetDragHandle
 import com.miowser.app.ui.MiowserBottomSheetShape
+import com.miowser.app.ui.theme.UiSpacing
 
 /** Browser-side view of work that is still in progress or needs attention. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -58,7 +59,7 @@ fun BrowserDownloadsSheet(
             val maxListHeight = maxHeight * 0.58f
         Column {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, bottom = 8.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = UiSpacing.xl, end = UiSpacing.m, bottom = UiSpacing.s),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("Downloads", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))

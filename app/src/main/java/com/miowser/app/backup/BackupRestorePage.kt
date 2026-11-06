@@ -48,6 +48,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.launch
 import kotlin.coroutines.resume
+import com.miowser.app.ui.theme.UiSpacing
 
 @Composable
 fun BackupRestorePage(activeDownloads: Boolean, onBack: () -> Unit) {
@@ -89,8 +90,8 @@ fun BackupRestorePage(activeDownloads: Boolean, onBack: () -> Unit) {
     }
 
     SimplePageScaffold(title = "Backup & restore", onBack = { if (!busy && !finishedRestore) onBack() }) { modifier ->
-        Column(modifier.verticalScroll(rememberScrollState()).padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(modifier.verticalScroll(rememberScrollState()).padding(UiSpacing.xl),
+            verticalArrangement = Arrangement.spacedBy(UiSpacing.comfortable)) {
             Text("Keep your settings, Library references, bookmarks, speed dials, site choices, filter lists, and saved video details.",
                 style = MaterialTheme.typography.bodyMedium)
             Text("History, open tabs, private browsing, cookies, login data, and video files are excluded. Backups are not encrypted; choose a private folder.",
@@ -106,7 +107,7 @@ fun BackupRestorePage(activeDownloads: Boolean, onBack: () -> Unit) {
             }
 
             Text("Automatic backup", style = MaterialTheme.typography.titleMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(UiSpacing.s), modifier = Modifier.fillMaxWidth()) {
                 BackupInterval.entries.take(3).forEach { option ->
                     FilterChip(enabled = !busy, selected = settings.interval == option,
                         onClick = {
@@ -121,7 +122,7 @@ fun BackupRestorePage(activeDownloads: Boolean, onBack: () -> Unit) {
                         }, label = { Text(option.label) })
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(UiSpacing.s), modifier = Modifier.fillMaxWidth()) {
                 BackupInterval.entries.drop(3).forEach { option ->
                     FilterChip(enabled = !busy, selected = settings.interval == option,
                         onClick = {

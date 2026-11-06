@@ -62,6 +62,9 @@ import com.miowser.app.ui.MiowserBottomSheetShape
 import com.miowser.app.ui.sheetVerticalEdgeFade
 import java.text.DateFormat
 import kotlin.math.roundToInt
+import com.miowser.app.ui.theme.UiCorners
+import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.UiSpacing
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -112,18 +115,18 @@ fun SiteInfoSheet(
                     .sheetVerticalEdgeFade(scrollState, MaterialTheme.colorScheme.surface)
                     .verticalScroll(scrollState)
                     .navigationBarsPadding()
-                    .padding(start = 16.dp, end = 16.dp, bottom = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .padding(start = UiSpacing.l, end = UiSpacing.l, bottom = UiSpacing.xl),
+                verticalArrangement = Arrangement.spacedBy(UiSpacing.m)
             ) {
                 DashboardHeader(host = host, security = security)
 
                 if (host != null) {
                     ExpressiveSectionCard(Modifier.fillMaxWidth()) {
                         DashboardSectionTitle("Site settings")
-                        Spacer(Modifier.size(12.dp))
+                        Spacer(Modifier.size(UiSpacing.m))
                         Row(
                             Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)
                         ) {
                             DashboardActionButton(
                                 label = "Clear cache",
@@ -142,7 +145,7 @@ fun SiteInfoSheet(
                             "Cache is shared across tabs. Hard reload clears cached assets, then reloads this page.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                            modifier = Modifier.padding(top = UiSpacing.s, bottom = UiSpacing.xs)
                         )
                         DashboardDivider()
                         DashboardToggle(
@@ -214,12 +217,12 @@ fun SiteInfoSheet(
                                             "Expand page element changes"
                                         },
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(start = 4.dp)
+                                        modifier = Modifier.padding(start = UiSpacing.xs)
                                     )
                                 }
                             }
                         }
-                        Spacer(Modifier.size(8.dp))
+                        Spacer(Modifier.size(UiSpacing.s))
                         if (elementRules.isEmpty()) {
                             Text(
                                 "No elements have been hidden or deleted on this site.",
@@ -254,11 +257,11 @@ fun SiteInfoSheet(
                             "Choose how strongly Miowser protects this website.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
+                            modifier = Modifier.padding(top = UiSpacing.xs, bottom = UiSpacing.s)
                         )
                         FlowRow(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)
                         ) {
                             SiteProtectionMode.entries.forEach { mode ->
                                 FilterChip(
@@ -274,14 +277,14 @@ fun SiteInfoSheet(
                             siteProtectionDescription(siteMode),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 4.dp)
+                            modifier = Modifier.padding(top = UiSpacing.xs)
                         )
                     }
                 }
 
                 ExpressiveSectionCard(Modifier.fillMaxWidth()) {
                     DashboardSectionTitle("Connection")
-                    Spacer(Modifier.size(8.dp))
+                    Spacer(Modifier.size(UiSpacing.s))
                     DashboardDetail(
                         "HTTPS",
                         when (security) {
@@ -299,13 +302,13 @@ fun SiteInfoSheet(
                         "An HTTPS connection alone does not show whether this site uses HSTS.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp)
+                        modifier = Modifier.padding(top = UiSpacing.s)
                     )
                 }
 
                 ExpressiveSectionCard(Modifier.fillMaxWidth()) {
                     DashboardSectionTitle("Certificate")
-                    Spacer(Modifier.size(8.dp))
+                    Spacer(Modifier.size(UiSpacing.s))
                     if (security == SiteSecurity.SECURE && certificate != null) {
                         DashboardDetail("Issued to", certificate.issuedTo?.dName.orEmpty().ifBlank { "Unknown" })
                         DashboardDivider()
@@ -347,13 +350,13 @@ fun SiteInfoSheet(
                             Text(
                                 if (adBlockEnabled && siteMode != SiteProtectionMode.OFF) "Real-time" else "Off",
                                 style = MaterialTheme.typography.labelSmall,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                modifier = Modifier.padding(horizontal = UiSpacing.compact, vertical = 5.dp)
                             )
                         }
                     }
                     Row(
-                        Modifier.fillMaxWidth().padding(top = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        Modifier.fillMaxWidth().padding(top = UiSpacing.m),
+                        horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)
                     ) {
                         ProtectionStat(
                             label = "Ads & trackers",
@@ -376,14 +379,14 @@ fun SiteInfoSheet(
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 10.dp)
+                        modifier = Modifier.padding(top = UiSpacing.compact)
                     )
                     if (protectionStats.topBlockedHosts.isNotEmpty()) {
                         DashboardDivider()
                         Text(
                             "Most blocked hosts",
                             style = MaterialTheme.typography.labelLarge,
-                            modifier = Modifier.padding(bottom = 8.dp)
+                            modifier = Modifier.padding(bottom = UiSpacing.s)
                         )
                         val largestCount = protectionStats.topBlockedHosts.maxOf { it.second }.coerceAtLeast(1)
                         protectionStats.topBlockedHosts.forEach { (blockedHost, count) ->
@@ -415,7 +418,7 @@ private fun DashboardHeader(host: String?, security: SiteSecurity) {
                 modifier = Modifier.padding(11.dp).size(22.dp)
             )
         }
-        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+        Column(Modifier.weight(1f).padding(start = UiSpacing.m)) {
             Text("Privacy dashboard", style = MaterialTheme.typography.titleLarge)
             Text(
                 "Connection and site controls",
@@ -426,11 +429,11 @@ private fun DashboardHeader(host: String?, security: SiteSecurity) {
     }
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = UiCorners.r16,
         color = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         Row(
-            Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+            Modifier.padding(horizontal = UiSpacing.comfortable, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
@@ -443,7 +446,7 @@ private fun DashboardHeader(host: String?, security: SiteSecurity) {
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).padding(horizontal = 10.dp)
+                modifier = Modifier.weight(1f).padding(horizontal = UiSpacing.compact)
             )
             Surface(
                 shape = RoundedCornerShape(50),
@@ -453,7 +456,7 @@ private fun DashboardHeader(host: String?, security: SiteSecurity) {
                     security.label,
                     style = MaterialTheme.typography.labelSmall,
                     color = statusColor,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    modifier = Modifier.padding(horizontal = UiSpacing.compact, vertical = 5.dp),
                     maxLines = 1
                 )
             }
@@ -463,7 +466,7 @@ private fun DashboardHeader(host: String?, security: SiteSecurity) {
         security.description,
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = 4.dp)
+        modifier = Modifier.padding(horizontal = UiSpacing.xs)
     )
 }
 
@@ -480,8 +483,8 @@ private fun DashboardActionButton(
     modifier: Modifier = Modifier
 ) {
     OutlinedButton(onClick = onClick, modifier = modifier) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
+        Icon(icon, contentDescription = null, modifier = Modifier.size(UiIconSize.small))
+        Spacer(Modifier.width(UiSpacing.s))
         Text(label, maxLines = 1)
     }
 }
@@ -495,7 +498,7 @@ private fun DashboardToggle(
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+        Column(Modifier.weight(1f).padding(end = UiSpacing.m)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
             Text(
                 description,
@@ -518,7 +521,7 @@ private fun ElementRuleRow(
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Surface(
-            shape = RoundedCornerShape(8.dp),
+            shape = UiCorners.r8,
             color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             Text(
@@ -527,10 +530,10 @@ private fun ElementRuleRow(
                 fontFamily = FontFamily.Monospace,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp)
+                modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.compact, vertical = UiSpacing.s)
             )
         }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
             ElementRuleAction.entries.forEach { action ->
                 FilterChip(
                     selected = rule.action == action,
@@ -547,7 +550,7 @@ private fun ElementRuleRow(
 
 @Composable
 private fun DashboardDetail(label: String, value: String) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+    Column(Modifier.fillMaxWidth().padding(vertical = UiSpacing.xxs)) {
         Text(
             label,
             style = MaterialTheme.typography.labelMedium,
@@ -566,10 +569,10 @@ private fun ProtectionStat(
 ) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
+        shape = UiCorners.r16,
         color = MaterialTheme.colorScheme.surfaceContainerHigh
     ) {
-        Column(Modifier.padding(12.dp)) {
+        Column(Modifier.padding(UiSpacing.m)) {
             Text(
                 label,
                 style = MaterialTheme.typography.labelMedium,
@@ -593,11 +596,11 @@ private fun ProtectionStat(
 @Composable
 private fun BlockedHostRow(host: String, count: Int, progress: Float) {
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth().padding(bottom = UiSpacing.s),
+        shape = UiCorners.r12,
         color = MaterialTheme.colorScheme.surfaceContainerHigh
     ) {
-        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+        Column(Modifier.padding(horizontal = UiSpacing.compact, vertical = UiSpacing.s)) {
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -614,7 +617,7 @@ private fun BlockedHostRow(host: String, count: Int, progress: Float) {
                 Text(
                     count.toString(),
                     style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.padding(start = 12.dp)
+                    modifier = Modifier.padding(start = UiSpacing.m)
                 )
             }
             LinearProgressIndicator(
@@ -628,7 +631,7 @@ private fun BlockedHostRow(host: String, count: Int, progress: Float) {
 @Composable
 private fun DashboardDivider() {
     HorizontalDivider(
-        Modifier.padding(vertical = 10.dp),
+        Modifier.padding(vertical = UiSpacing.compact),
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
     )
 }

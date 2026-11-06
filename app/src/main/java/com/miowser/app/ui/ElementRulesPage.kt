@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.miowser.app.adblock.ElementRuleAction
 import com.miowser.app.adblock.SiteElementRule
+import com.miowser.app.ui.theme.UiSpacing
 
 @Composable
 fun ElementRulesPage(
@@ -46,7 +47,7 @@ fun ElementRulesPage(
                     "Use Block element from the browser menu's Quick Access section to hide or delete part of a website.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp)
+                    modifier = Modifier.padding(top = UiSpacing.s)
                 )
             }
         } else {
@@ -55,7 +56,7 @@ fun ElementRulesPage(
             LazyColumn(
                 modifier = modifier.fillMaxSize(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(UiSpacing.comfortable)
             ) {
                 item {
                     Text(
@@ -70,9 +71,9 @@ fun ElementRulesPage(
                         color = MaterialTheme.colorScheme.surfaceContainerLow,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(Modifier.padding(vertical = 8.dp)) {
+                        Column(Modifier.padding(vertical = UiSpacing.s)) {
                             Row(
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.l, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(host, style = MaterialTheme.typography.titleMedium,
@@ -84,7 +85,7 @@ fun ElementRulesPage(
                             }
                             siteRules.forEachIndexed { index, rule ->
                                 if (index > 0) HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                    modifier = Modifier.padding(horizontal = UiSpacing.l),
                                     color = MaterialTheme.colorScheme.outlineVariant
                                 )
                                 ElementRuleManagementRow(rule, onActionChanged, onRevert)
@@ -92,7 +93,7 @@ fun ElementRulesPage(
                         }
                     }
                 }
-                item { Spacer(Modifier.height(8.dp)) }
+                item { Spacer(Modifier.height(UiSpacing.s)) }
             }
         }
     }
@@ -105,8 +106,8 @@ private fun ElementRuleManagementRow(
     onRevert: (SiteElementRule) -> Unit
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.l, vertical = UiSpacing.m),
+        verticalArrangement = Arrangement.spacedBy(UiSpacing.s)
     ) {
         Text(
             rule.selector,
@@ -115,7 +116,7 @@ private fun ElementRuleManagementRow(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
             ElementRuleAction.entries.forEach { action ->
                 FilterChip(
                     selected = rule.action == action,

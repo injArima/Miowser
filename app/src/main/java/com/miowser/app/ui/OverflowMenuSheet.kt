@@ -90,12 +90,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import kotlin.math.floor
+import kotlinx.coroutines.launch
 import com.miowser.app.ui.theme.AppThemeMode
 import com.miowser.app.ui.theme.AppThemePreference
 import com.miowser.app.ui.theme.LocalMotionPolicy
 import com.miowser.app.ui.theme.MotionTokens
-import kotlin.math.floor
-import kotlinx.coroutines.launch
+import com.miowser.app.ui.theme.UiControlSize
+import com.miowser.app.ui.theme.UiCorners
+import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.UiSpacing
 
 /** Every full-page destination in the app. */
 enum class Screen {
@@ -103,9 +107,9 @@ enum class Screen {
     SITE_PERMISSIONS, CRASH_DIAGNOSTICS, TABS, ONBOARDING, ELEMENT_RULES
 }
 
-private val MENU_TILE_WIDTH = 48.dp
-private val MENU_TILE_HEIGHT = 48.dp
-private val MENU_ICON_SPACING = 10.dp
+private val MENU_TILE_WIDTH = UiControlSize.touchTarget
+private val MENU_TILE_HEIGHT = UiControlSize.touchTarget
+private val MENU_ICON_SPACING = UiSpacing.compact
 
 private data class MenuPresentation(
     val label: String,
@@ -263,11 +267,11 @@ fun OverflowMenuSheet(
       Column((if (expandedContentState.currentState || expandedContentState.targetState)
           contentModifier.sheetVerticalEdgeFade(scrollState, MaterialTheme.colorScheme.surfaceContainerLow)
               .nestedScroll(collapseOnOverscroll).verticalScroll(scrollState)
-          else contentModifier).padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
-        Surface(shape = RoundedCornerShape(24.dp),
+          else contentModifier).padding(start = UiSpacing.l, end = UiSpacing.l, bottom = UiSpacing.m)) {
+        Surface(shape = UiCorners.r24,
             color = MaterialTheme.colorScheme.surfaceContainer,
             modifier = Modifier.fillMaxWidth()) {
-          Column(Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
+          Column(Modifier.padding(horizontal = UiSpacing.s, vertical = UiSpacing.s)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) { MenuSectionTitle("QUICK ACCESS") }
                 IconButton(onClick = {
@@ -277,11 +281,11 @@ fun OverflowMenuSheet(
                     Icon(
                         imageVector = if (editMode) Icons.Rounded.Check else Icons.Rounded.Edit,
                         contentDescription = if (editMode) "Done arranging shortcuts" else "Edit shortcuts",
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(UiIconSize.menu)
                     )
                 }
             }
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(UiSpacing.xs))
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             // Fit as many 48 dp touch targets as the width permits, with at least 10 dp between them.
             val columns = ((maxWidth.value + MENU_ICON_SPACING.value) /
@@ -379,13 +383,13 @@ fun OverflowMenuSheet(
                 fadeOut(animationSpec = motion.spec(MotionTokens.controlsExit))
         ) {
           Column {
-            Spacer(Modifier.height(12.dp))
-            Surface(shape = RoundedCornerShape(24.dp),
+            Spacer(Modifier.height(UiSpacing.m))
+            Surface(shape = UiCorners.r24,
                 color = MaterialTheme.colorScheme.surfaceContainer,
                 modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
+                Column(Modifier.padding(UiSpacing.l)) {
                     MenuSectionTitle("PAGE ACTIONS")
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(UiSpacing.s))
                     MenuActionRow(Icons.Rounded.Share, "Share page", "Send or copy the page link",
                         shareEnabled, onClick = { onDismiss(); onShare() })
                     MenuActionRow(Icons.Rounded.Search, "Find in page", "Search text on this page",
@@ -402,8 +406,8 @@ fun OverflowMenuSheet(
                         toggleChecked = desktopMode)
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 20.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(UiSpacing.m),
+                modifier = Modifier.fillMaxWidth().padding(top = UiSpacing.m, bottom = UiSpacing.xl)) {
                 MenuSmallAction(Icons.Rounded.Palette, "Theme", AppThemePreference.mode.label, true,
                     onClick = { showThemePicker = true }, modifier = Modifier.weight(1f))
                 MenuSmallAction(Icons.Rounded.PictureAsPdf, "Print / PDF", "Save or print",
@@ -419,11 +423,11 @@ fun OverflowMenuSheet(
             text = {
                 Column {
                     AppThemeMode.entries.forEach { mode ->
-                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                        Row(Modifier.fillMaxWidth().clip(UiCorners.r12)
                             .clickable {
                                 AppThemePreference.set(context, mode)
                                 showThemePicker = false
-                            }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            }.padding(UiSpacing.m), verticalAlignment = Alignment.CenterVertically) {
                             Text(mode.label,
                                 modifier = Modifier.weight(1f))
                             if (AppThemePreference.mode == mode) {
@@ -474,7 +478,7 @@ private fun MenuTile(
                 alpha = 0.92f
             }
         }
-        .clip(RoundedCornerShape(16.dp))
+        .clip(UiCorners.r16)
 
     interactionModifier = if (editMode) {
         interactionModifier.pointerInput(label) {
@@ -495,17 +499,17 @@ private fun MenuTile(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
-        modifier = interactionModifier.padding(4.dp)
+        modifier = interactionModifier.padding(UiSpacing.xs)
     ) {
-        Box(Modifier.size(40.dp).clip(RoundedCornerShape(14.dp))
+        Box(Modifier.size(UiControlSize.compact).clip(UiCorners.r14)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
             contentAlignment = Alignment.Center) {
             if (badgeCount > 0) {
                 BadgedBox(badge = { Badge { Text(badgeCount.coerceAtMost(99).toString()) } }) {
-                    Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(24.dp))
+                    Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(UiIconSize.standard))
                 }
             } else {
-                Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(24.dp))
+                Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(UiIconSize.standard))
             }
         }
     }
@@ -523,17 +527,17 @@ private fun MenuActionRow(icon: ImageVector, title: String, detail: String,
                           toggleChecked: Boolean? = null) {
     val color = if (enabled) MaterialTheme.colorScheme.onSurface
         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f)
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+    Row(Modifier.fillMaxWidth().clip(UiCorners.r16)
         .clickable(enabled = enabled, role = if (toggleChecked == null) Role.Button else Role.Switch,
             onClick = onClick)
-        .padding(vertical = 10.dp, horizontal = 4.dp),
+        .padding(vertical = UiSpacing.compact, horizontal = UiSpacing.xs),
         verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp))
+        Box(Modifier.size(UiControlSize.action).clip(UiCorners.r14)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
             contentAlignment = Alignment.Center) {
             Icon(icon, null, tint = color, modifier = Modifier.size(22.dp))
         }
-        Column(Modifier.weight(1f).padding(start = 14.dp)) {
+        Column(Modifier.weight(1f).padding(start = UiSpacing.comfortable)) {
             Text(title, style = MaterialTheme.typography.titleSmall, color = color)
             Text(detail, style = MaterialTheme.typography.bodySmall, color = color,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -551,10 +555,10 @@ private fun MenuSmallAction(icon: ImageVector, title: String, detail: String,
     val color = if (enabled) MaterialTheme.colorScheme.onSurface
         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f)
     Surface(modifier = modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick),
-        shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, tint = color, modifier = Modifier.size(24.dp))
-            Column(Modifier.padding(start = 10.dp)) {
+        shape = UiCorners.r20, color = MaterialTheme.colorScheme.surfaceContainer) {
+        Row(Modifier.padding(UiSpacing.comfortable), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = color, modifier = Modifier.size(UiIconSize.standard))
+            Column(Modifier.padding(start = UiSpacing.compact)) {
                 Text(title, style = MaterialTheme.typography.labelLarge, color = color,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(detail, style = MaterialTheme.typography.labelSmall, color = color,

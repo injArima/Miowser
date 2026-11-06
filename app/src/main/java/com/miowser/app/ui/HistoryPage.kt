@@ -63,6 +63,10 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import com.miowser.app.ui.theme.UiControlSize
+import com.miowser.app.ui.theme.UiCorners
+import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.UiSpacing
 
 // A bulk delete pending confirmation — everything, or just one date's entries. Single-row
 // deletion (LibraryRow's own cross button) never goes through this: only operations that erase
@@ -243,13 +247,13 @@ private fun HistorySearchField(query: String, onQueryChange: (String) -> Unit) {
                 color = MaterialTheme.colorScheme.surfaceContainerHighest
             ) {
                 Row(
-                    modifier = Modifier.padding(start = 12.dp, end = 2.dp),
+                    modifier = Modifier.padding(start = UiSpacing.m, end = UiSpacing.xxs),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         Icons.Rounded.Search,
                         contentDescription = null,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(UiIconSize.menu),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.width(9.dp))
@@ -264,7 +268,7 @@ private fun HistorySearchField(query: String, onQueryChange: (String) -> Unit) {
                         innerTextField()
                     }
                     if (query.isNotEmpty()) {
-                        IconButton(onClick = { onQueryChange("") }, modifier = Modifier.size(40.dp)) {
+                        IconButton(onClick = { onQueryChange("") }, modifier = Modifier.size(UiControlSize.compact)) {
                             Icon(Icons.Rounded.Close, contentDescription = "Clear history search")
                         }
                     }
@@ -282,7 +286,7 @@ private fun HistoryListItem(
     onRemove: () -> Unit
 ) {
     val shape = when (position) {
-        SegmentedPosition.ONLY -> RoundedCornerShape(24.dp)
+        SegmentedPosition.ONLY -> UiCorners.r24
         SegmentedPosition.FIRST -> RoundedCornerShape(
             topStart = 24.dp,
             topEnd = 24.dp,
@@ -309,12 +313,12 @@ private fun HistoryListItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 80.dp)
-                .padding(start = 12.dp, top = 10.dp, end = 4.dp, bottom = 10.dp),
+                .padding(start = UiSpacing.m, top = UiSpacing.compact, end = UiSpacing.xs, bottom = UiSpacing.compact),
             verticalAlignment = Alignment.CenterVertically
         ) {
             HistorySiteIcon(entry = entry)
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Spacer(Modifier.width(UiSpacing.m))
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(UiSpacing.xxs)) {
                 Text(
                     text = entry.title.ifBlank { displayUrl(entry.url) },
                     style = MaterialTheme.typography.bodyLarge,
@@ -344,7 +348,7 @@ private fun HistoryListItem(
                     Icons.Rounded.Close,
                     contentDescription = "Remove ${entry.title.ifBlank { entry.url }} from history",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(UiIconSize.menu)
                 )
             }
         }
@@ -371,8 +375,8 @@ private fun HistorySiteIcon(entry: HistoryEntry) {
     }
 
     Surface(
-        modifier = Modifier.size(44.dp),
-        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.size(UiControlSize.action),
+        shape = UiCorners.r14,
         color = container,
         border = BorderStroke(1.dp, content.copy(alpha = 0.24f))
     ) {
@@ -381,7 +385,7 @@ private fun HistorySiteIcon(entry: HistoryEntry) {
                 Image(
                     bitmap = favicon!!.asImageBitmap(),
                     contentDescription = null,
-                    modifier = Modifier.size(28.dp),
+                    modifier = Modifier.size(UiIconSize.featured),
                     contentScale = ContentScale.Fit
                 )
             } else {
@@ -403,7 +407,7 @@ private fun DateHeader(date: LocalDate, isFirst: Boolean, onDelete: () -> Unit) 
     ) {
         if (!isFirst) {
             HorizontalDivider(
-                modifier = Modifier.padding(bottom = 8.dp),
+                modifier = Modifier.padding(bottom = UiSpacing.s),
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
             )
         }
@@ -429,7 +433,7 @@ private fun DateHeader(date: LocalDate, isFirst: Boolean, onDelete: () -> Unit) 
                     Icons.Rounded.Delete,
                     contentDescription = "Delete ${formatDateHeader(date)}",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(UiIconSize.menu)
                 )
             }
         }

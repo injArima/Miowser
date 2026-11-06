@@ -50,6 +50,8 @@ import com.miowser.app.settings.SearchEngine
 import com.miowser.app.settings.Settings
 import com.miowser.app.settings.isValidCustomSearchUrl
 import kotlin.math.roundToInt
+import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.UiSpacing
 
 /** Browser preferences apply immediately; editable URL templates have explicit Save actions. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -97,12 +99,12 @@ fun SettingsPage(
     SimplePageScaffold(title = "Settings", onBack = leaveSettings) { modifier ->
         Column(
             modifier = modifier.verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(horizontal = UiSpacing.l, vertical = UiSpacing.m),
+            verticalArrangement = Arrangement.spacedBy(UiSpacing.l)
         ) {
             SettingsSection("General") {
                 OptionBlock("Search engine", "Used for searches from the address bar and browser home.") {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
                         SearchEngine.entries.forEach { engine ->
                             FilterChip(
                                 selected = settings.searchEngine == engine,
@@ -214,7 +216,7 @@ fun SettingsPage(
                         valueRange = 0f..1_800f,
                         modifier = Modifier.fillMaxWidth().height(56.dp),
                         thumb = {
-                            Box(Modifier.size(24.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
+                            Box(Modifier.size(UiIconSize.standard).background(MaterialTheme.colorScheme.primary, CircleShape))
                         }
                     )
                     Description("Fine tune from Off to 30 minutes in 5-second increments.")
@@ -277,9 +279,9 @@ fun SettingsPage(
                 SectionDivider()
                 Row(
                     modifier = Modifier.fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                        .padding(horizontal = UiSpacing.l, vertical = UiSpacing.l),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(UiSpacing.m)
                 ) {
                     Text("Version", style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.weight(1f))
@@ -290,7 +292,7 @@ fun SettingsPage(
                     )
                 }
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(UiSpacing.m))
         }
     }
 }
@@ -307,10 +309,10 @@ private fun formatDuration(totalSeconds: Int): String {
 
 @Composable
 private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
         Text(title.uppercase(), style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(start = 4.dp))
+            modifier = Modifier.padding(start = UiSpacing.xs))
         Surface(shape = MaterialTheme.shapes.large,
             color = MaterialTheme.colorScheme.surfaceContainerLow,
             modifier = Modifier.fillMaxWidth()) {
@@ -321,7 +323,7 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
 
 @Composable
 private fun SectionDivider() {
-    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp),
+    HorizontalDivider(modifier = Modifier.padding(horizontal = UiSpacing.l),
         color = MaterialTheme.colorScheme.outlineVariant)
 }
 
@@ -333,8 +335,8 @@ private fun Description(text: String) {
 
 @Composable
 private fun OptionBlock(title: String, description: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = UiSpacing.l, vertical = UiSpacing.comfortable),
+        verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
         Text(title, style = MaterialTheme.typography.bodyLarge)
         Description(description)
         content()
@@ -343,7 +345,7 @@ private fun OptionBlock(title: String, description: String, content: @Composable
 
 @Composable
 private fun <T> ChoiceRow(options: List<T>, selected: T, label: (T) -> String, onSelect: (T) -> Unit) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
         options.forEach { option ->
             FilterChip(selected = selected == option, onClick = { onSelect(option) },
                 label = { Text(label(option)) })
@@ -355,9 +357,9 @@ private fun <T> ChoiceRow(options: List<T>, selected: T, label: (T) -> String, o
 private fun SettingRow(label: String, description: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().toggleable(value = checked, role = Role.Switch, onValueChange = onChecked)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = UiSpacing.l, vertical = UiSpacing.comfortable),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement = Arrangement.spacedBy(UiSpacing.m)
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(label, style = MaterialTheme.typography.bodyLarge)
@@ -371,9 +373,9 @@ private fun SettingRow(label: String, description: String, checked: Boolean, onC
 private fun NavigationRow(label: String, description: String, destructive: Boolean = false, onClick: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 16.dp),
+            .padding(horizontal = UiSpacing.l, vertical = UiSpacing.l),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement = Arrangement.spacedBy(UiSpacing.m)
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(label, style = MaterialTheme.typography.bodyLarge,

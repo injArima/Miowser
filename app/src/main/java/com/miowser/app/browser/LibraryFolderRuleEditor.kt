@@ -41,6 +41,8 @@ import com.miowser.app.library.MediaLibrary
 import com.miowser.app.library.libraryDomain
 import com.miowser.app.ui.ConfirmationAction
 import com.miowser.app.ui.MiowserConfirmationDialog
+import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.UiSpacing
 
 private enum class FolderRuleKind { WEBSITE, TITLE }
 
@@ -175,10 +177,10 @@ internal fun LibraryFolderRuleEditor(folderId: String, onDismiss: () -> Unit) {
             text = {
                 Column(
                     modifier = Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(UiSpacing.s)
                 ) {
                     Text("Choose one rule type", style = MaterialTheme.typography.bodySmall)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
                         FilterChip(selected = kind == FolderRuleKind.WEBSITE,
                             onClick = { kind = FolderRuleKind.WEBSITE; error = null },
                             label = { Text("Website") })
@@ -199,7 +201,7 @@ internal fun LibraryFolderRuleEditor(folderId: String, onDismiss: () -> Unit) {
                         }
                         FolderRuleKind.TITLE -> {
                             Text("Check", style = MaterialTheme.typography.bodySmall)
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(UiSpacing.xs)) {
                                 listOf(
                                     LibraryTitleSource.MEDIA to "Media",
                                     LibraryTitleSource.PAGE to "Page",
@@ -269,8 +271,8 @@ private fun RuleAddField(
         else if (operator == null) onChooseOperator()
         else onAdd()
     }) {
-        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-        Text("Add another field", modifier = Modifier.padding(start = 4.dp))
+        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(UiIconSize.small))
+        Text("Add another field", modifier = Modifier.padding(start = UiSpacing.xs))
     }
 }
 

@@ -1,6 +1,6 @@
 package com.miowser.app.browser
-import androidx.compose.ui.platform.testTag
 
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -68,6 +68,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.UiSpacing
 
 /**
  * The Hub's Library section — every download this session has queued or ever completed, with
@@ -183,14 +185,14 @@ private fun LibraryRow(
     // succeeded.
     val isPlayable = download.status == DownloadStatus.COMPLETED && download.savedUri != null
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.m, vertical = UiSpacing.xs),
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
     Row(
         modifier = Modifier.fillMaxWidth()
             .let { if (isPlayable) it.clickable { onPlayLocal(download) } else it }
-            .padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+            .padding(start = UiSpacing.l, end = UiSpacing.xs, top = UiSpacing.compact, bottom = UiSpacing.compact),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -205,19 +207,19 @@ private fun LibraryRow(
             if (download.status == DownloadStatus.DOWNLOADING) {
                 if (download.threadProgress.isNotEmpty()) {
                     // Multi-threaded direct-file download in progress — see DirectFileDownloader.
-                    MultiThreadProgressBar(download, visible, modifier = Modifier.padding(top = 4.dp))
+                    MultiThreadProgressBar(download, visible, modifier = Modifier.padding(top = UiSpacing.xs))
                 } else if (download.totalBytes > 0) {
                     LinearProgressIndicator(
                         progress = { if (visible) (download.bytesDownloaded.toFloat() / download.totalBytes).coerceIn(0f, 1f) else 0f },
-                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                        modifier = Modifier.fillMaxWidth().padding(top = UiSpacing.xs)
                     )
                 } else {
-                    if (visible) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
-                    else LinearProgressIndicator(progress = { 0f }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+                    if (visible) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = UiSpacing.xs))
+                    else LinearProgressIndicator(progress = { 0f }, modifier = Modifier.fillMaxWidth().padding(top = UiSpacing.xs))
                 }
             } else if (download.status == DownloadStatus.MUXING || download.status == DownloadStatus.QUEUED) {
-                if (visible) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
-                else LinearProgressIndicator(progress = { 0f }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+                if (visible) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = UiSpacing.xs))
+                else LinearProgressIndicator(progress = { 0f }, modifier = Modifier.fillMaxWidth().padding(top = UiSpacing.xs))
             }
         }
         when (download.status) {
@@ -237,7 +239,7 @@ private fun LibraryRow(
                 Icons.Rounded.PlayArrow,
                 contentDescription = "Play",
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(UiIconSize.menu)
             )
         }
         Box {

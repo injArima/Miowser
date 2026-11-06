@@ -33,6 +33,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.remember
+import com.miowser.app.ui.theme.UiCorners
+import com.miowser.app.ui.theme.UiElevation
+import com.miowser.app.ui.theme.UiSpacing
 
 @Composable
 internal fun BrowserFindBar(query: String, matchIndex: Int, matchCount: Int,
@@ -47,10 +50,10 @@ internal fun BrowserFindBar(query: String, matchIndex: Int, matchCount: Int,
     }
     Surface(shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 6.dp, shadowElevation = 6.dp,
+        tonalElevation = UiElevation.medium, shadowElevation = UiElevation.medium,
         modifier = modifier.fillMaxWidth()) {
-        Row(Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        Row(Modifier.padding(horizontal = 6.dp, vertical = UiSpacing.xs),
+            horizontalArrangement = Arrangement.spacedBy(UiSpacing.xxs),
             verticalAlignment = Alignment.CenterVertically) {
             BasicTextField(query, onQueryChange, singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium.copy(
@@ -79,8 +82,8 @@ internal fun BrowserFindBar(query: String, matchIndex: Int, matchCount: Int,
                 },
                 modifier = Modifier.weight(1f).height(48.dp)
                     .border(1.dp, MaterialTheme.colorScheme.outline,
-                        RoundedCornerShape(12.dp))
-                    .padding(horizontal = 12.dp)
+                        UiCorners.r12)
+                    .padding(horizontal = UiSpacing.m)
                     .focusRequester(focusRequester))
             Text(if (query.isBlank()) "" else "$matchIndex/$matchCount",
                 style = MaterialTheme.typography.labelMedium,

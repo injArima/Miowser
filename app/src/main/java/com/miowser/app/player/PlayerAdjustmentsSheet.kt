@@ -13,6 +13,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.miowser.app.ui.ExpressiveBottomSheet
 import kotlin.math.roundToInt
+import com.miowser.app.ui.theme.UiSpacing
 
 /** Visible, labelled alternatives to the brightness/volume gestures. */
 @Composable
@@ -27,7 +28,7 @@ internal fun PlayerAdjustmentsSheet(activity: Activity?, onDismiss: () -> Unit,
         ?.takeIf { it > 0 } ?: 0.5f) }
     var volume by remember { mutableFloatStateOf(audio.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat()) }
     ExpressiveBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = UiSpacing.l), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Brightness & volume", style = MaterialTheme.typography.titleLarge)
             Text("Brightness ${(brightness * 100).roundToInt()}%")
             Slider(value = brightness, valueRange = 0.01f..1f, enabled = activity != null,

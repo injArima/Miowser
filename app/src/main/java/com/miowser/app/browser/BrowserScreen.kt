@@ -1,7 +1,5 @@
 package com.miowser.app.browser
 
-import com.miowser.app.ui.theme.LocalMotionPolicy
-import com.miowser.app.ui.theme.MotionTokens
 import com.miowser.app.BuildConfig
 import android.content.Intent
 import android.Manifest
@@ -143,7 +141,6 @@ import com.miowser.app.library.LibrarySourceKind
 import com.miowser.app.player.PlaybackRequest
 import com.miowser.app.player.LibraryPlaybackQueue
 import com.miowser.app.player.PlayerScreen
-import com.miowser.app.ui.theme.MiowserPlayerTheme
 import com.miowser.app.player.toPlaybackRequest
 import com.miowser.app.player.toLibraryEntry
 import com.miowser.app.settings.AppSettings
@@ -176,6 +173,11 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
+import com.miowser.app.ui.theme.LocalMotionPolicy
+import com.miowser.app.ui.theme.MiowserPlayerTheme
+import com.miowser.app.ui.theme.MotionTokens
+import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.UiSpacing
 
 // Anything that isn't safe/sensible in a filename, replaced with "_"; matches the common
 // filesystem-reserved set (Windows is the strictest, so satisfying it covers everything else).
@@ -2072,13 +2074,13 @@ fun BrowserScreen(
                     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
                         Column(
                             modifier = Modifier.fillMaxSize()
-                                .verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(24.dp),
+                                .verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(UiSpacing.xxl),
                             verticalArrangement = Arrangement.Center,
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(if (activeTab.blockedPageInfo == null) "Page unavailable" else "Page blocked",
                                 style = MaterialTheme.typography.headlineSmall)
-                            Text(message, modifier = Modifier.padding(top = 12.dp, bottom = 20.dp))
+                            Text(message, modifier = Modifier.padding(top = UiSpacing.m, bottom = UiSpacing.xl))
                             activeTab.blockedPageInfo?.let { BlockedPageDetails(it) }
                             Button(onClick = { activeTab.reload() }) {
                                 Text(if (activeTab.rendererUnavailable) "Reload" else "Try again")
@@ -2089,13 +2091,13 @@ fun BrowserScreen(
                 if (!startupReady && (recordError || browserStartupError)) {
                     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
                         Column(
-                            modifier = Modifier.fillMaxSize().padding(24.dp),
+                            modifier = Modifier.fillMaxSize().padding(UiSpacing.xxl),
                             verticalArrangement = Arrangement.Center,
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text("Browser could not open", style = MaterialTheme.typography.headlineSmall)
                             Button(onClick = { if (!recordsReady) recordRetry++ else browserRetry++ },
-                                modifier = Modifier.padding(top = 20.dp)) {
+                                modifier = Modifier.padding(top = UiSpacing.xl)) {
                                 Text("Retry")
                             }
                         }
@@ -2201,7 +2203,7 @@ fun BrowserScreen(
                         Icon(
                             Icons.Rounded.KeyboardArrowUp,
                             contentDescription = "Jump to top",
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(UiIconSize.featured)
                         )
                     }
                 }
@@ -2773,7 +2775,7 @@ fun BrowserScreen(
                 onNext = { findView.findNext(true) },
                 onClose = { findOwnerId = null; findQuery = "" },
                 modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding()
-                    .padding(top = 64.dp, start = 12.dp, end = 12.dp).zIndex(1f))
+                    .padding(top = 64.dp, start = UiSpacing.m, end = UiSpacing.m).zIndex(1f))
         }
 
         if (showBrowserDownloads) {

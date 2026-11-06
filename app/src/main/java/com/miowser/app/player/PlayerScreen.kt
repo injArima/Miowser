@@ -1,9 +1,7 @@
 package com.miowser.app.player
-import com.miowser.app.ui.theme.LocalMotionPolicy
-import com.miowser.app.ui.theme.MotionTokens
+
 import com.miowser.app.ui.sheetVerticalEdgeFade
 import androidx.compose.ui.platform.testTag
-
 import android.app.Activity
 import com.miowser.app.MainActivity
 import android.content.Context
@@ -156,6 +154,14 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToLong
+import com.miowser.app.ui.theme.LocalMotionPolicy
+import com.miowser.app.ui.theme.MotionTokens
+import com.miowser.app.ui.theme.PlayerUiColors
+import com.miowser.app.ui.theme.UiControlSize
+import com.miowser.app.ui.theme.UiCorners
+import com.miowser.app.ui.theme.UiElevation
+import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.UiSpacing
 
 private const val SEEK_INCREMENT_MS = 10_000L
 private const val CONTROLS_TIMEOUT_MS = 4_000L
@@ -208,8 +214,8 @@ private val PlayerScaleMode.resizeMode: Int get() = when (this) {
 
 internal enum class PlayerGestureKind { SEEK_BACKWARD, SEEK_FORWARD, PLAY, PAUSE, BRIGHTNESS, VOLUME }
 
-internal val PLAYER_SEEK_BACKWARD_COLOR = Color(0xFFFFAAA5)
-internal val PLAYER_SEEK_FORWARD_COLOR = Color(0xFFA8E6B0)
+internal val PLAYER_SEEK_BACKWARD_COLOR = PlayerUiColors.seekBackward
+internal val PLAYER_SEEK_FORWARD_COLOR = PlayerUiColors.seekForward
 
 internal data class PlayerGestureFeedback(
     val kind: PlayerGestureKind,
@@ -316,7 +322,7 @@ fun PlayerScreen(
             retainedLocalSession.value.takeIf { localPlaylistRequest != null })
     } else {
         BackHandler(onBack = onDismiss)
-        Box(Modifier.fillMaxSize().background(Color.Black)) {
+        Box(Modifier.fillMaxSize().background(PlayerUiColors.backdrop)) {
             PlayerLoadingSpinner(Modifier.align(Alignment.Center))
             TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.TopEnd)
                 .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top))
@@ -994,7 +1000,7 @@ private fun PlayerContent(
 
     PlayerInteractionLayers(
         blockPlayerInput = overlays.isPresent,
-        modifier = Modifier.background(Color.Black).onSizeChanged { viewport = it }
+        modifier = Modifier.background(PlayerUiColors.backdrop).onSizeChanged { viewport = it }
             .testTag(if (hasRenderedFirstFrame) "player_first_frame" else "player_loading"),
         playerContent = {
         AndroidView(
@@ -1087,7 +1093,7 @@ private fun PlayerContent(
                                 WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top)
                             )
                             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.End))
-                            .padding(20.dp)
+                            .padding(UiSpacing.xl)
                     )
                 } else {
                     PlayerTopBar(
@@ -1283,7 +1289,7 @@ private fun PlayerContent(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top))
-                    .padding(top = 16.dp)
+                    .padding(top = UiSpacing.l)
             )
         }
 
@@ -1398,17 +1404,17 @@ private fun PlayerSubtitleNotice(message: String, modifier: Modifier = Modifier)
     Surface(
         modifier = modifier
             .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility.only(WindowInsetsSides.Bottom))
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(horizontal = UiSpacing.l, vertical = UiSpacing.m)
             .widthIn(max = 440.dp),
-        shape = RoundedCornerShape(24.dp),
+        shape = UiCorners.r24,
         color = MaterialTheme.colorScheme.inverseSurface,
         contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-        shadowElevation = 6.dp
+        shadowElevation = UiElevation.medium
     ) {
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 11.dp),
+        Row(Modifier.padding(horizontal = UiSpacing.l, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Icon(Icons.Rounded.Subtitles, contentDescription = null, modifier = Modifier.size(24.dp))
+            horizontalArrangement = Arrangement.spacedBy(UiSpacing.compact)) {
+            Icon(Icons.Rounded.Subtitles, contentDescription = null, modifier = Modifier.size(UiIconSize.standard))
             Text(message, style = MaterialTheme.typography.bodyMedium)
         }
     }
@@ -1802,16 +1808,16 @@ internal fun PlayerGestureFeedbackOverlay(
             Row(
                 modifier = modifier,
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(UiSpacing.compact)
             ) {
-                Text("(${feedback.label})", color = Color.White,
+                Text("(${feedback.label})", color = PlayerUiColors.content,
                     style = MaterialTheme.typography.titleMedium.copy(
-                        shadow = Shadow(Color.Black, Offset.Zero, 8f)),
+                        shadow = Shadow(PlayerUiColors.backdrop, Offset.Zero, 8f)),
                     fontWeight = FontWeight.SemiBold)
                 Text("${if (!backward && deltaSeconds >= 0) "+" else ""}${deltaSeconds}s",
                     color = if (backward) PLAYER_SEEK_BACKWARD_COLOR else PLAYER_SEEK_FORWARD_COLOR,
                     style = MaterialTheme.typography.titleMedium.copy(
-                        shadow = Shadow(Color.Black, Offset.Zero, 8f)),
+                        shadow = Shadow(PlayerUiColors.backdrop, Offset.Zero, 8f)),
                     fontWeight = FontWeight.Bold)
             }
         }
@@ -1822,13 +1828,13 @@ internal fun PlayerGestureFeedbackOverlay(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text("${(progress * 100).roundToLong()}", color = Color.White,
+                Text("${(progress * 100).roundToLong()}", color = PlayerUiColors.content,
                     style = MaterialTheme.typography.titleMedium.copy(
-                        shadow = Shadow(Color.Black, Offset.Zero, 8f)),
+                        shadow = Shadow(PlayerUiColors.backdrop, Offset.Zero, 8f)),
                     fontWeight = FontWeight.Bold)
                 Box(
                     modifier = Modifier.width(7.dp).height(132.dp)
-                        .background(Color.White.copy(alpha = 0.32f), RoundedCornerShape(50)),
+                        .background(PlayerUiColors.content.copy(alpha = 0.32f), RoundedCornerShape(50)),
                     contentAlignment = Alignment.BottomCenter
                 ) {
                     Box(
@@ -1840,18 +1846,18 @@ internal fun PlayerGestureFeedbackOverlay(
                     if (feedback.kind == PlayerGestureKind.BRIGHTNESS) Icons.Rounded.Brightness6
                     else Icons.AutoMirrored.Rounded.VolumeUp,
                     contentDescription = feedback.label,
-                    tint = Color.White,
-                    modifier = Modifier.size(18.dp)
+                    tint = PlayerUiColors.content,
+                    modifier = Modifier.size(UiIconSize.small)
                 )
             }
         }
         PlayerGestureKind.PLAY, PlayerGestureKind.PAUSE -> {
-            Box(modifier = modifier.size(64.dp), contentAlignment = Alignment.Center) {
+            Box(modifier = modifier.size(UiControlSize.prominent), contentAlignment = Alignment.Center) {
                 Icon(
                     if (feedback.kind == PlayerGestureKind.PLAY) Icons.Rounded.PlayArrow
                     else Icons.Rounded.Pause,
                     contentDescription = feedback.label,
-                    tint = Color.White,
+                    tint = PlayerUiColors.content,
                     modifier = Modifier.size(42.dp)
                 )
             }
@@ -1870,12 +1876,12 @@ private fun PlayerErrorCard(
     Surface(
         color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.96f),
         contentColor = MaterialTheme.colorScheme.onErrorContainer,
-        shape = RoundedCornerShape(24.dp),
-        modifier = modifier.padding(24.dp).widthIn(max = 440.dp)
+        shape = UiCorners.r24,
+        modifier = modifier.padding(UiSpacing.xxl).widthIn(max = 440.dp)
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 22.dp, vertical = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            modifier = Modifier.padding(horizontal = 22.dp, vertical = UiSpacing.roomy),
+            verticalArrangement = Arrangement.spacedBy(UiSpacing.compact)
         ) {
             Text(error.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(error.message, style = MaterialTheme.typography.bodyMedium)
@@ -1891,7 +1897,7 @@ private fun PlayerErrorCard(
             ) {
                 TextButton(onClick = onClose) { Text("Close") }
                 if (error.canRetry) {
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(UiSpacing.s))
                     Button(onClick = onRetry) { Text("Try again") }
                 }
             }
@@ -2029,8 +2035,8 @@ private fun PlayerSubtitleTrackList(
         if (detectedSubtitles.isNotEmpty()) {
             item("subtitle-heading") {
                 Text("Detected subtitle files", style = MaterialTheme.typography.labelMedium,
-                    color = Color.White.copy(alpha = 0.7f),
-                    modifier = Modifier.padding(start = 6.dp, top = 8.dp))
+                    color = PlayerUiColors.content.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(start = 6.dp, top = UiSpacing.s))
             }
             items(detectedSubtitles, key = { it.url }) { subtitle ->
                 PlayerSubtitleChoiceRow(
@@ -2050,8 +2056,8 @@ private fun PlayerSubtitleTrackList(
         if (embedded.isNotEmpty()) {
             item("embedded-heading") {
                 Text("In the stream", style = MaterialTheme.typography.labelMedium,
-                    color = Color.White.copy(alpha = 0.7f),
-                    modifier = Modifier.padding(start = 6.dp, top = 8.dp))
+                    color = PlayerUiColors.content.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(start = 6.dp, top = UiSpacing.s))
             }
             items(embedded, key = PlayerTrackOption::key) { option ->
                 PlayerSubtitleChoiceRow(option.label,
@@ -2089,11 +2095,11 @@ internal fun PlayerSubtitleInspectPanel(
             "Tap the line that belongs at ${formatPlayerTime(subtitleAdjustAnchorMs)}"
             else "Style sample",
             style = MaterialTheme.typography.bodySmall,
-            color = Color.White.copy(alpha = 0.72f), maxLines = 1,
+            color = PlayerUiColors.content.copy(alpha = 0.72f), maxLines = 1,
             overflow = TextOverflow.Ellipsis)
         Box(Modifier.fillMaxWidth(0.86f).height(108.dp).align(Alignment.CenterHorizontally)
             .padding(top = 5.dp)
-            .clip(RoundedCornerShape(10.dp)).background(Color(0xFF8C8C8C))) {
+            .clip(UiCorners.r10).background(PlayerUiColors.subtitlePreview)) {
             AndroidView(modifier = Modifier.fillMaxSize(), factory = { SubtitleView(it) }, update = { view ->
                 applyPlayerSubtitleStyle(view, style, typeface)
                 view.setFractionalTextSize(0.12f * style.size)
@@ -2106,7 +2112,7 @@ internal fun PlayerSubtitleInspectPanel(
             !ready -> "Loading subtitle…"
             else -> detectedSubtitleLabel(chosen)
         }, style = MaterialTheme.typography.bodySmall,
-            color = Color.White.copy(alpha = 0.7f), modifier = Modifier.padding(vertical = 6.dp))
+            color = PlayerUiColors.content.copy(alpha = 0.7f), modifier = Modifier.padding(vertical = 6.dp))
         val entries = remember(timeline) { timeline.filter { it.cues.isNotEmpty() } }
         if (chosen != null && ready) {
             LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
@@ -2119,9 +2125,9 @@ internal fun PlayerSubtitleInspectPanel(
                             style = MaterialTheme.typography.labelSmall,
                             color = subtitleOverlayAccent())
                         Text(entry.cues.joinToString("\n") { it.text?.toString().orEmpty() },
-                            style = MaterialTheme.typography.bodySmall, color = Color.White)
+                            style = MaterialTheme.typography.bodySmall, color = PlayerUiColors.content)
                     }
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+                    HorizontalDivider(color = PlayerUiColors.content.copy(alpha = 0.12f))
                 }
             }
         }
@@ -2149,7 +2155,7 @@ internal fun PlayerSubtitleControls(
         if (!canAdjust && !adjusting) {
             Text("Select a detected subtitle file to adjust its timing.",
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.65f))
+                color = PlayerUiColors.content.copy(alpha = 0.65f))
         }
         PlayerSubtitleStepper("Font size", "${(style.size * 100).toInt()}%",
             { onChange(style.copy(size = (style.size - 0.1f).coerceAtLeast(0.7f))) },
@@ -2182,10 +2188,10 @@ internal fun PlayerSubtitleControls(
             CaptionVisualPreset.entries.forEach { preset ->
                 Surface(onClick = {
                     onChange(style.copy(preset = preset, textColor = null, outlineEnabled = null))
-                }, shape = RoundedCornerShape(8.dp),
+                }, shape = UiCorners.r8,
                     color = if (style.preset == preset) MaterialTheme.colorScheme.primaryContainer
-                        else Color.White.copy(alpha = 0.12f)) {
-                    Text(preset.label, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                        else PlayerUiColors.content.copy(alpha = 0.12f)) {
+                    Text(preset.label, modifier = Modifier.padding(horizontal = UiSpacing.compact, vertical = 7.dp),
                         style = MaterialTheme.typography.labelSmall)
                 }
             }
@@ -2195,10 +2201,10 @@ internal fun PlayerSubtitleControls(
             horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             CaptionFontChoice.entries.forEach { font ->
                 Surface(onClick = { onChange(style.copy(font = font)) },
-                    shape = RoundedCornerShape(8.dp),
+                    shape = UiCorners.r8,
                     color = if (style.font == font) MaterialTheme.colorScheme.primaryContainer
-                        else Color.White.copy(alpha = 0.12f)) {
-                    Text(font.label, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                        else PlayerUiColors.content.copy(alpha = 0.12f)) {
+                    Text(font.label, modifier = Modifier.padding(horizontal = UiSpacing.compact, vertical = 7.dp),
                         style = MaterialTheme.typography.labelSmall)
                 }
             }
@@ -2246,9 +2252,9 @@ private fun PlayerSubtitleDelayControl(delayMs: Long, onChange: (Long) -> Unit) 
                 }
             },
             modifier = Modifier.width(64.dp).semantics { contentDescription = "Subtitle delay in milliseconds" }, singleLine = true,
-            textStyle = TextStyle(color = Color.White, fontSize = 14.sp, textAlign = TextAlign.Center),
+            textStyle = TextStyle(color = PlayerUiColors.content, fontSize = 14.sp, textAlign = TextAlign.Center),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            cursorBrush = Brush.verticalGradient(listOf(Color.White, Color.White))
+            cursorBrush = Brush.verticalGradient(listOf(PlayerUiColors.content, PlayerUiColors.content))
         )
         Text("ms", style = MaterialTheme.typography.bodySmall)
         TextButton(onClick = { onChange((delayMs + 50L).coerceAtMost(MAX_SUBTITLE_DELAY_MS)) },
@@ -2267,13 +2273,13 @@ private fun PlayerSubtitleToggle(label: String, checked: Boolean, onToggle: (Boo
         verticalAlignment = Alignment.CenterVertically) {
         Text(label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
         Text(if (checked) "On" else "Off", style = MaterialTheme.typography.bodySmall,
-            color = if (checked) subtitleOverlayAccent() else Color.White.copy(alpha = 0.6f))
+            color = if (checked) subtitleOverlayAccent() else PlayerUiColors.content.copy(alpha = 0.6f))
     }
 }
 
 @Composable
 private fun PlayerSubtitleColors(colors: List<Int>, selected: Int, onSelect: (Int) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    Row(horizontalArrangement = Arrangement.spacedBy(UiSpacing.compact)) {
         colors.forEach { color ->
             Surface(onClick = { onSelect(color) }, shape = CircleShape,
                 border = BorderStroke(if (color == selected) 3.dp else 1.dp,
@@ -2319,7 +2325,7 @@ private fun PlayerTrackSelectionSheet(
     }
     PlayerTrackSheet(kind.title, onDismiss) { listModifier ->
         val listState = rememberLazyListState()
-        LazyColumn(listModifier.sheetVerticalEdgeFade(listState, Color(0xFF151313)),
+        LazyColumn(listModifier.sheetVerticalEdgeFade(listState, PlayerUiColors.panel),
             state = listState) {
                 item(key = "auto") {
                     PlayerTrackChoiceRow(
@@ -2345,15 +2351,15 @@ private fun PlayerTrackSelectionSheet(
                 }
                 item(key = "divider") {
                     HorizontalDivider(
-                        color = Color.White.copy(alpha = 0.14f),
+                        color = PlayerUiColors.content.copy(alpha = 0.14f),
                         modifier = Modifier.padding(vertical = 3.dp)
                     )
                 }
                 if (kind == PlayerTrackKind.SUBTITLE && detectedSubtitles.isNotEmpty()) {
                     item(key = "detected-heading") {
                         Text("Detected on page", style = MaterialTheme.typography.labelLarge,
-                            color = Color.White.copy(alpha = 0.66f),
-                            modifier = Modifier.padding(start = 6.dp, top = 6.dp, bottom = 2.dp))
+                            color = PlayerUiColors.content.copy(alpha = 0.66f),
+                            modifier = Modifier.padding(start = 6.dp, top = 6.dp, bottom = UiSpacing.xxs))
                     }
                     items(detectedSubtitles, key = { "detected-${it.url}" }) { subtitle ->
                         val option = options.firstOrNull { it.externalSubtitleUrl == subtitle.url }

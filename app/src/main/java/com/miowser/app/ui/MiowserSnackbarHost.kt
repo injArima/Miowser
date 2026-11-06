@@ -27,6 +27,8 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.UiSpacing
 
 /**
  * Snackbar payload whose action runs directly from the visible button's click handler. Keeping
@@ -47,7 +49,7 @@ class MiowserSnackbarVisuals(
 /** Rounded Material You snackbars with manual dismissal in either horizontal direction. */
 @Composable
 fun MiowserSnackbarHost(hostState: SnackbarHostState, modifier: Modifier = Modifier) {
-    SnackbarHost(hostState = hostState, modifier = modifier.padding(horizontal = 12.dp)) { data ->
+    SnackbarHost(hostState = hostState, modifier = modifier.padding(horizontal = UiSpacing.m)) { data ->
         val swipeState = rememberSwipeToDismissBoxState()
         SwipeToDismissBox(
             state = swipeState,
@@ -112,13 +114,13 @@ fun MiowserSnackbarHost(hostState: SnackbarHostState, modifier: Modifier = Modif
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(UiSpacing.m)
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.ic_miowser_mark),
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(UiIconSize.featured)
                     )
                     Text(data.visuals.message)
                 }

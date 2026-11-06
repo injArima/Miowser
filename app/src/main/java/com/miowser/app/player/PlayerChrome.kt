@@ -35,34 +35,38 @@ import com.miowser.app.ui.MiowserDropdownMenu
 import com.miowser.app.ui.MiowserMenuItem
 import com.miowser.app.ui.icons.HeadphonesRoundedOutline
 import kotlin.math.roundToLong
+import com.miowser.app.ui.theme.PlayerUiColors
+import com.miowser.app.ui.theme.UiControlSize
+import com.miowser.app.ui.theme.UiCorners
+import com.miowser.app.ui.theme.UiSpacing
 
 /** Shared original player controls. No playback engine or clock is created by this UI. */
 @Composable
 internal fun BoxScope.PlayerChromeScrims(viewportHeight: Dp, locked: Boolean) {
     Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(minOf(144.dp, viewportHeight * 0.32f))
-        .background(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.60f),
-            0.55f to Color.Black.copy(alpha = 0.30f), 1f to Color.Transparent)))
+        .background(Brush.verticalGradient(0f to PlayerUiColors.backdrop.copy(alpha = 0.60f),
+            0.55f to PlayerUiColors.backdrop.copy(alpha = 0.30f), 1f to Color.Transparent)))
     if (!locked) Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(minOf(256.dp, viewportHeight * 0.53f))
         .background(Brush.verticalGradient(0f to Color.Transparent,
-            0.35f to Color.Black.copy(alpha = 0.34f), 1f to Color.Black.copy(alpha = 0.72f))))
+            0.35f to PlayerUiColors.backdrop.copy(alpha = 0.34f), 1f to PlayerUiColors.backdrop.copy(alpha = 0.72f))))
 }
 
 @Composable
 internal fun PlayerHoldSpeedIndicator(modifier: Modifier = Modifier) {
-    Text("2×", color = Color.White,
-        style = MaterialTheme.typography.titleMedium.copy(shadow = Shadow(Color.Black, Offset.Zero, 8f)),
-        modifier = modifier.background(Color.Black.copy(alpha = 0.60f), RoundedCornerShape(50))
-            .padding(horizontal = 12.dp, vertical = 6.dp))
+    Text("2×", color = PlayerUiColors.content,
+        style = MaterialTheme.typography.titleMedium.copy(shadow = Shadow(PlayerUiColors.backdrop, Offset.Zero, 8f)),
+        modifier = modifier.background(PlayerUiColors.backdrop.copy(alpha = 0.60f), RoundedCornerShape(50))
+            .padding(horizontal = UiSpacing.m, vertical = 6.dp))
 }
 
 internal enum class PlayerScaleMode(val label: String) { FIT("Fit"), ZOOM("Zoom"), FILL("Fill") }
 
 @Composable
 internal fun PlayerLoadingSpinner(modifier: Modifier = Modifier) {
-    Box(modifier = modifier.size(64.dp), contentAlignment = Alignment.Center) {
+    Box(modifier = modifier.size(UiControlSize.prominent), contentAlignment = Alignment.Center) {
         CircularProgressIndicator(
-            modifier = Modifier.size(40.dp),
-            color = Color.White,
+            modifier = Modifier.size(UiControlSize.compact),
+            color = PlayerUiColors.content,
             strokeWidth = 3.5.dp
         )
     }
@@ -96,7 +100,7 @@ internal fun PlayerTopBar(
                 WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top)
             )
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .padding(horizontal = UiSpacing.m, vertical = UiSpacing.s)
     ) {
         val compact = maxWidth < 340.dp
         val gap = if (compact) 0.dp else 4.dp
@@ -111,7 +115,7 @@ internal fun PlayerTopBar(
                     Icons.Rounded.WarningAmber,
                     "About WebView playback",
                     onCaution,
-                    contentColor = Color(0xFFFFD875)
+                    contentColor = PlayerUiColors.caution
                 )
                 Spacer(Modifier.width(gap))
             }
@@ -152,10 +156,10 @@ internal fun PlayerTopBar(
 
 @Composable
 private fun PlaybackSpeedIndicator(speed: Float) {
-    Box(modifier = Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+    Box(modifier = Modifier.size(UiControlSize.action), contentAlignment = Alignment.Center) {
         Text(
             text = formatSpeed(speed),
-            color = Color.White,
+            color = PlayerUiColors.content,
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Bold
         )
@@ -191,9 +195,9 @@ internal fun PlayerCenterControls(
         Surface(
             shape = CircleShape,
             color = Color.Transparent,
-            contentColor = Color.White,
+            contentColor = PlayerUiColors.content,
             modifier = Modifier
-                .size(64.dp)
+                .size(UiControlSize.prominent)
                 .testTag("player_play_pause")
                 .clip(CircleShape)
                 .clickable(enabled = LocalPlayerControlsActive.current, onClick = onPlayPause)
@@ -205,7 +209,7 @@ internal fun PlayerCenterControls(
                     Icon(
                         if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                         contentDescription = if (isPlaying) "Pause" else "Play",
-                        modifier = Modifier.size(48.dp)
+                        modifier = Modifier.size(UiControlSize.touchTarget)
                     )
                 }
             }
@@ -234,7 +238,7 @@ private fun PlayerTransportButton(
         enabled = enabled && LocalPlayerControlsActive.current,
         shape = CircleShape,
         color = Color.Transparent,
-        contentColor = if (enabled) Color.White else Color.White.copy(alpha = 0.35f),
+        contentColor = if (enabled) PlayerUiColors.content else PlayerUiColors.content.copy(alpha = 0.35f),
         modifier = Modifier.size(size)
     ) {
         Box(contentAlignment = Alignment.Center) {
@@ -279,7 +283,7 @@ internal fun PlayerBufferedTimeline(
                 val lineLeft = thumbRadius
                 val lineWidth = (size.width - thumbRadius * 2f).coerceAtLeast(0f)
                 val lineStart = Offset(lineLeft, lineTop)
-                drawRoundRect(Color.White.copy(alpha = 0.42f), topLeft = lineStart,
+                drawRoundRect(PlayerUiColors.content.copy(alpha = 0.42f), topLeft = lineStart,
                     size = Size(lineWidth, lineHeight), cornerRadius = lineRadius)
                 if (buffered > 0f) drawRoundRect(
                     accent.copy(alpha = 0.5f),
@@ -321,9 +325,9 @@ internal fun RotationPlayerButton(
     Surface(
         shape = CircleShape,
         color = Color.Transparent,
-        contentColor = if (locked) MaterialTheme.colorScheme.primary else Color.White,
+        contentColor = if (locked) MaterialTheme.colorScheme.primary else PlayerUiColors.content,
         modifier = Modifier
-            .size(48.dp)
+            .size(UiControlSize.touchTarget)
             .clip(CircleShape)
             .combinedClickable(enabled = LocalPlayerControlsActive.current,
                 onClick = onRotate, onLongClick = onToggleLock)
@@ -341,15 +345,15 @@ internal fun RoundPlayerButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     selected: Boolean = false,
-    contentColor: Color = Color.White
+    contentColor: Color = PlayerUiColors.content
 ) {
     Surface(
         onClick = onClick,
         enabled = LocalPlayerControlsActive.current,
         shape = CircleShape,
-        color = if (selected) Color.White.copy(alpha = 0.22f) else Color.Transparent,
+        color = if (selected) PlayerUiColors.content.copy(alpha = 0.22f) else Color.Transparent,
         contentColor = contentColor,
-        modifier = modifier.size(48.dp)
+        modifier = modifier.size(UiControlSize.touchTarget)
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(icon, contentDescription = contentDescription, modifier = Modifier.size(25.dp))
@@ -371,7 +375,7 @@ private fun PlayerOptionButton(
 ) {
     Box(
         modifier = modifier.testTag(testId)
-            .size(48.dp)
+            .size(UiControlSize.touchTarget)
             .clip(CircleShape)
             .combinedClickable(
                 enabled = enabled && LocalPlayerControlsActive.current,
@@ -385,7 +389,7 @@ private fun PlayerOptionButton(
             Icon(
                 icon,
                 contentDescription = null,
-                tint = Color.Black.copy(alpha = 0.28f),
+                tint = PlayerUiColors.backdrop.copy(alpha = 0.28f),
                 modifier = Modifier.size(26.dp).offset(y = 1.dp)
                     .blur(2.dp, BlurredEdgeTreatment.Unbounded)
             )
@@ -393,7 +397,7 @@ private fun PlayerOptionButton(
         Icon(
             icon,
             contentDescription = label,
-            tint = if (enabled) Color.White else Color(0xFF9C9C9C),
+            tint = if (enabled) PlayerUiColors.content else PlayerUiColors.disabledControl,
             modifier = Modifier.size(26.dp)
         )
     }
@@ -428,12 +432,12 @@ internal fun PlayerBottomChrome(
                 WindowInsets.navigationBarsIgnoringVisibility.only(WindowInsetsSides.Bottom)
             )
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-            .padding(horizontal = 24.dp, vertical = 4.dp),
+            .padding(horizontal = UiSpacing.xxl, vertical = UiSpacing.xs),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
             text = title,
-            color = Color.White,
+            color = PlayerUiColors.content,
             style = if (isLandscape) MaterialTheme.typography.titleLarge
                 else MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
@@ -444,7 +448,7 @@ internal fun PlayerBottomChrome(
         Text(
             text = listOfNotNull(sourceLabel.takeIf { it.isNotBlank() }, qualityLabel)
                 .joinToString("  ·  "),
-            color = Color.White.copy(alpha = 0.78f),
+            color = PlayerUiColors.content.copy(alpha = 0.78f),
             style = MaterialTheme.typography.bodySmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -456,10 +460,10 @@ internal fun PlayerBottomChrome(
                 modifier = Modifier
                     .align(Alignment.CenterStart)
                     .fillMaxWidth()
-                    .padding(end = timerWidth + 8.dp)
+                    .padding(end = timerWidth + UiSpacing.s)
                     .horizontalScroll(rememberScrollState()),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(UiSpacing.xs)
             ) {
                 if (onOpenSubtitles != null) PlayerOptionButton(
                     Icons.Rounded.Subtitles,
@@ -540,13 +544,13 @@ internal fun PlayerBottomChrome(
 internal fun PlayerTimer(positionMs: Long, durationMs: Long, modifier: Modifier, live: Boolean = false) {
     var showRemaining by remember { mutableStateOf(false) }
     Box(
-        modifier = modifier.height(48.dp).clip(RoundedCornerShape(10.dp))
+        modifier = modifier.height(48.dp).clip(UiCorners.r10)
             .clickable(enabled = LocalPlayerControlsActive.current && !live, onClickLabel = if (showRemaining) "Show total duration" else "Show time remaining") {
                 showRemaining = !showRemaining
             }.padding(horizontal = 6.dp),
         contentAlignment = Alignment.CenterEnd
     ) {
-        Text(text = if (live) "Live" else formatPlayerTimer(positionMs, durationMs, showRemaining), color = Color.White,
+        Text(text = if (live) "Live" else formatPlayerTimer(positionMs, durationMs, showRemaining), color = PlayerUiColors.content,
             style = MaterialTheme.typography.labelLarge, maxLines = 1)
     }
 }

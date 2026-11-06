@@ -71,6 +71,9 @@ import com.miowser.app.ui.ExpressiveEmptyState
 import com.miowser.app.ui.SimplePageScaffold
 import kotlinx.coroutines.CancellationException
 import kotlin.math.roundToInt
+import com.miowser.app.ui.theme.UiCorners
+import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.UiSpacing
 
 /** Browser media list, grouped by file kind. Scan configuration is kept off the results surface. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -116,7 +119,7 @@ fun DetectedMediaPage(
             if (hiddenCount > 0) {
                 Text(
                     "$hiddenCount shorter or unknown-length item${if (hiddenCount == 1) "" else "s"} hidden by Browser Settings",
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                    modifier = Modifier.padding(horizontal = UiSpacing.l, vertical = 6.dp),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -124,8 +127,8 @@ fun DetectedMediaPage(
             if (groups.isNotEmpty()) {
                 Row(
                     modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(horizontal = UiSpacing.m, vertical = UiSpacing.compact),
+                    horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)
                 ) {
                     DetectorFilterPill("All", visibleItems.size, activeCategory == null) {
                         selectedCategory = null
@@ -139,7 +142,7 @@ fun DetectedMediaPage(
             }
             scanProgress?.let { progress ->
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.l, vertical = UiSpacing.xs),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
@@ -152,7 +155,7 @@ fun DetectedMediaPage(
                     if (!progress.complete) TextButton(onClick = onCancelScan) { Text("Stop") }
                 }
                 if (!progress.complete) LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.l)
                 )
             }
             if (groups.isEmpty()) {
@@ -199,8 +202,8 @@ fun DetectedMediaPage(
             dragHandle = { com.miowser.app.ui.CompactSheetDragHandle() },
             shape = com.miowser.app.ui.MiowserBottomSheetShape) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.fillMaxWidth().padding(start = UiSpacing.xl, end = UiSpacing.xl, bottom = UiSpacing.m),
+                verticalArrangement = Arrangement.spacedBy(UiSpacing.s)
             ) {
                 Text("Scan site", style = MaterialTheme.typography.titleLarge)
                 Text(
@@ -211,7 +214,7 @@ fun DetectedMediaPage(
                 Text("Link depth", style = MaterialTheme.typography.labelLarge)
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)
                 ) {
                     listOf(0, 1, 2).forEach { value ->
                         FilterChip(selected = depth == value, onClick = { depth = value },
@@ -221,7 +224,7 @@ fun DetectedMediaPage(
                 Text("Page limit", style = MaterialTheme.typography.labelLarge)
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)
                 ) {
                     listOf(4, 8, 16).forEach { value ->
                         FilterChip(selected = pageLimit == value, onClick = { pageLimit = value },
@@ -256,7 +259,7 @@ private fun DetectorFilterPill(label: String, count: Int, selected: Boolean, onC
         border = BorderStroke(1.dp, if (selected) colors.secondary else colors.outlineVariant)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+            modifier = Modifier.padding(horizontal = UiSpacing.m, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
@@ -285,11 +288,11 @@ private fun DetectorGroupHeading(category: DetectorCategory, count: Int) {
         DetectorCategory.OTHER -> Icons.Rounded.InsertDriveFile
     }
     Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 17.dp, bottom = 6.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = UiSpacing.roomy, end = UiSpacing.roomy, top = 17.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)
     ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp),
+        Icon(icon, contentDescription = null, modifier = Modifier.size(UiIconSize.small),
             tint = MaterialTheme.colorScheme.primary)
         Text("${category.heading} ($count)", style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -315,23 +318,23 @@ private fun DetectedMediaRow(
         return
     }
 
-    val shape = RoundedCornerShape(16.dp)
+    val shape = UiCorners.r16
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.m, vertical = 3.dp),
         shape = shape,
         color = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().clip(shape)
                 .clickable(enabled = isPlayable(item), onClick = onOpen)
-                .padding(horizontal = 12.dp, vertical = 7.dp),
+                .padding(horizontal = UiSpacing.m, vertical = 7.dp),
             verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Surface(shape = RoundedCornerShape(7.dp),
                     color = MaterialTheme.colorScheme.secondaryContainer) {
-                    Text(item.type.label(), modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                    Text(item.type.label(), modifier = Modifier.padding(horizontal = 7.dp, vertical = UiSpacing.xxs),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSecondaryContainer)
                 }
@@ -367,7 +370,7 @@ private fun DetectedMediaRow(
                 }
                 IconButton(onClick = { onCopyUrl(item.url) }, modifier = Modifier.size(38.dp)) {
                     Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy link",
-                        modifier = Modifier.size(18.dp))
+                        modifier = Modifier.size(UiIconSize.small))
                 }
                 if (showLibraryAction && detectorCategory(item) == DetectorCategory.VIDEOS) {
                     IconButton(
@@ -383,7 +386,7 @@ private fun DetectedMediaRow(
                                 rendererResourceKind(item.url) == RendererResourceKind.DATA ->
                                     "Data URL cannot be added to library"
                                 else -> "Add to library"
-                            }, modifier = Modifier.size(20.dp))
+                            }, modifier = Modifier.size(UiIconSize.menu))
                     }
                 }
                 if (item.isConfirmed || rendererResourceKind(item.url) != null) {
@@ -406,14 +409,14 @@ private fun TextualMediaRow(
     onDownload: (DetectedMedia) -> Unit
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.m, vertical = UiSpacing.xs),
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         Row(
             modifier = Modifier.fillMaxWidth()
                 .clickable(enabled = item.type == MediaType.SUBTITLE, onClick = onOpen)
-                .padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+                .padding(start = UiSpacing.l, end = UiSpacing.xs, top = UiSpacing.compact, bottom = UiSpacing.compact),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
@@ -462,8 +465,8 @@ internal fun SubtitleViewer(item: DetectedMedia, userAgent: String, onDismiss: (
         BoxWithConstraints {
         val previewHeight = maxHeight * 0.58f
         Column(
-            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.fillMaxWidth().padding(start = UiSpacing.l, end = UiSpacing.l, bottom = UiSpacing.m),
+            verticalArrangement = Arrangement.spacedBy(UiSpacing.s)
         ) {
             Text(displayName(item), style = MaterialTheme.typography.titleLarge,
                 maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -484,13 +487,13 @@ internal fun SubtitleViewer(item: DetectedMedia, userAgent: String, onDismiss: (
                         state = listState,
                         modifier = Modifier.fillMaxWidth()
                             .heightIn(max = previewHeight)
-                            .clip(RoundedCornerShape(14.dp))
+                            .clip(UiCorners.r14)
                             .sheetVerticalEdgeFade(listState, MaterialTheme.colorScheme.surfaceContainerLow),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                        verticalArrangement = Arrangement.spacedBy(UiSpacing.xxs)
                     ) {
                         itemsIndexed(lines) { _, line ->
                             Text(line.ifEmpty { " " },
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 1.dp),
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.m, vertical = 1.dp),
                                 style = MaterialTheme.typography.bodySmall,
                                 fontFamily = FontFamily.Monospace)
                         }

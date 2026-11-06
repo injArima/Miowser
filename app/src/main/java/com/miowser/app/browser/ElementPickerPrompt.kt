@@ -22,30 +22,35 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.miowser.app.ui.theme.UiControlSize
+import com.miowser.app.ui.theme.UiCorners
+import com.miowser.app.ui.theme.UiElevation
+import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.UiSpacing
 
 @Composable
 fun ElementPickerPrompt(onCancel: () -> Unit, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.colorScheme
     Surface(
-        modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        modifier = modifier.fillMaxWidth().padding(horizontal = UiSpacing.l),
         shape = MaterialTheme.shapes.large,
         color = colors.surfaceContainerHigh,
         contentColor = colors.onSurface,
         border = BorderStroke(1.dp, colors.outlineVariant),
-        shadowElevation = 8.dp
+        shadowElevation = UiElevation.high
     ) {
         Row(
-            modifier = Modifier.padding(start = 12.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+            modifier = Modifier.padding(start = UiSpacing.m, end = UiSpacing.s, top = UiSpacing.compact, bottom = UiSpacing.compact),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(UiSpacing.m)
         ) {
             Surface(
-                shape = RoundedCornerShape(14.dp),
+                shape = UiCorners.r14,
                 color = colors.primaryContainer,
                 contentColor = colors.onPrimaryContainer
             ) {
-                Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.SelectAll, contentDescription = null, modifier = Modifier.size(24.dp))
+                Box(Modifier.size(UiControlSize.action), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.SelectAll, contentDescription = null, modifier = Modifier.size(UiIconSize.standard))
                 }
             }
             Column(Modifier.weight(1f)) {

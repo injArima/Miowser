@@ -19,6 +19,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.miowser.app.ui.CompactSheetDragHandle
 import com.miowser.app.ui.MiowserBottomSheetShape
+import com.miowser.app.ui.theme.PlayerUiColors
+import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.UiSpacing
 
 /** Original subtitle workspace, with unsupported sections omitted rather than disabled. */
 @OptIn(ExperimentalLayoutApi::class)
@@ -33,11 +36,11 @@ internal fun PlayerSubtitleWorkspace(
     BoxWithConstraints(Modifier.fillMaxSize().then(modifier)) {
         val landscape = maxWidth > maxHeight
         val sections = buildList { add("Tracks"); if (inspect != null) add("Inspect"); if (settings != null) add("Settings") }
-        CompositionLocalProvider(LocalContentColor provides Color.White) {
+        CompositionLocalProvider(LocalContentColor provides PlayerUiColors.content) {
             Column(Modifier.fillMaxSize().testTag("subtitle_workspace")
                 .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top))
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
-                .playerPanelPointerShield().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                .playerPanelPointerShield().padding(horizontal = UiSpacing.l, vertical = UiSpacing.s)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("Subtitles", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
                         modifier = Modifier.weight(1f))
@@ -48,12 +51,12 @@ internal fun PlayerSubtitleWorkspace(
                 if (!landscape && sections.size > 1) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                     sections.forEachIndexed { index, label ->
                         TextButton(onClick = { section = index }, colors = ButtonDefaults.textButtonColors(contentColor = subtitleOverlayAccent())) {
-                            Text(label, color = if (section == index) subtitleOverlayAccent() else Color.White)
+                            Text(label, color = if (section == index) subtitleOverlayAccent() else PlayerUiColors.content)
                         }
                     }
                 }
                 val openInspect = { if (!landscape && inspect != null) section = sections.indexOf("Inspect") }
-                if (landscape) Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                if (landscape) Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(UiSpacing.comfortable)) {
                     Column(Modifier.weight(if (sections.size == 1) 1f else 0.28f).fillMaxHeight()) {
                         Text("Available tracks", style = MaterialTheme.typography.labelLarge)
                         tracks(Modifier.fillMaxSize(), openInspect)
@@ -83,14 +86,14 @@ internal fun PlayerSubtitleWorkspace(
 internal fun PlayerTrackSheet(title: String, onDismiss: () -> Unit, content: @Composable (Modifier) -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        dragHandle = { CompactSheetDragHandle() }, containerColor = Color(0xFF151313),
-        contentColor = Color.White, shape = MiowserBottomSheetShape) {
+        dragHandle = { CompactSheetDragHandle() }, containerColor = PlayerUiColors.panel,
+        contentColor = PlayerUiColors.content, shape = MiowserBottomSheetShape) {
         BoxWithConstraints {
             val maxSheetContentHeight = maxHeight * 0.58f
-            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = UiSpacing.l), verticalArrangement = Arrangement.spacedBy(UiSpacing.xxs)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f).padding(horizontal = 6.dp, vertical = 2.dp))
+                        modifier = Modifier.weight(1f).padding(horizontal = 6.dp, vertical = UiSpacing.xxs))
                 }
                 content(Modifier.fillMaxWidth().heightIn(max = maxSheetContentHeight))
                 Spacer(Modifier.size(6.dp))
@@ -102,7 +105,7 @@ internal fun PlayerTrackSheet(title: String, onDismiss: () -> Unit, content: @Co
 @Composable
 internal fun subtitleOverlayAccent(): Color {
     val primary = MaterialTheme.colorScheme.primary
-    return if (primary.luminance() < 0.48f) lerp(primary, Color.White, 0.58f) else primary
+    return if (primary.luminance() < 0.48f) lerp(primary, PlayerUiColors.content, 0.58f) else primary
 }
 
 @Composable
@@ -114,12 +117,12 @@ internal fun PlayerSubtitleChoiceRow(
 ) {
     Column(Modifier.fillMaxWidth().clickable(onClick = onClick)
         .padding(horizontal = 6.dp, vertical = 9.dp)) {
-        Text(label, color = if (selected) subtitleOverlayAccent() else Color.White,
+        Text(label, color = if (selected) subtitleOverlayAccent() else PlayerUiColors.content,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             maxLines = 2, overflow = TextOverflow.Ellipsis)
         if (detail != null) Text(detail, style = MaterialTheme.typography.bodySmall,
-            color = Color.White.copy(alpha = 0.65f), maxLines = 2)
+            color = PlayerUiColors.content.copy(alpha = 0.65f), maxLines = 2)
     }
 }
 
@@ -143,15 +146,15 @@ internal fun PlayerTrackChoiceRow(
                 style = MaterialTheme.typography.titleMedium,
                 color = when {
                     selected -> MaterialTheme.colorScheme.primary
-                    !enabled -> Color.White.copy(alpha = 0.6f)
-                    else -> Color.White
+                    !enabled -> PlayerUiColors.content.copy(alpha = 0.6f)
+                    else -> PlayerUiColors.content
                 }
             )
             if (detail.isNotBlank()) {
                 Text(
                     detail,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.66f),
+                    color = PlayerUiColors.content.copy(alpha = 0.66f),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -160,7 +163,7 @@ internal fun PlayerTrackChoiceRow(
         if (onInspect != null) {
             IconButton(onClick = onInspect) {
                 Icon(Icons.Rounded.Visibility, contentDescription = "Inspect subtitle",
-                    tint = Color.White)
+                    tint = PlayerUiColors.content)
             }
         }
         if (selected) {
@@ -168,7 +171,7 @@ internal fun PlayerTrackChoiceRow(
                 Icons.Rounded.Check,
                 contentDescription = "Selected",
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier.size(UiIconSize.standard)
             )
         }
     }

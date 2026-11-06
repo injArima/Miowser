@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.miowser.app.ui.theme.UiSpacing
 
 // Shared by HistoryPage and BookmarksPage — both are "title + URL, open on tap, remove via
 // trailing icon" lists over different data. The row's own tap (open) and the trailing
@@ -30,16 +31,16 @@ import androidx.compose.ui.unit.dp
 @Composable
 internal fun LibraryRow(title: String, subtitle: String, onClick: () -> Unit, onRemove: () -> Unit) {
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.m, vertical = UiSpacing.xs),
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
-                .padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+                .padding(start = UiSpacing.l, end = UiSpacing.xs, top = UiSpacing.s, bottom = UiSpacing.s),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+            Column(modifier = Modifier.weight(1f).padding(end = UiSpacing.s)) {
                 Text(text = title, style = MaterialTheme.typography.titleSmall,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(

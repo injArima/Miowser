@@ -52,14 +52,19 @@ import com.miowser.app.grabber.DetectedMedia
 import com.miowser.app.player.*
 import com.miowser.app.ui.MiowserMenuItem
 import com.miowser.app.ui.sheetVerticalEdgeFade
-import com.miowser.app.ui.theme.LocalMotionPolicy
-import com.miowser.app.ui.theme.MiowserPlayerTheme
-import com.miowser.app.ui.theme.MotionTokens
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.miowser.app.ui.theme.LocalMotionPolicy
+import com.miowser.app.ui.theme.MiowserPlayerTheme
+import com.miowser.app.ui.theme.MotionTokens
+import com.miowser.app.ui.theme.PlayerUiColors
+import com.miowser.app.ui.theme.UiCorners
+import com.miowser.app.ui.theme.UiElevation
+import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.UiSpacing
 
 /** Original player UI backed by the retained HTML video. This route never creates ExoPlayer. */
 @Composable
@@ -293,7 +298,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
         playerContent = {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val viewportHeight = maxHeight
-                if (state.audioOnly) Box(Modifier.fillMaxSize().background(Color.Black))
+                if (state.audioOnly) Box(Modifier.fillMaxSize().background(PlayerUiColors.backdrop))
                 if (!state.audioOnly && selectedSubtitleUrl != null && externalSubtitleCues.isNotEmpty()) {
                     BrowserDetectedSubtitleLayer(controller, owner, selectedSubtitleUrl,
                         externalSubtitleCues, effectiveSubtitleStyle, subtitleTypeface)
@@ -327,7 +332,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                             if (locked) RoundPlayerButton(Icons.Rounded.LockOpen, "Unlock controls", { locked = false },
                                 Modifier.align(Alignment.TopEnd)
                                     .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top))
-                                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.End)).padding(20.dp))
+                                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.End)).padding(UiSpacing.xl))
                             else {
                                 PlayerTopBar(landscape, rotationLocked, video.speed.toFloat(),
                                     onRotate = {
@@ -396,7 +401,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                 if (holdingSpeed && video.speed == 2.0 && state.controlsEnabled && !locked && !modal) {
                     PlayerHoldSpeedIndicator(Modifier.align(Alignment.TopCenter)
                         .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top))
-                        .padding(top = 16.dp))
+                        .padding(top = UiSpacing.l))
                 }
                 if (state.phase == BrowserVideoPhase.RECONNECTING) BrowserVideoRecoveryBanner("Reconnecting player controls…", onExit)
             }
@@ -411,7 +416,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                     Modifier.align(Alignment.TopEnd)
                         .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top))
                         .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-                        .padding(top = 62.dp, end = 16.dp)
+                        .padding(top = 62.dp, end = UiSpacing.l)
                 )
             }
             if (adjustments && state.controlsEnabled) PlayerAdjustmentsSheet(activity, { adjustments = false },
@@ -419,7 +424,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                 onVolumeInteraction = { if (controller.state.value.session?.state?.muted == true) controller.setMuted(false) })
             if (audioPanel && state.controlsEnabled) PlayerTrackSheet("Audio", { audioPanel = false }) { listModifier ->
                 val listState = rememberLazyListState()
-                LazyColumn(listModifier.sheetVerticalEdgeFade(listState, Color(0xFF151313)),
+                LazyColumn(listModifier.sheetVerticalEdgeFade(listState, PlayerUiColors.panel),
                     state = listState) {
                     state.message?.let { item("error") { Text(it, color = MaterialTheme.colorScheme.error) } }
                     itemsIndexed(video.audioTracks, key = { _, track -> track.id }) { index, track ->
@@ -469,7 +474,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                             if (video.captions.isNotEmpty()) item("website_captions_note") {
                                 Text("Website captions use the site's own appearance and timing.",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Color.White.copy(alpha = 0.68f))
+                                    color = PlayerUiColors.content.copy(alpha = 0.68f))
                             }
                             if (detectedSubtitles.isNotEmpty()) {
                                 item("detected_heading") { Text("Detected subtitle files", style = MaterialTheme.typography.labelLarge) }
@@ -495,7 +500,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                             if (selectedDetectedSubtitle == null) {
                                 Text("Appearance and timing controls apply to detected subtitle files.",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Color.White.copy(alpha = 0.68f))
+                                    color = PlayerUiColors.content.copy(alpha = 0.68f))
                             }
                             PlayerSubtitleControls(effectiveSubtitleStyle, { updated ->
                                     subtitleDelayMs = updated.delayMs
@@ -521,28 +526,28 @@ private fun BrowserPlayerGuidanceBubble(modifier: Modifier = Modifier) {
             indication = null,
             onClick = {}
         ),
-        shape = RoundedCornerShape(18.dp),
-        color = Color(0xFF2D291E).copy(alpha = 0.96f),
-        contentColor = Color.White,
-        border = BorderStroke(1.dp, Color(0xFFFFD875).copy(alpha = 0.72f)),
-        shadowElevation = 8.dp
+        shape = UiCorners.r18,
+        color = PlayerUiColors.guidanceSurface.copy(alpha = 0.96f),
+        contentColor = PlayerUiColors.content,
+        border = BorderStroke(1.dp, PlayerUiColors.caution.copy(alpha = 0.72f)),
+        shadowElevation = UiElevation.high
     ) {
         Row(
-            Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            Modifier.padding(horizontal = UiSpacing.l, vertical = UiSpacing.comfortable),
+            horizontalArrangement = Arrangement.spacedBy(UiSpacing.m),
             verticalAlignment = Alignment.Top
         ) {
             Icon(
                 Icons.Rounded.WarningAmber,
                 contentDescription = null,
-                tint = Color(0xFFFFD875),
-                modifier = Modifier.size(24.dp)
+                tint = PlayerUiColors.caution,
+                modifier = Modifier.size(UiIconSize.standard)
             )
             Text(
                 "For the best Miowser experience, open this video from the Media page and play it " +
                     "with the rich player. DRM-protected videos must remain in the WebView player.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color.White
+                color = PlayerUiColors.content
             )
         }
     }
@@ -579,8 +584,8 @@ private fun BrowserVideoTimer(controller: BrowserPlaybackControls, timeline: Bro
 private fun BrowserVideoRecoveryBanner(message: String, onExit: () -> Unit) {
     Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing)
         .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top))
-        .background(Color.Black.copy(alpha = 0.85f)).padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(message, color = Color.White, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+        .background(PlayerUiColors.backdrop.copy(alpha = 0.85f)).padding(horizontal = UiSpacing.m, vertical = UiSpacing.s), verticalAlignment = Alignment.CenterVertically) {
+        Text(message, color = PlayerUiColors.content, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
         RoundPlayerButton(Icons.AutoMirrored.Rounded.ArrowBack, "Return to website", onExit)
     }
 }

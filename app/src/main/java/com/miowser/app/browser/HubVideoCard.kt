@@ -60,6 +60,10 @@ import com.miowser.app.ui.MiowserDropdownMenu
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.LaunchedEffect
+import com.miowser.app.ui.theme.UiControlSize
+import com.miowser.app.ui.theme.UiCorners
+import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.UiSpacing
 
 /** Reusable 16:9 media card for the Library and future downloaded-media surfaces. */
 @OptIn(ExperimentalFoundationApi::class)
@@ -219,7 +223,7 @@ fun HubVideoCard(
             Box(
                 modifier = Modifier
                     .then(if (listMode) Modifier.width(136.dp).height(84.dp) else Modifier.fillMaxWidth().aspectRatio(16f / 9f))
-                    .clip(if (listMode) RoundedCornerShape(14.dp) else RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                    .clip(if (listMode) UiCorners.r14 else RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                     .then(if (thumbnail == null) Modifier.background(placeholderBrush) else Modifier),
                 contentAlignment = Alignment.Center
             ) {
@@ -239,18 +243,18 @@ fun HubVideoCard(
                         bitmap = centerArtwork,
                         contentDescription = "App icon",
                         contentScale = ContentScale.Fit,
-                        modifier = Modifier.size(76.dp).clip(RoundedCornerShape(18.dp))
+                        modifier = Modifier.size(76.dp).clip(UiCorners.r18)
                     )
                     Surface(
                         color = MaterialTheme.colorScheme.primaryContainer,
                         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp)
+                        shape = UiCorners.r14,
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(UiSpacing.s)
                     ) {
                         Icon(
                             actionIcon,
                             contentDescription = actionContentDescription,
-                            modifier = Modifier.padding(7.dp).size(24.dp)
+                            modifier = Modifier.padding(7.dp).size(UiIconSize.standard)
                         )
                     }
                 } else {
@@ -262,15 +266,15 @@ fun HubVideoCard(
                         } else {
                             MaterialTheme.colorScheme.onPrimaryContainer
                         },
-                        modifier = Modifier.size(44.dp)
+                        modifier = Modifier.size(UiControlSize.action)
                     )
                 }
                 if (durationMs > 0L) {
                     Surface(
                         color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.86f),
                         contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp)
+                        shape = UiCorners.r8,
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(UiSpacing.s)
                     ) {
                         Text(
                             formatMediaDuration(durationMs),
@@ -283,8 +287,8 @@ fun HubVideoCard(
                     Surface(
                         color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.86f),
                         contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.align(Alignment.BottomStart).padding(8.dp)
+                        shape = UiCorners.r8,
+                        modifier = Modifier.align(Alignment.BottomStart).padding(UiSpacing.s)
                     ) {
                         Text(label, style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp))
@@ -294,8 +298,8 @@ fun HubVideoCard(
                     Surface(
                         color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.94f),
                         contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
+                        shape = UiCorners.r8,
+                        modifier = Modifier.align(Alignment.TopStart).padding(UiSpacing.s)
                     ) {
                         Text(
                             label,
@@ -317,8 +321,8 @@ fun HubVideoCard(
             }
 
             Column(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                modifier = Modifier.padding(horizontal = UiSpacing.m, vertical = UiSpacing.compact),
+                verticalArrangement = Arrangement.spacedBy(UiSpacing.xs)
             ) {
                 Text(
                     title,
@@ -354,8 +358,8 @@ fun HubVideoCard(
 
     val cardContent: @Composable () -> Unit = {
         if (listMode) {
-            Row(modifier = Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(modifier = Modifier.fillMaxWidth().padding(UiSpacing.s), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(UiSpacing.m)) {
                 artwork()
                 Box(Modifier.weight(1f)) { details() }
                 Box {

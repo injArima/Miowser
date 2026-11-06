@@ -75,6 +75,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
 import com.miowser.app.settings.SearchEngine
 import kotlinx.coroutines.flow.collect
+import com.miowser.app.ui.theme.UiControlSize
+import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.UiSemanticColors
+import com.miowser.app.ui.theme.UiSpacing
 
 /**
  * The browser's address bar: a single text field doubling as URL entry and search box (see
@@ -115,7 +119,8 @@ internal fun AddressBar(
     val fieldInteraction = remember(tabId) { MutableInteractionSource() }
     val currentOnValueChange by rememberUpdatedState(onValueChange)
     val secureIconColor = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f)
-        Color(0xFF81C995) else Color(0xFF137333)
+        UiSemanticColors.secureOnDark
+    else UiSemanticColors.secureOnLight
     val securityAccent = when (siteSecurity) {
         SiteSecurity.SECURE -> secureIconColor
         SiteSecurity.CERTIFICATE_ERROR,
@@ -177,14 +182,14 @@ internal fun AddressBar(
                 // Keep the background behind the system status bar while only offsetting content.
                 // Padding on Surface itself left the inset outside its color and created a seam.
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
-                .padding(horizontal = 8.dp, vertical = 2.dp),
+                .padding(horizontal = UiSpacing.s, vertical = UiSpacing.xxs),
             verticalAlignment = Alignment.CenterVertically
         ) {
                 if (isPrivate) Icon(
                     Icons.Rounded.VisibilityOff,
                     contentDescription = "Private tab",
                     tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier.padding(horizontal = 4.dp)
+                    modifier = Modifier.padding(horizontal = UiSpacing.xs)
                 )
                 Box(modifier = Modifier.weight(1f)) {
                     BasicTextField(
@@ -246,7 +251,7 @@ internal fun AddressBar(
                                         IconButton(onClick = onOpenSiteInfo) {
                                             if (isLoading) {
                                                 CircularProgressIndicator(
-                                                    modifier = Modifier.size(20.dp).semantics {
+                                                    modifier = Modifier.size(UiIconSize.menu).semantics {
                                                         contentDescription = "Loading page"
                                                     },
                                                     color = MaterialTheme.colorScheme.primary,
@@ -284,7 +289,7 @@ internal fun AddressBar(
                                         if (fieldFocused) IconButton(
                                             onClick = onSubmit,
                                             enabled = textState.text.isNotBlank(),
-                                            modifier = Modifier.size(40.dp)
+                                            modifier = Modifier.size(UiControlSize.compact)
                                         ) {
                                             Icon(
                                                 Icons.Rounded.Search,
@@ -337,7 +342,7 @@ internal fun AddressBar(
                 }
                 if (detectedCount > 0) {
                     Box(
-                        modifier = Modifier.size(48.dp)
+                        modifier = Modifier.size(UiControlSize.touchTarget)
                             .clickable(role = Role.Button, onClick = onOpenDetected)
                     ) {
                         Icon(
@@ -349,7 +354,7 @@ internal fun AddressBar(
                         // Badge has its own measured space inside the tap target. Keeping it
                         // outside IconButton avoids the button's circular clip at the top edge.
                         Badge(modifier = Modifier.align(Alignment.TopEnd)
-                            .padding(top = 2.dp, end = 2.dp)) {
+                            .padding(top = UiSpacing.xxs, end = UiSpacing.xxs)) {
                             Text(detectedCount.coerceAtMost(99).toString())
                         }
                     }

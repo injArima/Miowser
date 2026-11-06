@@ -10,6 +10,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.miowser.app.ui.theme.UiControlSize
 
 @Composable
 internal fun SearchFieldActions(
@@ -21,11 +22,11 @@ internal fun SearchFieldActions(
 ) {
     Row {
         if (showClear) {
-            IconButton(onClick = onClear, modifier = Modifier.size(40.dp)) {
+            IconButton(onClick = onClear, modifier = Modifier.size(UiControlSize.compact)) {
                 Icon(Icons.Rounded.Close, contentDescription = "Clear search field")
             }
         }
-        IconButton(onClick = onSubmit, enabled = submitEnabled, modifier = Modifier.size(40.dp)) {
+        IconButton(onClick = onSubmit, enabled = submitEnabled, modifier = Modifier.size(UiControlSize.compact)) {
             Icon(Icons.AutoMirrored.Rounded.KeyboardReturn, contentDescription = submitDescription)
         }
     }

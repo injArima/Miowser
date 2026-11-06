@@ -36,6 +36,7 @@ import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import com.miowser.app.ui.theme.LocalMotionPolicy
 import com.miowser.app.ui.theme.MotionTokens
+import com.miowser.app.ui.theme.PlayerUiColors
 
 internal val LocalPlayerControlsActive = staticCompositionLocalOf { true }
 
@@ -81,7 +82,7 @@ internal fun PlayerOverlayHost(state: PlayerOverlayState, onClosed: (PlayerOverl
             modifier = Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().focusGroup().semantics { paneTitle = panel.title }) {
                 Box(Modifier.fillMaxSize()
-                    .background(Color.Black.copy(alpha = if (panel == PlayerOverlay.PLAYLIST) 0.28f else 0.90f))
+                    .background(PlayerUiColors.backdrop.copy(alpha = if (panel == PlayerOverlay.PLAYLIST) 0.28f else 0.90f))
                     .semantics { contentDescription = "Close ${panel.title.lowercase()}" }
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
                         onClick = { state.dismiss() }))

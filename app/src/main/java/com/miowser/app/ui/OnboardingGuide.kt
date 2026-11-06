@@ -39,6 +39,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.miowser.app.ui.theme.UiControlSize
+import com.miowser.app.ui.theme.UiSpacing
 
 private data class OnboardingPage(
     val icon: ImageVector,
@@ -118,7 +120,7 @@ fun OnboardingGuide(
         color = MaterialTheme.colorScheme.background
     ) {
         Column(
-            modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 24.dp, vertical = 12.dp)
+            modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = UiSpacing.xxl, vertical = UiSpacing.m)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -137,7 +139,7 @@ fun OnboardingGuide(
 
             Column(
                 modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
-                    .padding(vertical = 24.dp),
+                    .padding(vertical = UiSpacing.xxl),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
@@ -149,7 +151,7 @@ fun OnboardingGuide(
                     Icon(
                         page.icon,
                         contentDescription = null,
-                        modifier = Modifier.padding(24.dp).size(48.dp)
+                        modifier = Modifier.padding(UiSpacing.xxl).size(UiControlSize.touchTarget)
                     )
                 }
                 Spacer(Modifier.height(28.dp))
@@ -159,25 +161,25 @@ fun OnboardingGuide(
                     fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(UiSpacing.m))
                 Text(
                     page.description,
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
                 )
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(UiSpacing.xxl))
                 Surface(
                     shape = MaterialTheme.shapes.large,
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
-                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        modifier = Modifier.padding(horizontal = UiSpacing.roomy, vertical = UiSpacing.l),
+                        verticalArrangement = Arrangement.spacedBy(UiSpacing.m)
                     ) {
                         page.points.forEach { point ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(UiSpacing.m)) {
                                 Box(
                                     Modifier.padding(top = 7.dp).size(7.dp)
                                         .background(MaterialTheme.colorScheme.primary, CircleShape)
@@ -195,13 +197,13 @@ fun OnboardingGuide(
             }
 
             Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                modifier = Modifier.fillMaxWidth().padding(bottom = UiSpacing.m),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 visiblePages.indices.forEach { index ->
                     Box(
-                        Modifier.padding(horizontal = 4.dp).size(if (index == pageIndex) 10.dp else 7.dp)
+                        Modifier.padding(horizontal = UiSpacing.xs).size(if (index == pageIndex) 10.dp else 7.dp)
                             .background(
                                 if (index == pageIndex) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.outlineVariant,
@@ -213,7 +215,7 @@ fun OnboardingGuide(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(UiSpacing.m),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (pageIndex > 0) {

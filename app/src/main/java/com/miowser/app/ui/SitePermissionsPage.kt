@@ -18,6 +18,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.miowser.app.browser.SavedSitePermission
 import com.miowser.app.browser.SiteDecision
+import com.miowser.app.ui.theme.UiSpacing
 
 private fun permissionLabel(resource: String): String = when {
     resource.endsWith("VIDEO_CAPTURE") -> "Camera"
@@ -35,16 +36,16 @@ fun SitePermissionsPage(
     SimplePageScaffold(title = "Site permissions", onBack = onBack) { modifier ->
         LazyColumn(modifier = modifier) {
             if (decisions.isEmpty()) item {
-                Text("No remembered site decisions", modifier = Modifier.padding(20.dp))
+                Text("No remembered site decisions", modifier = Modifier.padding(UiSpacing.xl))
             }
             items(decisions, key = { "${it.origin}|${it.resource}" }) { item ->
                 Surface(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.m, vertical = UiSpacing.xs),
                     shape = MaterialTheme.shapes.medium,
                     color = MaterialTheme.colorScheme.surfaceContainerLow
                 ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.l, vertical = UiSpacing.s),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {

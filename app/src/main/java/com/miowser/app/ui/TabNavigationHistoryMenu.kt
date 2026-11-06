@@ -22,6 +22,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.miowser.app.ui.theme.UiIconSize
 
 data class TabNavigationEntry(
     val index: Int,
@@ -75,19 +76,19 @@ internal fun TabNavigationHistoryMenu(
 @Composable
 private fun NavigationSiteIcon(url: String, favicon: Bitmap?) {
     if (url.startsWith("miowser://") || url == "about:blank") {
-        Icon(Icons.Rounded.Home, contentDescription = null, modifier = Modifier.size(20.dp))
+        Icon(Icons.Rounded.Home, contentDescription = null, modifier = Modifier.size(UiIconSize.menu))
         return
     }
-    Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(UiIconSize.menu), contentAlignment = Alignment.Center) {
         if (favicon != null) {
             Image(
                 bitmap = favicon.asImageBitmap(),
                 contentDescription = null,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(UiIconSize.menu),
                 contentScale = ContentScale.Fit
             )
         } else {
-            Icon(Icons.Rounded.Language, contentDescription = null, modifier = Modifier.size(20.dp))
+            Icon(Icons.Rounded.Language, contentDescription = null, modifier = Modifier.size(UiIconSize.menu))
         }
     }
 }
