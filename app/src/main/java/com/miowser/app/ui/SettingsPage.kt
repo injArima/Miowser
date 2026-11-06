@@ -250,7 +250,7 @@ fun SettingsPage(
             SettingsSection("Diagnostics") {
                 SettingRow(
                     "Save crash diagnostics",
-                    "Keep redacted crash reports locally. Nothing is uploaded automatically, and sharing always requires your action.",
+                    "On by default. Keep redacted crash reports locally; nothing is uploaded automatically.",
                     settings.crashDiagnosticsEnabled
                 ) {
                     onUpdate(settings.copy(crashDiagnosticsEnabled = it))

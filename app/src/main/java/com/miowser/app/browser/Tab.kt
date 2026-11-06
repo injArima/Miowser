@@ -544,6 +544,7 @@ class Tab(
 
     private fun handleRendererGone(view: WebView, crashed: Boolean) {
         if (liveWebView !== view) return
+        if (crashed) com.miowser.app.diagnostics.CrashDiagnostics.recordRendererCrash(tabContext)
         blockedPageInfo = null
         rendererUnavailable = true
         retireEngineCallbacks?.invoke()

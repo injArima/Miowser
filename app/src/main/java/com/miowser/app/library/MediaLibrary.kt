@@ -304,7 +304,7 @@ object MediaLibrary {
     fun clear(context: Context) {
         Persistence.requireOwner()
         mutableRecords.clear()
-        persist(context)
+        persist(context, discardUnsupported = true)
         scheduleCleanup(context)
     }
 
@@ -387,16 +387,17 @@ object MediaLibrary {
     }
 
     /** Restores records removed by an Undo action with one disk write and original recency order. */
-    fun restoreRemoved(context: Context, removed: Collection<LibraryEntry>) {
+    fun restoreRemoved(context: Context, removed: Collection<LibraryEntry>,
+                       restoreUnsupported: List<String>? = null) {
         Persistence.requireOwner()
-        if (removed.isEmpty()) return
+        if (removed.isEmpty() && restoreUnsupported.isNullOrEmpty()) return
         val restored = (mutableRecords.toList() + removed)
             .distinctBy { it.identityKey }
             .sortedByDescending { it.lastPlayedAt }
             .let(::retainLibraryRecords)
         mutableRecords.clear()
         mutableRecords.addAll(restored)
-        persist(context)
+        persist(context, restoreUnsupported = restoreUnsupported)
     }
 
     /** Undo a folder operation, restoring moved entries and removed Library records alike. */
@@ -445,7 +446,9 @@ object MediaLibrary {
 
     private fun persist(
         context: Context,
-        change: ProjectionChange = ProjectionChange.STRUCTURE
+        change: ProjectionChange = ProjectionChange.STRUCTURE,
+        discardUnsupported: Boolean = false,
+        restoreUnsupported: List<String>? = null
     ): java.util.concurrent.CompletableFuture<Boolean> {
         revision++
         when (change) {
@@ -456,7 +459,7 @@ object MediaLibrary {
             ProjectionChange.PROGRESS -> progressVersion.longValue++
             ProjectionChange.DETAIL -> Unit
         }
-        return LibraryStore.save(context, mutableRecords)
+        return LibraryStore.save(context, mutableRecords, discardUnsupported, restoreUnsupported)
     }
 }
 

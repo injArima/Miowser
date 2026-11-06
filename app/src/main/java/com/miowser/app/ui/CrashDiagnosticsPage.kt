@@ -46,6 +46,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.miowser.app.diagnostics.CrashReportStore
 import com.miowser.app.diagnostics.CrashReportSummary
+import com.miowser.app.settings.AppSettings
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
@@ -73,7 +74,9 @@ fun CrashDiagnosticsPage(onBack: () -> Unit) {
             if (reports.isEmpty()) {
                 ExpressiveEmptyState(
                     title = "No crash reports",
-                    description = "When diagnostics are enabled, a redacted report will be kept locally after an app crash.",
+                    description = if (AppSettings.current.crashDiagnosticsEnabled)
+                        "No reports yet. App crashes are saved locally; Android-reported native crashes and ANRs appear after the next launch."
+                    else "Crash saving is off. Turn on Save crash diagnostics in Settings to keep future reports.",
                     icon = Icons.Rounded.BugReport,
                     modifier = Modifier.align(Alignment.Center).padding(24.dp)
                 )

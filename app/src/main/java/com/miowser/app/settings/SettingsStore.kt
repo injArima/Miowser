@@ -22,6 +22,7 @@ private const val KEY_REDUCE_MOTION = "reduce_motion"
 private const val KEY_LIBRARY_BEHAVIOR = "library_behavior"
 private const val KEY_BACKGROUND_PLAYBACK_ENABLED = "background_playback_enabled"
 private const val KEY_CRASH_DIAGNOSTICS_ENABLED = "crash_diagnostics_enabled"
+private const val KEY_CRASH_DIAGNOSTICS_MIGRATED = "crash_diagnostics_default_on_v2"
 
 /** Thin SharedPreferences wrapper — one flat record, so plain typed keys rather than a codec. */
 object SettingsStore {
@@ -67,9 +68,7 @@ object SettingsStore {
             backgroundPlaybackEnabled = prefs.getBoolean(
                 KEY_BACKGROUND_PLAYBACK_ENABLED, defaults.backgroundPlaybackEnabled
             ),
-            crashDiagnosticsEnabled = prefs.getBoolean(
-                KEY_CRASH_DIAGNOSTICS_ENABLED, defaults.crashDiagnosticsEnabled
-            )
+            crashDiagnosticsEnabled = crashDiagnosticsEnabled(context)
         )
     }
 
@@ -95,12 +94,21 @@ object SettingsStore {
                 .putString(KEY_LIBRARY_BEHAVIOR, settings.libraryBehavior.name)
                 .putBoolean(KEY_BACKGROUND_PLAYBACK_ENABLED, settings.backgroundPlaybackEnabled)
                 .putBoolean(KEY_CRASH_DIAGNOSTICS_ENABLED, settings.crashDiagnosticsEnabled)
+                .putBoolean(KEY_CRASH_DIAGNOSTICS_MIGRATED, true)
                 .commit()
         }
     }
 
     /** Minimal startup read used before the full settings repository is restored. */
-    fun crashDiagnosticsEnabled(context: Context): Boolean =
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getBoolean(KEY_CRASH_DIAGNOSTICS_ENABLED, false)
+    fun crashDiagnosticsEnabled(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        // The old default was off and could be written by an unrelated Settings change.
+        // Migrate once; subsequent user choices, including Off, remain persistent.
+        if (!prefs.getBoolean(KEY_CRASH_DIAGNOSTICS_MIGRATED, false)) {
+            prefs.edit().putBoolean(KEY_CRASH_DIAGNOSTICS_ENABLED, true)
+                .putBoolean(KEY_CRASH_DIAGNOSTICS_MIGRATED, true).commit()
+            return true
+        }
+        return prefs.getBoolean(KEY_CRASH_DIAGNOSTICS_ENABLED, true)
+    }
 }

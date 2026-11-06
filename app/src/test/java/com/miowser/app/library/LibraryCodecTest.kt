@@ -69,6 +69,23 @@ class LibraryCodecTest {
     }
 
     @Test
+    fun `newer unsupported Library entries survive ordinary saves`() {
+        val newer = LibraryCodec.encode(listOf(remote(mediaUri = "https://example.com/watch/show")))
+            .replace("\tREMOTE_STREAM\t", "\tSITE_SERIES\t")
+        assertTrue(LibraryCodec.decode(newer).isEmpty())
+
+        val updated = remote(title = "Updated title")
+        val preserved = LibraryCodec.encodePreservingUnsupported(listOf(updated), newer)
+
+        assertEquals(listOf(updated), LibraryCodec.decode(preserved))
+        assertTrue(preserved.contains(newer))
+        assertEquals(listOf(newer), LibraryCodec.unsupportedRows(preserved))
+        assertEquals(preserved, LibraryCodec.encodeWithUnsupported(listOf(updated),
+            LibraryCodec.unsupportedRows(preserved))) // Undo restores both kinds.
+        assertEquals("", LibraryCodec.encode(emptyList())) // Explicit Clear Library drops both kinds.
+    }
+
+    @Test
     fun `reopening uses the actual new start point while preserving optional metadata`() {
         val existing = remote()
         val reopened = existing.copy(

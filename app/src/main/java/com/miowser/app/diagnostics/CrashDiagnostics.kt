@@ -11,10 +11,11 @@ import java.io.FileOutputStream
 import java.io.OutputStreamWriter
 import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 
 private const val MAX_EVENTS = 40
-private const val MAX_REPORTS = 5
+private const val MAX_REPORTS = 20
 private const val MAX_REPORT_BYTES = 192 * 1024L
 private const val MAX_STACK_FRAMES = 180
 
@@ -122,11 +123,14 @@ object CrashReportStore {
         trim(directory)
     }
 
-    internal fun create(context: Context, timestamp: Long, write: (OutputStreamWriter) -> Unit) {
+    @Synchronized
+    internal fun create(context: Context, timestamp: Long, write: (OutputStreamWriter) -> Unit): Boolean {
         val directory = directory(context)
-        if (!directory.isDirectory && !directory.mkdirs()) return
-        val temporary = File(directory, "crash-$timestamp.tmp")
-        val target = File(directory, "crash-$timestamp.txt")
+        if (!directory.isDirectory && !directory.mkdirs()) return false
+        var fileTimestamp = timestamp
+        while (File(directory, "crash-$fileTimestamp.txt").exists()) fileTimestamp++
+        val temporary = File(directory, "crash-$fileTimestamp.tmp")
+        val target = File(directory, "crash-$fileTimestamp.txt")
         try {
             FileOutputStream(temporary).use { output ->
                 val writer = OutputStreamWriter(output, Charsets.UTF_8)
@@ -134,9 +138,10 @@ object CrashReportStore {
                 writer.flush()
                 output.fd.sync()
             }
-            if (temporary.length() in 1..MAX_REPORT_BYTES && temporary.renameTo(target)) {
-                trim(directory)
-            }
+            if (temporary.length() !in 1..MAX_REPORT_BYTES || !temporary.renameTo(target)) return false
+            // The report is already durable. Trimming must not turn a saved report into a failure.
+            runCatching { trim(directory) }
+            return true
         } finally {
             temporary.delete()
         }
@@ -154,16 +159,17 @@ object CrashReportStore {
         value.matches(Regex("""crash-\d{1,20}\.txt"""))
 }
 
-/** Opt-in, local-only crash diagnostics. Nothing is uploaded by this component. */
+/** Local-only crash diagnostics. The Settings switch controls capture; nothing is uploaded. */
 object CrashDiagnostics {
     @Volatile internal var enabled: Boolean = false
         private set
     private val installed = AtomicBoolean(false)
     private val handling = AtomicBoolean(false)
+    private val lastRendererReportAt = AtomicLong(0L)
     private var applicationContext: Context? = null
     private var previousHandler: Thread.UncaughtExceptionHandler? = null
     // Released before writing a report so an OOM has some working room for the handler itself.
-    @Volatile private var emergencyReserve: ByteArray? = ByteArray(64 * 1024)
+    @Volatile private var emergencyReserve: ByteArray? = ByteArray(512 * 1024)
 
     fun install(context: Context, initiallyEnabled: Boolean) {
         applicationContext = context.applicationContext
@@ -174,7 +180,15 @@ object CrashDiagnostics {
             val previous = previousHandler
             if (handling.compareAndSet(false, true)) {
                 emergencyReserve = null
-                if (enabled) runCatching { capture(thread, error) }
+                if (enabled) {
+                    try {
+                        if (error is OutOfMemoryError) captureMinimal(thread, error)
+                        else capture(thread, error)
+                    } catch (_: Throwable) {
+                        // Keep one small report even when a full report failed under heap pressure.
+                        try { captureMinimal(thread, error) } catch (_: Throwable) { }
+                    }
+                }
             }
             if (previous != null) previous.uncaughtException(thread, error)
             else {
@@ -191,6 +205,27 @@ object CrashDiagnostics {
     }
 
     fun setActiveArea(area: String) = DiagnosticTrail.setArea(area)
+
+    /** One renderer process can notify several tabs; keep one report without page details. */
+    fun recordRendererCrash(context: Context) {
+        if (!enabled) return
+        val now = System.currentTimeMillis()
+        val previous = lastRendererReportAt.get()
+        if (now - previous < 5_000L || !lastRendererReportAt.compareAndSet(previous, now)) return
+        val app = context.applicationContext
+        runCatching {
+            Thread({
+                runCatching {
+                    CrashReportStore.create(app, now) { writer ->
+                        writer.write("Miowser WebView renderer crash\n")
+                        writer.write("created_at_ms=$now\n")
+                        writer.write("version=${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n")
+                        writer.write("The page renderer stopped. No page URL or title was retained.\n")
+                    }
+                }
+            }, "miowser-renderer-report").apply { isDaemon = true }.start()
+        }
+    }
 
     /**
      * Records only uncommon warning/error labels—never messages, URLs, titles or search text.
@@ -219,6 +254,7 @@ object CrashDiagnostics {
 
             line("Miowser crash diagnostics")
             line("created_at_ms=$timestamp")
+            line("pid=${Process.myPid()}")
             line("version=${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
             line("android_sdk=${Build.VERSION.SDK_INT}")
             line("device=${Build.MANUFACTURER} ${Build.MODEL}")
@@ -255,6 +291,23 @@ object CrashDiagnostics {
                 }
                 cause = cause.cause
                 causeCount++
+            }
+        }
+    }
+
+    private fun captureMinimal(thread: Thread, error: Throwable) {
+        val context = applicationContext ?: return
+        val timestamp = System.currentTimeMillis()
+        CrashReportStore.create(context, timestamp) { writer ->
+            writer.write("Miowser crash diagnostics (limited report)\n")
+            writer.write("created_at_ms=$timestamp\n")
+            writer.write("pid=${Process.myPid()}\n")
+            writer.write("version=${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n")
+            writer.write("thread=${thread.name.take(80)}\n")
+            writer.write("exception=${error.javaClass.name}\n")
+            // Class, method, and source line contain no exception message or browsing data.
+            error.stackTrace.take(16).forEach { frame ->
+                writer.write("at ${frame.className}.${frame.methodName}:${frame.lineNumber}\n")
             }
         }
     }

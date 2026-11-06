@@ -135,6 +135,7 @@ import com.miowser.app.grabber.MediaUrlClassifier
 import com.miowser.app.grabber.meetsMinimumDuration
 import com.miowser.app.history.HistoryLog
 import com.miowser.app.library.MediaLibrary
+import com.miowser.app.library.LibraryStore
 import com.miowser.app.library.isLibraryEntryAvailable
 import com.miowser.app.library.LibraryEntry
 import com.miowser.app.library.FailedVideoLog
@@ -2563,9 +2564,10 @@ fun BrowserScreen(
                 },
                 onClearLibrary = {
                     val removed = MediaLibrary.entries.toList()
+                    val unsupported = LibraryStore.unsupportedRows(context)
                     MediaLibrary.clear(context)
                     showSavedSnackbar("Library cleared", "Undo") {
-                        MediaLibrary.restoreRemoved(context, removed)
+                        MediaLibrary.restoreRemoved(context, removed, unsupported)
                     }
                 },
                 downloads = DownloadQueue.downloads.filterNot { it.id in pendingDownloadDeletes },

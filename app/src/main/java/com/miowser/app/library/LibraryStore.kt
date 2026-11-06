@@ -89,6 +89,24 @@ object LibraryCodec {
         return raw.split(RECORD_DELIMITER).mapNotNull(::decodeLine)
     }
 
+    /** Keep entries written by a newer version that this Library cannot display yet. */
+    internal fun unsupportedRows(previous: String): List<String> {
+        val knownKinds = LibrarySourceKind.entries.mapTo(mutableSetOf()) { it.name }
+        return previous.lineSequence().filter { line ->
+            if (line.length > 16_384) return@filter false
+            val parts = line.split(FIELD_DELIMITER)
+            parts.size == FIELD_COUNT && parts[0].isNotBlank() &&
+                parts[4].matches(Regex("[A-Z_]{3,40}")) && parts[4] !in knownKinds
+        }.take(5_000).toList()
+    }
+
+    internal fun encodeWithUnsupported(entries: List<LibraryEntry>, unsupported: List<String>): String =
+        (listOf(encode(entries)).filter(String::isNotEmpty) + unsupported)
+            .joinToString(RECORD_DELIMITER.toString())
+
+    internal fun encodePreservingUnsupported(entries: List<LibraryEntry>, previous: String): String =
+        encodeWithUnsupported(entries, unsupportedRows(previous))
+
     private fun decodeLine(line: String): LibraryEntry? {
         val parts = line.split(FIELD_DELIMITER)
         if (parts.size !in setOf(LEGACY_FIELD_COUNT, PREVIOUS_FIELD_COUNT, 15, 17, 22, 23, 24, FIELD_COUNT) || parts[0].isBlank()) return null
@@ -161,14 +179,25 @@ object LibraryCodec {
 }
 
 object LibraryStore {
-    fun save(context: Context, entries: List<LibraryEntry>): java.util.concurrent.CompletableFuture<Boolean> {
+    fun unsupportedRows(context: Context): List<String> = LibraryCodec.unsupportedRows(
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_ENTRIES, null).orEmpty())
+
+    fun save(context: Context, entries: List<LibraryEntry>, discardUnsupported: Boolean = false,
+             restoreUnsupported: List<String>? = null): java.util.concurrent.CompletableFuture<Boolean> {
         Persistence.requireOwner()
         val appContext = context.applicationContext
         val snapshot = entries.toList()
         return Persistence.submitSnapshot("library") {
-            val encoded = LibraryCodec.encode(snapshot)
+            val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val encoded = when {
+                discardUnsupported -> LibraryCodec.encode(snapshot)
+                restoreUnsupported != null -> LibraryCodec.encodeWithUnsupported(snapshot, restoreUnsupported)
+                else -> LibraryCodec.encodePreservingUnsupported(snapshot,
+                    prefs.getString(KEY_ENTRIES, null).orEmpty())
+            }
             Persistence.recordEncoded(encoded)
-            val saved = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            val saved = prefs.edit()
                 .putString(KEY_ENTRIES, encoded).commit()
             saved
         }
