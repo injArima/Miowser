@@ -64,7 +64,6 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
-import androidx.compose.material.icons.rounded.Storage
 import android.content.ClipData
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -143,7 +142,6 @@ import com.miowser.app.library.LibrarySourceKind
 import com.miowser.app.player.PlaybackRequest
 import com.miowser.app.player.LibraryPlaybackQueue
 import com.miowser.app.player.PlayerScreen
-import com.miowser.app.player.PlayerPlaylistRow
 import com.miowser.app.ui.theme.MiowserPlayerTheme
 import com.miowser.app.player.toPlaybackRequest
 import com.miowser.app.player.toLibraryEntry
@@ -332,12 +330,6 @@ fun BrowserScreen(
     var hubDownloadSection by rememberSaveable { mutableStateOf(initialHubSettings.defaultDownloadSection) }
     var hubLibrarySort by rememberSaveable { mutableStateOf(initialHubSettings.librarySort) }
     var playbackRequest by remember { mutableStateOf<PlaybackRequest?>(null) }
-    var anikotoSession by remember { mutableStateOf<AnikotoPlaybackSession?>(null) }
-    var anikotoSwitching by remember { mutableStateOf(false) }
-    var anikotoSwitchError by remember { mutableStateOf<String?>(null) }
-    var anikotoChoice by remember { mutableStateOf<String?>(null) }
-    var anikotoPendingTarget by remember { mutableStateOf<Triple<String, String, String?>?>(null) }
-    var anikotoSwitchGeneration by remember { mutableIntStateOf(0) }
     var fullscreenVideo by remember { mutableStateOf<WebFullscreenVideo?>(null) }
     var browserVideoAudioOnly by remember { mutableStateOf(false) }
     val backgroundPlaybackEnabled = AppSettings.current.backgroundPlaybackEnabled
@@ -374,7 +366,6 @@ fun BrowserScreen(
     var showSiteInfoTabId by remember { mutableStateOf<Long?>(null) }
     var showZoomTabId by remember { mutableStateOf<Long?>(null) }
     var showTextSizeTabId by remember { mutableStateOf<Long?>(null) }
-    var showAnikotoSheet by remember { mutableStateOf(false) }
     var popupRoutingFailureTabId by remember { mutableStateOf<Long?>(null) }
     var pendingClosedTab by remember { mutableStateOf<ClosedTabUndo?>(null) }
     var refreshTargetDownloadId by remember { mutableStateOf<Long?>(null) }
@@ -1122,15 +1113,6 @@ fun BrowserScreen(
     }
 
     val activeTab = tabs.firstOrNull { it.id == activeTabId }
-    LaunchedEffect(activeTab?.id, activeTab?.url, activeTab?.lastFinishedUrl, showingHub) {
-        val tab = activeTab ?: return@LaunchedEffect
-        if (showingHub || !AnikotoAdapter.accepts(tab.url)) return@LaunchedEffect
-        repeat(3) { attempt ->
-            if (attempt > 0) delay(900L)
-            if (tab.anikotoCatalog?.episodes?.isNotEmpty() == true) return@LaunchedEffect
-            tab.refreshAnikotoCatalog()
-        }
-    }
     LaunchedEffect(filterRevision, defaultFiltersReady, showingHub, startupReady, activeTab?.isShowingHome) {
         if (remindRefreshWhenFiltersReady && filterRevision > 0 && defaultFiltersReady &&
             !showingHub && startupReady && activeTab?.isShowingHome == false) {
@@ -1612,91 +1594,13 @@ fun BrowserScreen(
 
     fun playMedia(item: DetectedMedia) {
         val tab = activeTab ?: return
-        anikotoSession = tab.anikotoCatalog?.takeIf { it.episodes.isNotEmpty() }
-            ?.let { catalog ->
-                val episode = catalog.episodes.firstOrNull { it.active }
-                    ?: catalog.episodes.firstOrNull { it.url == tab.url }
-                episode?.let {
-                    val saved = if (tab.isPrivate) "sub" to null
-                        else AnikotoSeriesStore.choice(context, catalog.showUrl)
-                    val activeServer = catalog.servers.firstOrNull { server -> server.active }
-                    AnikotoPlaybackSession(tab.id, catalog.showUrl, catalog.showTitle,
-                        catalog.episodes, episode.url,
-                        activeServer?.language ?: saved.first,
-                        activeServer?.id ?: saved.second, activeServer?.label)
-                }
-            }
-        anikotoSession?.takeIf { !tab.isPrivate }?.let { series ->
-            AnikotoSeriesStore.saveChoice(context, series.showUrl,
-                series.language, series.serverId)
-        }
         // Stop the page immediately, before Compose has rendered the player overlay.
         tab.pausePageMedia()
         tab.liveWebView?.onPause()
         libraryPlayRequestId++
         libraryPlaybackQueue = null
         playbackFromLibrary = false
-        val series = anikotoSession
-        playbackRequest = if (series == null) detectedPlaybackRequest(item, tab) else {
-            val episode = series.episodes.firstOrNull { it.url == series.currentEpisodeUrl }
-            val progress = if (tab.isPrivate) 0L to 0L else AnikotoSeriesStore.progress(
-                context, series.showUrl, series.currentEpisodeUrl)
-            detectedPlaybackRequest(item, tab).copy(
-                pageUrl = series.currentEpisodeUrl,
-                title = "${series.showTitle} · Episode ${episode?.number ?: "?"}",
-                startPositionMs = com.miowser.app.player.libraryResumePosition(
-                    progress.first, progress.second))
-        }
-    }
-
-    fun switchAnikoto(episodeUrl: String, language: String, preferredServerId: String?) {
-        val session = anikotoSession ?: return
-        if (session.episodes.none { it.url == episodeUrl }) return
-        val target = Triple(episodeUrl, language, preferredServerId)
-        anikotoPendingTarget = target
-        anikotoSwitchError = null
-        anikotoSwitching = true
-        val generation = ++anikotoSwitchGeneration
-        coroutineScope.launch {
-            val tab = tabs.firstOrNull { it.id == session.tabId }
-                ?: createAndInsertTab(episodeUrl, openerTabId = null)
-            runCatching { tab.ensureWebView() }.onFailure {
-                if (generation == anikotoSwitchGeneration) {
-                    anikotoSwitching = false
-                    anikotoSwitchError = "Could not start the source page. Retry or open it in the browser."
-                }
-                return@launch
-            }
-            val result = try { resolveAnikotoSwitch(tab, episodeUrl, language, preferredServerId) }
-                catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-                catch (_: Exception) { AnikotoSwitchResult.Failed("Could not load this episode. Retry or choose another server.") }
-            if (generation != anikotoSwitchGeneration) return@launch
-            anikotoSwitching = false
-            when (result) {
-                is AnikotoSwitchResult.Ready -> {
-                    val episode = result.catalog.episodes.firstOrNull { it.url == episodeUrl }
-                    val progress = if (tab.isPrivate) 0L to 0L else AnikotoSeriesStore.progress(
-                        context, session.showUrl, episodeUrl)
-                    anikotoSession = session.copy(tabId = tab.id, episodes = result.catalog.episodes,
-                        currentEpisodeUrl = episodeUrl, language = language,
-                        serverId = result.server.id, serverLabel = result.server.label)
-                    if (!tab.isPrivate) AnikotoSeriesStore.saveChoice(context,
-                        session.showUrl, language, result.server.id)
-                    if (!tab.isPrivate && MediaLibrary.entries.any { it.sourceKind == LibrarySourceKind.SITE_SERIES &&
-                            it.mediaUri == session.showUrl }) {
-                        AnikotoSeriesStore.saveCatalog(context, result.catalog)
-                    }
-                    playbackRequest = detectedPlaybackRequest(result.media, tab).copy(
-                        pageUrl = episodeUrl,
-                        title = episode?.let { "${session.showTitle} · Episode ${it.number}" }
-                            ?: session.showTitle,
-                        startPositionMs = com.miowser.app.player.libraryResumePosition(
-                            progress.first, progress.second))
-                    anikotoSwitchError = null
-                }
-                is AnikotoSwitchResult.Failed -> anikotoSwitchError = result.message
-            }
-        }
+        playbackRequest = detectedPlaybackRequest(item, tab)
     }
 
     suspend fun prepareLibraryPlayback(entry: LibraryEntry): PlaybackRequest {
@@ -1725,32 +1629,7 @@ fun BrowserScreen(
         } else prepared
     }
 
-    fun playSeriesEpisode(entry: LibraryEntry, episodeUrl: String) {
-            val catalog = AnikotoSeriesStore.load(context, entry.mediaUri)
-            val episode = catalog?.episodes?.firstOrNull { it.url == episodeUrl }
-            if (episode == null) {
-                showActionSnackbar("Saved episode list unavailable. Open the source page to refresh it.")
-                return
-            }
-            val choice = AnikotoSeriesStore.choice(context, entry.mediaUri)
-            val tab = tabs.firstOrNull { !it.isPrivate && AnikotoAdapter.accepts(it.url) &&
-                (it.url == entry.mediaUri || it.url.startsWith("${entry.mediaUri}/ep-")) }
-                ?: createAndInsertTab(episode.url, openerTabId = null)
-            anikotoSession = AnikotoPlaybackSession(tab.id, entry.mediaUri, entry.title,
-                catalog.episodes, episode.url, choice.first, choice.second, null)
-            libraryPlaybackQueue = null
-            playbackFromLibrary = true
-            switchAnikoto(episode.url, choice.first, choice.second)
-    }
-
     fun playLibraryEntry(entry: LibraryEntry, queue: LibraryPlaybackQueue? = null) {
-        if (entry.sourceKind == LibrarySourceKind.SITE_SERIES) {
-            val episode = AnikotoSeriesStore.load(context, entry.mediaUri)?.episodes?.firstOrNull()
-            if (episode != null) playSeriesEpisode(entry, episode.url)
-            else showActionSnackbar("Saved episode list unavailable. Open the source page to refresh it.")
-            return
-        }
-        anikotoSession = null
         val requestId = ++libraryPlayRequestId
         coroutineScope.launch {
             try {
@@ -2323,48 +2202,7 @@ fun BrowserScreen(
                         )
                     }
                 }
-                AnimatedVisibility(
-                    visible = !showingHub && activeScreen == null && playbackRequest == null &&
-                        activeTab?.anikotoCatalog?.episodes?.isNotEmpty() == true,
-                    enter = fadeIn(motion.spec(MotionTokens.feedbackEnter)),
-                    exit = fadeOut(motion.spec(MotionTokens.feedbackExit)),
-                    modifier = Modifier.align(Alignment.BottomEnd)
-                        .padding(end = BrowserFloatingActionLayout.EDGE_DP.dp,
-                            bottom = (BrowserFloatingActionLayout.VIDEO_BOTTOM_INSET_DP +
-                                BrowserFloatingActionLayout.VIDEO_TOUCH_DP +
-                                BrowserFloatingActionLayout.GAP_DP).dp)
-                        .zIndex(2f)
-                ) {
-                    SmallFloatingActionButton(onClick = { showAnikotoSheet = true },
-                        modifier = Modifier.size(BrowserFloatingActionLayout.JUMP_SIZE_DP.dp)
-                            .testTag("anikoto_episode_button")) {
-                        Icon(Icons.Rounded.Storage, contentDescription = "Episodes and servers")
-                    }
-                }
             }
-        }
-
-        if (showAnikotoSheet && !showingHub && activeTab != null &&
-            AnikotoAdapter.accepts(activeTab.url)) {
-            AnikotoEpisodeSheet(
-                catalog = activeTab.anikotoCatalog,
-                onRefresh = { activeTab.refreshAnikotoCatalog() },
-                onOpenEpisode = { episode ->
-                    showAnikotoSheet = false
-                    if (activeTab.url != episode.url) activeTab.navigateTo(episode.url)
-                },
-                onOpenSeason = { season ->
-                    showAnikotoSheet = false
-                    activeTab.navigateTo(season.url)
-                },
-                onSelectServer = { server ->
-                    showAnikotoSheet = false
-                    activeTab.selectAnikotoServer(server) { selected ->
-                        if (!selected) showActionSnackbar("Server no longer available. Reload this page.")
-                    }
-                },
-                onDismiss = { showAnikotoSheet = false }
-            )
         }
 
         if (elementPickerTabId == activeTabId && elementPickerSelection == null &&
@@ -2705,7 +2543,6 @@ fun BrowserScreen(
                 onPlayLibraryEntry = { entry, visibleEntries ->
                     playLibraryEntry(entry, LibraryPlaybackQueue.fromVisible(visibleEntries))
                 },
-                onPlaySeriesEpisode = ::playSeriesEpisode,
                 onRemoveLibraryEntry = { entry ->
                     MediaLibrary.remove(context, entry)
                     showSavedSnackbar("Removed from Library", "Undo") {
@@ -2971,14 +2808,6 @@ fun BrowserScreen(
         }
 
         playbackRequest?.let { request ->
-            val series = anikotoSession
-            val episodeRows = remember(series?.episodes) {
-                series?.episodes?.map { episode ->
-                    PlayerPlaylistRow(episode.url, "Episode ${episode.number}", episode.title)
-                }.orEmpty()
-            }
-            val seriesIndex = series?.episodes?.indexOfFirst { it.url == series.currentEpisodeUrl } ?: -1
-            val seriesTab = series?.let { current -> tabs.firstOrNull { it.id == current.tabId } }
             val currentKey = request.toLibraryEntry().identityKey
             val queue = libraryPlaybackQueue?.takeIf {
                 showingHub && currentKey in it.identityKeys
@@ -2987,53 +2816,15 @@ fun BrowserScreen(
                 behavior = AppSettings.current.libraryBehavior,
                 openedFromLibrary = playbackFromLibrary,
                 privateTab = !showingHub && activeTab?.isPrivate == true
-            ) && series == null
+            )
             MiowserPlayerTheme {
                 PlayerScreen(
                     request = request,
                     playlist = queue?.entries(MediaLibrary.entries).orEmpty(),
-                    episodeQueue = episodeRows,
-                    currentEpisodeKey = series?.currentEpisodeUrl,
-                    onSelectEpisode = series?.let { current ->
-                        { url -> switchAnikoto(url, current.language, current.serverId) }
-                    },
-                    onOpenSiteServers = series?.let { { anikotoChoice = "servers" } },
-                    onOpenSiteLanguages = series?.let { { anikotoChoice = "languages" } },
-                    onSaveShow = series?.takeIf { libraryEnabled && seriesTab?.isPrivate != true &&
-                        MediaLibrary.entries.none { entry -> entry.sourceKind == LibrarySourceKind.SITE_SERIES &&
-                            entry.mediaUri == series.showUrl } }?.let { current ->
-                        {
-                            val catalog = seriesTab?.anikotoCatalog?.takeIf {
-                                it.showUrl == current.showUrl && it.episodes.isNotEmpty() }
-                                ?: AnikotoCatalog(current.showUrl, current.showTitle,
-                                    current.episodes, emptyList(), emptyList())
-                            val saved = runCatching {
-                                MediaLibrary.add(context, LibraryEntry(
-                                    mediaUri = current.showUrl, pageUrl = current.showUrl,
-                                    title = current.showTitle, sourceLabel = "anikototv.to",
-                                    sourceKind = LibrarySourceKind.SITE_SERIES, mediaType = null,
-                                    userAgent = null, thumbnailUrl = null,
-                                    lastPlayedAt = System.currentTimeMillis(), positionMs = 0L,
-                                    durationMs = 0L))
-                                AnikotoSeriesStore.saveCatalog(context, catalog)
-                            }
-                            showActionSnackbar(saved.fold({ "Show saved to Library" },
-                                { it.message ?: "Could not save show" }))
-                        }
-                    },
-                    onEpisodeProgress = series?.takeIf { seriesTab?.isPrivate != true }?.let { current ->
-                        { position, duration -> AnikotoSeriesStore.saveProgress(context,
-                            current.showUrl, current.currentEpisodeUrl, position, duration) }
-                    },
-                    pauseForSwitch = anikotoSwitching,
                     onSelectPlaylistEntry = if (queue != null) ({ entry -> playLibraryEntry(entry) }) else null,
-                    onPlayNext = if (series != null && seriesIndex in 0 until series.episodes.lastIndex)
-                        ({ switchAnikoto(series.episodes[seriesIndex + 1].url,
-                            series.language, series.serverId) }) else if (queue?.neighbor(currentKey, MediaLibrary.entries, 1) != null)
+                    onPlayNext = if (queue?.neighbor(currentKey, MediaLibrary.entries, 1) != null)
                         ({ playLibraryNeighbor(currentKey, 1) }) else null,
-                    onPlayPrevious = if (series != null && seriesIndex > 0)
-                        ({ switchAnikoto(series.episodes[seriesIndex - 1].url,
-                            series.language, series.serverId) }) else if (queue?.neighbor(currentKey, MediaLibrary.entries, -1) != null)
+                    onPlayPrevious = if (queue?.neighbor(currentKey, MediaLibrary.entries, -1) != null)
                         ({ playLibraryNeighbor(currentKey, -1) }) else null,
                     recordInLibrary = recordCurrentPlayback,
                     onOpenSourcePage = if (request is PlaybackRequest.Remote) ({
@@ -3053,15 +2844,12 @@ fun BrowserScreen(
                             if (entry != null) MediaLibrary.remove(context, entry)
                         }
                         playbackRequest = null
-                        anikotoSession = null
-                        anikotoSwitching = false
-                        anikotoSwitchGeneration++
                         libraryPlayRequestId++
                         libraryPlaybackQueue = null
                         playbackFromLibrary = false
                         activeScreen = null
                         showingHub = false
-                        activeTabId = seriesTab?.id ?: createAndInsertTab(
+                        activeTabId = createAndInsertTab(
                             request.pageUrl,
                             openerTabId = activeTabId,
                             privateTab = activeTab?.isPrivate == true
@@ -3074,48 +2862,11 @@ fun BrowserScreen(
                     onDismiss = {
                         libraryPlayRequestId++
                         playbackRequest = null
-                        anikotoSession = null
-                        anikotoSwitching = false
-                        anikotoSwitchGeneration++
                         libraryPlaybackQueue = null
                         playbackFromLibrary = false
                     }
                 )
             }
-        }
-        anikotoSession?.let { series ->
-            val targetEpisode = anikotoPendingTarget?.first?.takeIf {
-                anikotoSwitchError != null } ?: series.currentEpisodeUrl
-            AnikotoSwitchOverlay(anikotoSwitching, anikotoSwitchError,
-                onRetry = { anikotoPendingTarget?.let { (episode, language, server) ->
-                    switchAnikoto(episode, language, server)
-                } },
-                onOtherServer = { anikotoChoice = "servers" },
-                onOpenSource = {
-                    anikotoSwitchError = null
-                    anikotoSwitching = false
-                    anikotoSwitchGeneration++
-                    playbackRequest = null
-                    anikotoSession = null
-                    showingHub = false
-                    activeScreen = null
-                    activeTabId = tabs.firstOrNull { it.id == series.tabId }?.id
-                        ?: createAndInsertTab(targetEpisode, null).id
-                })
-            if (anikotoChoice != null) MiowserPlayerTheme { AnikotoPlayerChoices(
-                kind = anikotoChoice!!, session = series,
-                servers = tabs.firstOrNull { it.id == series.tabId }?.anikotoCatalog?.servers.orEmpty(),
-                onLanguage = { language ->
-                    anikotoChoice = null
-                    if (language != series.language || anikotoSwitchError != null)
-                        switchAnikoto(targetEpisode, language, series.serverId)
-                },
-                onServer = { server ->
-                    anikotoChoice = null
-                    if (server.id != series.serverId || server.language != series.language ||
-                        anikotoSwitchError != null)
-                        switchAnikoto(targetEpisode, server.language, server.id)
-                }, onDismiss = { anikotoChoice = null }) }
         }
 
         pendingExternalUrl?.let { url ->
@@ -3755,7 +3506,7 @@ fun BrowserScreen(
     // WebView.onPause can suspend JavaScript), then pause the WebView itself. Returning from the
     // player resumes the WebView engine but leaves the page's media element paused so two players
     // cannot immediately begin speaking at once.
-    LaunchedEffect(activeTabId, showingHub, playbackRequest, anikotoSwitching, startupReady, activeScreen,
+    LaunchedEffect(activeTabId, showingHub, playbackRequest, startupReady, activeScreen,
         activeTab?.isShowingHome, activeTab?.rendererUnavailable, rendererTransferActivity) {
         if (startupReady && !showingHub && activeScreen == null && playbackRequest == null &&
             activeTab != null && !activeTab.rendererUnavailable) {
@@ -3768,10 +3519,9 @@ fun BrowserScreen(
         tabs.forEach { tab ->
             val visibleBrowser = !showingHub && activeScreen == null &&
                 playbackRequest == null && tab.id == activeTabId
-            val resolvingSite = anikotoSwitching && tab.id == anikotoSession?.tabId
-            val shouldRunBrowser = visibleBrowser || resolvingSite || tab.rendererTransferCount > 0
+            val shouldRunBrowser = visibleBrowser || tab.rendererTransferCount > 0
             if (shouldRunBrowser) {
-                if (!visibleBrowser && !resolvingSite) tab.pausePageMedia()
+                if (!visibleBrowser) tab.pausePageMedia()
                 tab.liveWebView?.onResume()
             } else {
                 if (tab.id == activeTabId &&

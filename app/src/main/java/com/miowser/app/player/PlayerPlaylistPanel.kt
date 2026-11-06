@@ -38,22 +38,21 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-
-data class PlayerPlaylistRow(val key: String, val title: String, val detail: String)
+import com.miowser.app.library.LibraryEntry
 
 /** A right-side queue over the video; playback remains visible and running beneath it. */
 @Composable
 internal fun PlayerPlaylistPanel(
-    entries: List<PlayerPlaylistRow>,
+    entries: List<LibraryEntry>,
     currentKey: String,
-    onSelect: (PlayerPlaylistRow) -> Unit,
+    onSelect: (LibraryEntry) -> Unit,
     onPrevious: (() -> Unit)?,
     onNext: (() -> Unit)?,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     initialFocus: FocusRequester
 ) {
-    val currentIndex = entries.indexOfFirst { it.key == currentKey }
+    val currentIndex = entries.indexOfFirst { it.identityKey == currentKey }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val landscape = maxWidth > maxHeight
@@ -93,8 +92,8 @@ internal fun PlayerPlaylistPanel(
                 }
                 LazyColumn(modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    itemsIndexed(entries, key = { _, entry -> entry.key }) { index, entry ->
-                        val selected = entry.key == currentKey
+                    itemsIndexed(entries, key = { _, entry -> entry.identityKey }) { index, entry ->
+                        val selected = entry.identityKey == currentKey
                         Surface(
                             onClick = { if (!selected) onSelect(entry) },
                             shape = MaterialTheme.shapes.medium,
@@ -115,7 +114,7 @@ internal fun PlayerPlaylistPanel(
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                                         color = Color.White)
-                                    Text(if (selected) "Now playing · ${entry.detail}" else entry.detail,
+                                    Text(if (selected) "Now playing · ${entry.sourceLabel}" else entry.sourceLabel,
                                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                                         style = MaterialTheme.typography.bodySmall,
                                         color = Color.White.copy(alpha = 0.7f))

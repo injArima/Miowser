@@ -236,14 +236,6 @@ fun PlayerScreen(
     request: PlaybackRequest,
     playlist: List<LibraryEntry> = emptyList(),
     onSelectPlaylistEntry: ((LibraryEntry) -> Unit)? = null,
-    episodeQueue: List<PlayerPlaylistRow> = emptyList(),
-    currentEpisodeKey: String? = null,
-    onSelectEpisode: ((String) -> Unit)? = null,
-    onOpenSiteServers: (() -> Unit)? = null,
-    onOpenSiteLanguages: (() -> Unit)? = null,
-    onSaveShow: (() -> Unit)? = null,
-    onEpisodeProgress: ((Long, Long) -> Unit)? = null,
-    pauseForSwitch: Boolean = false,
     onPlayPrevious: (() -> Unit)? = null,
     onPlayNext: (() -> Unit)? = null,
     onDownload: (() -> Unit)? = null,
@@ -319,10 +311,7 @@ fun PlayerScreen(
     }
     if (ready && (localPlaylistRequest == null ||
             (activeLocalRequest == localPlaylistRequest && retainedLocalSession.value != null))) {
-        PlayerContent(request, playlist, onSelectPlaylistEntry, episodeQueue, currentEpisodeKey,
-            onSelectEpisode, onOpenSiteServers, onOpenSiteLanguages, onSaveShow, onEpisodeProgress,
-            pauseForSwitch,
-            onPlayPrevious, onPlayNext,
+        PlayerContent(request, playlist, onSelectPlaylistEntry, onPlayPrevious, onPlayNext,
             onDownload, onOpenSourcePage, recordInLibrary, onDismiss, transport, orientationState,
             retainedLocalSession.value.takeIf { localPlaylistRequest != null })
     } else {
@@ -345,14 +334,6 @@ private fun PlayerContent(
     request: PlaybackRequest,
     playlist: List<LibraryEntry> = emptyList(),
     onSelectPlaylistEntry: ((LibraryEntry) -> Unit)? = null,
-    episodeQueue: List<PlayerPlaylistRow> = emptyList(),
-    currentEpisodeKey: String? = null,
-    onSelectEpisode: ((String) -> Unit)? = null,
-    onOpenSiteServers: (() -> Unit)? = null,
-    onOpenSiteLanguages: (() -> Unit)? = null,
-    onSaveShow: (() -> Unit)? = null,
-    onEpisodeProgress: ((Long, Long) -> Unit)? = null,
-    pauseForSwitch: Boolean = false,
     onPlayPrevious: (() -> Unit)? = null,
     onPlayNext: (() -> Unit)? = null,
     onDownload: (() -> Unit)? = null,
@@ -401,9 +382,7 @@ private fun PlayerContent(
     val latestOverlays = rememberUpdatedState(overlays)
     val focusScope = rememberCoroutineScope()
     val playlistFocus = remember(request) { FocusRequester() }
-    val playlistTriggerAvailable = rememberUpdatedState(
-        (playlist.isNotEmpty() && onSelectPlaylistEntry != null) ||
-            (episodeQueue.isNotEmpty() && onSelectEpisode != null))
+    val playlistTriggerAvailable = rememberUpdatedState(playlist.isNotEmpty() && onSelectPlaylistEntry != null)
     val subtitleFocus = remember(request) { FocusRequester() }
     fun openOverlay(panel: PlayerOverlay) {
         speedMenuExpanded = false
@@ -460,10 +439,6 @@ private fun PlayerContent(
     var fallbackCaptureRequested by remember(request) { mutableStateOf(false) }
     var leavingForSourcePage by remember(request) { mutableStateOf(false) }
     val libraryIdentityKey = remember(request) { request.toLibraryEntry().identityKey }
-    val episodeProgressCallback = remember(request) { onEpisodeProgress }
-    val queueRows = if (episodeQueue.isNotEmpty()) episodeQueue else
-        playlist.map { PlayerPlaylistRow(it.identityKey, it.title, it.sourceLabel) }
-    val queueKey = currentEpisodeKey ?: libraryIdentityKey
     val nextAtEnd by rememberUpdatedState(onPlayNext)
     LaunchedEffect(request, playbackEnded) {
         if (playbackEnded) nextAtEnd?.invoke()
@@ -534,15 +509,6 @@ private fun PlayerContent(
         PlaybackSession.create(context, request, remoteTransport, attachedExternalSubtitleUrl != null)
     }
     val exoPlayer = session.player
-    LaunchedEffect(pauseForSwitch) { if (pauseForSwitch) exoPlayer.pause() }
-    LaunchedEffect(request, episodeProgressCallback) {
-        val save = episodeProgressCallback ?: return@LaunchedEffect
-        while (true) {
-            delay(15_000L)
-            if (exoPlayer.isPlaying) save(exoPlayer.currentPosition.coerceAtLeast(0L),
-                exoPlayer.duration.takeIf { it != C.TIME_UNSET && it > 0L } ?: 0L)
-        }
-    }
 
     DisposableEffect(exoPlayer) {
         PlayerPlaybackService.attach(context, exoPlayer, request.title)
@@ -606,10 +572,6 @@ private fun PlayerContent(
     }
 
     val saveLibraryProgress: (Boolean) -> Unit = { force ->
-        if (force && episodeProgressCallback != null) {
-            episodeProgressCallback(exoPlayer.currentPosition.coerceAtLeast(0L),
-                exoPlayer.duration.takeIf { it != C.TIME_UNSET && it > 0L } ?: 0L)
-        }
         if (libraryRecorded) {
             val currentPosition = exoPlayer.currentPosition.coerceAtLeast(0L)
             val currentDuration = exoPlayer.duration.takeIf { it != C.TIME_UNSET && it > 0L } ?: 0L
@@ -1175,16 +1137,13 @@ private fun PlayerContent(
                             controlsVisible = true
                             controlsActivity++
                         },
-                        onOpenPlaylist = if (queueRows.isNotEmpty() && playlistTriggerAvailable.value) ({
+                        onOpenPlaylist = if (playlist.isNotEmpty() && onSelectPlaylistEntry != null) ({
                             trackPanel = null
                             openOverlay(PlayerOverlay.PLAYLIST)
                         }) else null,
-                        onOpenSiteServers = onOpenSiteServers,
-                        onOpenSiteLanguages = onOpenSiteLanguages,
-                        onSaveShow = onSaveShow,
                         playlistFocus = playlistFocus,
-                        playlistPosition = queueRows.indexOfFirst { it.key == queueKey } + 1,
-                        playlistSize = queueRows.size,
+                        playlistPosition = playlist.indexOfFirst { it.identityKey == libraryIdentityKey } + 1,
+                        playlistSize = playlist.size,
                         onLock = { controlsLocked = true },
                         onDismiss = onDismiss,
                         modifier = Modifier.align(Alignment.TopCenter)
@@ -1193,7 +1152,7 @@ private fun PlayerContent(
                     PlayerCenterControls(
                         isPlaying = isPlaying,
                         isBuffering = isBuffering,
-                        playlistActive = queueRows.isNotEmpty(),
+                        playlistActive = playlist.isNotEmpty(),
                         onPreviousVideo = onPlayPrevious,
                         onNextVideo = onPlayNext,
                         onReplay = {
@@ -1409,13 +1368,9 @@ private fun PlayerContent(
         }) { panel, panelModifier, initialFocus ->
             when (panel) {
                 PlayerOverlay.PLAYLIST -> PlayerPlaylistPanel(
-                    entries = queueRows,
-                    currentKey = queueKey,
-                    onSelect = { row ->
-                        overlays.dismiss()
-                        if (episodeQueue.isNotEmpty()) onSelectEpisode?.invoke(row.key)
-                        else playlist.firstOrNull { it.identityKey == row.key }?.let { onSelectPlaylistEntry?.invoke(it) }
-                    },
+                    entries = playlist,
+                    currentKey = libraryIdentityKey,
+                    onSelect = { entry -> overlays.dismiss(); onSelectPlaylistEntry?.invoke(entry) },
                     onPrevious = onPlayPrevious?.let { action -> ({ overlays.dismiss(); action() }) },
                     onNext = onPlayNext?.let { action -> ({ overlays.dismiss(); action() }) },
                     onDismiss = { overlays.dismiss() }, modifier = panelModifier, initialFocus = initialFocus)

@@ -14,7 +14,7 @@ private const val LEGACY_FIELD_COUNT = 11
 private const val PREVIOUS_FIELD_COUNT = 14
 private const val FIELD_COUNT = 25
 
-enum class LibrarySourceKind { REMOTE_STREAM, LOCAL_FILE, SITE_SERIES }
+enum class LibrarySourceKind { REMOTE_STREAM, LOCAL_FILE }
 
 /**
  * One video opened by Miowser's rich player. Remote URLs and local content URIs share the same

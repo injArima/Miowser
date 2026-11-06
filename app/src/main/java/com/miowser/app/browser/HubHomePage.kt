@@ -42,8 +42,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.automirrored.rounded.Sort
@@ -201,7 +199,6 @@ fun HubHomePage(
     onDownloadSectionSelected: (HubDownloadSection) -> Unit,
     libraryEntries: List<LibraryEntry>,
     onPlayLibraryEntry: (LibraryEntry, List<LibraryEntry>) -> Unit,
-    onPlaySeriesEpisode: (LibraryEntry, String) -> Unit,
     onRelinkLibraryEntry: (LibraryEntry) -> Unit,
     onRemoveLibraryEntry: (LibraryEntry) -> Unit,
     onSaveLibraryEntry: (LibraryEntry) -> Unit,
@@ -544,7 +541,6 @@ fun HubHomePage(
                             uiVisible = uiVisible,
                             entries = libraryEntries,
                             onPlay = onPlayLibraryEntry,
-                            onPlaySeriesEpisode = onPlaySeriesEpisode,
                             onRelink = onRelinkLibraryEntry,
                             onRemove = onRemoveLibraryEntry,
                             onSave = onSaveLibraryEntry,
@@ -1529,7 +1525,6 @@ private fun HubLibraryContent(
     projection: HubLibraryProjection,
     entries: List<LibraryEntry>,
     onPlay: (LibraryEntry, List<LibraryEntry>) -> Unit,
-    onPlaySeriesEpisode: (LibraryEntry, String) -> Unit,
     onRelink: (LibraryEntry) -> Unit,
     onRemove: (LibraryEntry) -> Unit,
     onSave: (LibraryEntry) -> Unit,
@@ -1718,7 +1713,6 @@ private fun HubLibraryContent(
                         entry = entry,
                         listMode = libraryView == HubLibraryView.LIST,
                         onPlay = { selected -> onPlay(selected, visibleEntries.orEmpty()) },
-                        onPlaySeriesEpisode = onPlaySeriesEpisode,
                         onRemove = ::removeEntry,
                         onSave = onSave,
                         onUnavailable = { unavailableEntry = it },
@@ -1757,7 +1751,6 @@ private fun ManagedLibraryCard(
     entry: LibraryEntry,
     listMode: Boolean,
     onPlay: (LibraryEntry) -> Unit,
-    onPlaySeriesEpisode: (LibraryEntry, String) -> Unit,
     onRemove: (LibraryEntry) -> Unit,
     onSave: (LibraryEntry) -> Unit,
     onUnavailable: (LibraryEntry) -> Unit,
@@ -1766,63 +1759,6 @@ private fun ManagedLibraryCard(
     onMovedOut: (LibraryEntry) -> Unit = { }
 ) {
     val context = LocalContext.current
-    if (entry.sourceKind == LibrarySourceKind.SITE_SERIES) {
-        val revision = AnikotoSeriesStore.revision
-        val catalog = remember(entry.mediaUri, revision) {
-            AnikotoSeriesStore.load(context, entry.mediaUri)
-        }
-        var expanded by rememberSaveable(entry.identityKey) { mutableStateOf(false) }
-        Column(modifier.fillMaxWidth()) {
-            HubVideoCard(
-                listMode = listMode,
-                title = entry.title,
-                sourceLabel = entry.sourceLabel,
-                positionMs = 0L,
-                durationMs = 0L,
-                thumbnailUrl = entry.thumbnailUrl,
-                deferArtwork = deferArtwork,
-                statusLabel = "${catalog?.episodes?.size ?: 0} episodes · Show",
-                qualityLabel = null,
-                menuOnLongPress = true,
-                onClick = { expanded = !expanded },
-                menuContentDescription = "Show options",
-                menuActionLabel = "Remove from Library",
-                onMenuAction = { onRemove(entry) },
-                folderMenuOnSelect = { folderId ->
-                    runCatching { MediaLibrary.moveToFolder(context, entry.identityKey, folderId) }
-                        .onSuccess { if (folderId != entry.folderId) onMovedOut(entry) }
-                },
-                currentFolderId = entry.folderId,
-                tertiaryMenuActionLabel = "Show details",
-                onTertiaryMenuAction = { onSave(entry) }
-            )
-            if (expanded) {
-                val episodes = catalog?.episodes.orEmpty()
-                if (episodes.isEmpty()) Text("Episode list unavailable. Visit the source to refresh it.",
-                    modifier = Modifier.padding(12.dp))
-                else LazyColumn(Modifier.fillMaxWidth().heightIn(max = 320.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    items(episodes, key = { it.url }) { episode ->
-                        val progress = AnikotoSeriesStore.progress(context, entry.mediaUri, episode.url)
-                        Surface(onClick = { onPlaySeriesEpisode(entry, episode.url) },
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerLow) {
-                            Column(Modifier.fillMaxWidth().padding(10.dp)) {
-                                Text("Episode ${episode.number}", style = MaterialTheme.typography.bodyMedium)
-                                if (episode.title.isNotBlank()) Text(episode.title,
-                                    style = MaterialTheme.typography.bodySmall)
-                                if (progress.first > 0L) Text(
-                                    "${progress.first / 60_000}:${(progress.first / 1000) % 60}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        return
-    }
     val isLocalFile = entry.sourceKind == LibrarySourceKind.LOCAL_FILE
     val scope = rememberCoroutineScope()
     val scrolling = deferArtwork()

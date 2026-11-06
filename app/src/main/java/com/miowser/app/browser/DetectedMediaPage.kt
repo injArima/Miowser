@@ -75,7 +75,7 @@ import kotlin.math.roundToInt
 /** Browser media list, grouped by file kind. Scan configuration is kept off the results surface. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun DetectedMediaPage(
+fun DetectedMediaPage(
     items: List<DetectedMedia>,
     userAgent: String,
     onCopyUrl: (String) -> Unit,
