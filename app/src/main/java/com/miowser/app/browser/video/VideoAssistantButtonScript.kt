@@ -7,7 +7,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
     window.__miowserCreateVideoButton = function (api) {
         var policy = {enabled: false}, host = null, button = null, plate = null, icon = null, insetProbe = null;
         var selected = null, frame = null, animation = null, disposed = false, pending = false;
-        var restore = null, entryTimeout = null;
+        var restore = null, entryTimeout = null, fullscreenExitTimer = null;
         var displayVersion = 0, displayKey = '', nativeReady = false, focused = false;
         var pressGuard = null, pressTimer = null;
         var external = new Map(), frameCandidateVisible = false, lastFrameCandidateAt = 0,
@@ -71,6 +71,10 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         function cancelEntryTimeout() {
             if (entryTimeout !== null) clearTimeout(entryTimeout);
             entryTimeout = null;
+        }
+        function cancelFullscreenExit() {
+            if (fullscreenExitTimer !== null) clearTimeout(fullscreenExitTimer);
+            fullscreenExitTimer = null;
         }
         function cancelEntryPlayback() {
             var entry = restore, recovery = entry && entry.playbackRecovery;
@@ -246,6 +250,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         }
         function restoreControls() {
             if (!restore) return;
+            cancelFullscreenExit();
             cancelEntryPlayback();
             cancelEntryTimeout();
             clearControlGuard(restore);
@@ -435,12 +440,22 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         }
         function fullscreenChanged() {
             if (restore && document.fullscreenElement === restore.video) {
+                cancelFullscreenExit();
                 cancelEntryTimeout();
                 api.fullscreen(restore.record, restore.attempt, true);
                 if (restore.playbackRecovery) restore.playbackRecovery.schedule();
             } else if (restore) {
-                api.fullscreen(restore.record, restore.attempt, false);
-                pending = false; restoreControls();
+                // WebView may briefly clear document.fullscreenElement while changing
+                // orientation and replacing its surface. Keep the same owner during
+                // that handoff; report an exit only if it stays out of fullscreen.
+                var entry = restore;
+                cancelFullscreenExit();
+                fullscreenExitTimer = setTimeout(function () {
+                    fullscreenExitTimer = null;
+                    if (restore !== entry || document.fullscreenElement === entry.video) return;
+                    api.fullscreen(entry.record, entry.attempt, false);
+                    pending = false; restoreControls();
+                }, 2000);
             }
             schedule();
         }

@@ -16,7 +16,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
     var trackIds = new WeakMap(), nextTrackId = 0;
     var listeners = [];
     var frameRoutes = new Map(), shadowObservers = new Map(), shadowSweep = null,
-        lastHeartbeatAt = 0, lastShadowScanAt = 0;
+        lastHeartbeatAt = 0, lastShadowScanAt = 0, lastHelloAt = -1000;
     var MAX_VIDEOS = 8, UPDATE_MS = 500;
 
     function send(message) {
@@ -26,7 +26,18 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         } catch (ignored) {}
     }
     function hello() {
-        if (videos.size > 0 || frameRoutes.size > 0) send({type: 'hello', documentId: documentId});
+        if (binding || performance.now() - lastHelloAt < 500) return;
+        var active = false;
+        videos.forEach(function (record) {
+            var video = record.video;
+            if (video.isConnected && !video.paused && !video.ended && !video.muted && video.volume > 0)
+                active = true;
+        });
+        // Idle/muted previews must not occupy the bounded frame table ahead of the
+        // actual player. A parent with a live child route still needs a channel.
+        if (!active && frameRoutes.size === 0) return;
+        lastHelloAt = performance.now();
+        send({type: 'hello', documentId: documentId});
     }
     function childFrame(source) {
         var roots = [document];
@@ -236,7 +247,9 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
     }
     function schedule() {
         if (assistant) assistant.schedule();
-        if (!running || !binding || timer !== null) return;
+        if (!running) return;
+        if (!binding) { hello(); return; }
+        if (timer !== null) return;
         timer = setTimeout(flush, Math.max(0, UPDATE_MS - (performance.now() - lastSent)));
     }
     function listen(target, type, callback, options) {
