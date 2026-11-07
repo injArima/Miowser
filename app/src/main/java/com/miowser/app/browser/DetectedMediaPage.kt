@@ -31,12 +31,10 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
@@ -73,6 +71,8 @@ import kotlinx.coroutines.CancellationException
 import kotlin.math.roundToInt
 import com.miowser.app.ui.theme.UiCorners
 import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.LoadingIndicatorTokens
+import com.miowser.app.ui.MiowserLoadingIndicator
 import com.miowser.app.ui.theme.UiSpacing
 
 /** Browser media list, grouped by file kind. Scan configuration is kept off the results surface. */
@@ -152,11 +152,14 @@ fun DetectedMediaPage(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    if (!progress.complete) TextButton(onClick = onCancelScan) { Text("Stop") }
+                    if (!progress.complete) {
+                        MiowserLoadingIndicator(
+                            size = LoadingIndicatorTokens.compact,
+                            description = "Scanning page for media"
+                        )
+                        TextButton(onClick = onCancelScan) { Text("Stop") }
+                    }
                 }
-                if (!progress.complete) LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.l)
-                )
             }
             if (groups.isEmpty()) {
                 Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
@@ -476,7 +479,9 @@ internal fun SubtitleViewer(item: DetectedMedia, userAgent: String, onDismiss: (
                 error != null -> Text(error!!, style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error)
                 preview == null -> Box(Modifier.fillMaxWidth().heightIn(min = 72.dp),
-                    contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                    contentAlignment = Alignment.Center) {
+                    MiowserLoadingIndicator(description = "Loading subtitle preview")
+                }
                 else -> {
                     if (preview!!.truncated) Text("Showing the first 512 KB of this subtitle.",
                         style = MaterialTheme.typography.bodySmall,

@@ -25,7 +25,7 @@ import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
+import com.miowser.app.ui.MiowserLoadingIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -119,7 +119,10 @@ internal fun FailedVideoLogSheet(
         }
         val records = if (section == VideoRecordSection.RECENT) recent else saved
         when (records) {
-            null -> CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+            null -> MiowserLoadingIndicator(
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+                description = "Loading video records"
+            )
             else -> if (records.isEmpty()) {
                 Text(
                     if (section == VideoRecordSection.RECENT) "No playback issues recorded"

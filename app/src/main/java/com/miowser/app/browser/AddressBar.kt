@@ -34,7 +34,7 @@ import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Badge
-import androidx.compose.material3.CircularProgressIndicator
+import com.miowser.app.ui.MiowserLoadingIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -76,9 +76,9 @@ import androidx.compose.ui.unit.IntSize
 import com.miowser.app.settings.SearchEngine
 import kotlinx.coroutines.flow.collect
 import com.miowser.app.ui.theme.UiControlSize
-import com.miowser.app.ui.theme.UiIconSize
 import com.miowser.app.ui.theme.UiSemanticColors
 import com.miowser.app.ui.theme.AddressBarTokens
+import com.miowser.app.ui.theme.LoadingIndicatorTokens
 import com.miowser.app.ui.theme.UiSpacing
 
 /**
@@ -251,12 +251,9 @@ internal fun AddressBar(
                                     ) {
                                         IconButton(onClick = onOpenSiteInfo) {
                                             if (isLoading) {
-                                                CircularProgressIndicator(
-                                                    modifier = Modifier.size(UiIconSize.menu).semantics {
-                                                        contentDescription = "Loading page"
-                                                    },
-                                                    color = MaterialTheme.colorScheme.primary,
-                                                    strokeWidth = 2.dp
+                                                MiowserLoadingIndicator(
+                                                    size = LoadingIndicatorTokens.address,
+                                                    description = "Loading page"
                                                 )
                                             } else {
                                                 Icon(

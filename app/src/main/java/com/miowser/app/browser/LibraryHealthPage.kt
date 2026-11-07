@@ -23,7 +23,7 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
+import com.miowser.app.ui.MiowserLoadingIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -106,7 +106,7 @@ internal fun LibraryHealthPage(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(UiSpacing.l)
                 ) {
-                    CircularProgressIndicator()
+                    MiowserLoadingIndicator(contained = true, description = "Checking Library files")
                     Text("Checking Library records and local files…")
                 }
             } else {

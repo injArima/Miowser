@@ -74,7 +74,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.CircularProgressIndicator
+import com.miowser.app.ui.MiowserLoadingIndicator
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.Surface
@@ -696,7 +696,10 @@ fun HubHomePage(
         AlertDialog(onDismissRequest = {}, title = { Text("Importing folder") },
             text = { Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(UiSpacing.l)) {
-                CircularProgressIndicator(modifier = Modifier.size(UiIconSize.standard))
+                MiowserLoadingIndicator(
+                    size = UiIconSize.standard,
+                    description = "Importing folder"
+                )
                 Text("Finding videos and building your Library folders…")
             } }, confirmButton = {})
     }

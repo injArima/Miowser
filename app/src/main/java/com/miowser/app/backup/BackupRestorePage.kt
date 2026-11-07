@@ -18,7 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
+import com.miowser.app.ui.MiowserLoadingIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -180,7 +180,7 @@ fun BackupRestorePage(activeDownloads: Boolean, onBack: () -> Unit) {
                 color = MaterialTheme.colorScheme.error)
             OutlinedButton(onClick = { chooseArchive.launch(arrayOf("*/*")) },
                 enabled = !busy && !activeDownloads) { Text("Choose backup file") }
-            if (busy) CircularProgressIndicator()
+            if (busy) MiowserLoadingIndicator(contained = true, description = "Preparing backup or restore")
             message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         }
     }

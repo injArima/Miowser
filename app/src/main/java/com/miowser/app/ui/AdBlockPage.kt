@@ -25,7 +25,6 @@ import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
@@ -63,6 +62,7 @@ import java.io.ByteArrayOutputStream
 import java.text.DateFormat
 import java.util.Date
 import com.miowser.app.ui.theme.UiSpacing
+import com.miowser.app.ui.theme.LoadingIndicatorTokens
 import com.miowser.app.ui.AppButtonStyle
 import com.miowser.app.ui.MiowserActionButton
 
@@ -208,9 +208,10 @@ fun AdBlockPage(
                     style = AppButtonStyle.TONAL
                 ) {
                     if (isRefreshingAll) {
-                        CircularProgressIndicator(
+                        MiowserLoadingIndicator(
                             modifier = Modifier.padding(end = UiSpacing.s),
-                            strokeWidth = 2.dp
+                            size = LoadingIndicatorTokens.compact,
+                            description = "Refreshing filter lists"
                         )
                     } else {
                         Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.padding(end = UiSpacing.s))

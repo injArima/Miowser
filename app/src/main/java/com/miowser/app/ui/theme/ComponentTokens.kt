@@ -117,3 +117,9 @@ object ActionButtonTokens {
     const val cautionOutlineAlpha = 0.5f
     const val cautionContainerAlpha = 0.15f
 }
+
+/** Loading sizes keep Expressive indicators proportional to their surrounding controls. */
+object LoadingIndicatorTokens {
+    val address = UiIconSize.menu
+    val compact = UiIconSize.standard
+}

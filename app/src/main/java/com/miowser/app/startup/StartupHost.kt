@@ -12,6 +12,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.miowser.app.browser.BrowserScreen
 import com.miowser.app.LauncherShortcutRequest
+import com.miowser.app.ui.MiowserLoadingIndicator
 import com.miowser.app.ui.theme.UiSpacing
 
 @Composable
@@ -48,7 +49,7 @@ fun StartupLoading(error: Boolean, openingBrowser: Boolean = false, onRetry: () 
             Text("Couldn’t load your saved data.")
             Button(onClick = onRetry) { Text("Retry") }
         } else {
-            CircularProgressIndicator()
+            MiowserLoadingIndicator(contained = true, description = "Starting Miowser")
             Spacer(Modifier.height(UiSpacing.l))
             Text(if (openingBrowser) "Opening browser…" else "Loading your Library…")
         }
