@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.miowser.app.ui.theme.UiIconSize
 import com.miowser.app.ui.theme.UiSpacing
+import com.miowser.app.ui.theme.SnackbarComponentTokens
 
 /**
  * Snackbar payload whose action runs directly from the visible button's click handler. Keeping
@@ -49,7 +50,7 @@ class MiowserSnackbarVisuals(
 /** Rounded Material You snackbars with manual dismissal in either horizontal direction. */
 @Composable
 fun MiowserSnackbarHost(hostState: SnackbarHostState, modifier: Modifier = Modifier) {
-    SnackbarHost(hostState = hostState, modifier = modifier.padding(horizontal = UiSpacing.m)) { data ->
+    SnackbarHost(hostState = hostState, modifier = modifier.padding(horizontal = SnackbarComponentTokens.horizontalPadding)) { data ->
         val swipeState = rememberSwipeToDismissBoxState()
         SwipeToDismissBox(
             state = swipeState,
@@ -75,7 +76,7 @@ fun MiowserSnackbarHost(hostState: SnackbarHostState, modifier: Modifier = Modif
                                         try { visuals.onSecondaryAction?.invoke() }
                                         finally { data.performAction() }
                                     },
-                                    contentPadding = PaddingValues(horizontal = 8.dp),
+                                    contentPadding = PaddingValues(horizontal = SnackbarComponentTokens.actionHorizontalPadding),
                                     colors = ButtonDefaults.textButtonColors(
                                         contentColor = MaterialTheme.colorScheme.primary
                                     )
@@ -87,7 +88,7 @@ fun MiowserSnackbarHost(hostState: SnackbarHostState, modifier: Modifier = Modif
                                     try { visuals?.onAction?.invoke() }
                                     finally { data.performAction() }
                                 },
-                                contentPadding = PaddingValues(horizontal = 8.dp),
+                                contentPadding = PaddingValues(horizontal = SnackbarComponentTokens.actionHorizontalPadding),
                                 colors = ButtonDefaults.textButtonColors(
                                     contentColor = MaterialTheme.colorScheme.primary
                                 )
@@ -114,13 +115,13 @@ fun MiowserSnackbarHost(hostState: SnackbarHostState, modifier: Modifier = Modif
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(UiSpacing.m)
+                    horizontalArrangement = Arrangement.spacedBy(SnackbarComponentTokens.contentGap)
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.ic_miowser_mark),
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(UiIconSize.featured)
+                        modifier = Modifier.size(SnackbarComponentTokens.markSize)
                     )
                     Text(data.visuals.message)
                 }

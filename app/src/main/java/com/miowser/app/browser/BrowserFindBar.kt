@@ -36,6 +36,7 @@ import androidx.compose.runtime.remember
 import com.miowser.app.ui.theme.UiCorners
 import com.miowser.app.ui.theme.UiElevation
 import com.miowser.app.ui.theme.UiSpacing
+import com.miowser.app.ui.theme.BrowserFindTokens
 
 @Composable
 internal fun BrowserFindBar(query: String, matchIndex: Int, matchCount: Int,
@@ -52,7 +53,8 @@ internal fun BrowserFindBar(query: String, matchIndex: Int, matchCount: Int,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         tonalElevation = UiElevation.medium, shadowElevation = UiElevation.medium,
         modifier = modifier.fillMaxWidth()) {
-        Row(Modifier.padding(horizontal = 6.dp, vertical = UiSpacing.xs),
+        Row(Modifier.padding(horizontal = BrowserFindTokens.horizontalPadding,
+            vertical = BrowserFindTokens.verticalPadding),
             horizontalArrangement = Arrangement.spacedBy(UiSpacing.xxs),
             verticalAlignment = Alignment.CenterVertically) {
             BasicTextField(query, onQueryChange, singleLine = true,
@@ -74,13 +76,14 @@ internal fun BrowserFindBar(query: String, matchIndex: Int, matchCount: Int,
                             innerTextField()
                         }
                         if (query.isNotEmpty()) {
-                            IconButton(onClick = { onQueryChange("") }, modifier = Modifier.widthIn(max = 40.dp)) {
+                            IconButton(onClick = { onQueryChange("") },
+                                modifier = Modifier.widthIn(max = BrowserFindTokens.clearButtonMaxWidth)) {
                                 Icon(Icons.Rounded.Close, "Clear search field")
                             }
                         }
                     }
                 },
-                modifier = Modifier.weight(1f).height(48.dp)
+                modifier = Modifier.weight(1f).height(BrowserFindTokens.fieldHeight)
                     .border(1.dp, MaterialTheme.colorScheme.outline,
                         UiCorners.r12)
                     .padding(horizontal = UiSpacing.m)
@@ -88,7 +91,7 @@ internal fun BrowserFindBar(query: String, matchIndex: Int, matchCount: Int,
             Text(if (query.isBlank()) "" else "$matchIndex/$matchCount",
                 style = MaterialTheme.typography.labelMedium,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.widthIn(min = 32.dp))
+                modifier = Modifier.widthIn(min = BrowserFindTokens.counterMinWidth))
             IconButton(onClick = onPrevious, enabled = matchCount > 0) {
                 Icon(Icons.Rounded.KeyboardArrowUp, "Previous match")
             }

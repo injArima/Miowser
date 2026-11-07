@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.miowser.app.ui.theme.UiElevation
 import com.miowser.app.ui.theme.UiSpacing
+import com.miowser.app.ui.theme.ConfirmationComponentTokens
 
 internal enum class ConfirmationTone { NORMAL, CAUTION }
 
@@ -56,7 +57,8 @@ internal fun MiowserConfirmationDialog(
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(
-                modifier = Modifier.padding(horizontal = 22.dp, vertical = 26.dp)
+                modifier = Modifier.padding(horizontal = ConfirmationComponentTokens.horizontalPadding,
+                    vertical = ConfirmationComponentTokens.verticalPadding)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(UiSpacing.roomy)
             ) {
@@ -65,9 +67,9 @@ internal fun MiowserConfirmationDialog(
                 Text(message, style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-                Column(verticalArrangement = Arrangement.spacedBy(UiSpacing.compact)) {
+                Column(verticalArrangement = Arrangement.spacedBy(ConfirmationComponentTokens.actionGap)) {
                     actions.chunked(2).forEachIndexed { rowIndex, rowActions ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(UiSpacing.compact),
+                        Row(horizontalArrangement = Arrangement.spacedBy(ConfirmationComponentTokens.actionGap),
                             modifier = Modifier.fillMaxWidth()) {
                             rowActions.forEachIndexed { columnIndex, action ->
                                 val actionIndex = rowIndex * 2 + columnIndex
@@ -82,11 +84,14 @@ internal fun MiowserConfirmationDialog(
                                         } else action.onClick()
                                     },
                                     enabled = action.enabled,
-                                    modifier = Modifier.weight(1f).heightIn(min = 52.dp),
+                                    modifier = Modifier.weight(1f).heightIn(min = ConfirmationComponentTokens.actionMinHeight),
                                     shape = MaterialTheme.shapes.extraLarge,
-                                    border = BorderStroke(1.dp, tint.copy(alpha = if (isRevealed) 0.8f else 0.38f)),
+                                    border = BorderStroke(1.dp, tint.copy(alpha = if (isRevealed)
+                                        ConfirmationComponentTokens.revealedBorderAlpha else ConfirmationComponentTokens.normalBorderAlpha)),
                                     colors = ButtonDefaults.outlinedButtonColors(
-                                        containerColor = tint.copy(alpha = if (isRevealed) 0.22f else if (caution) 0.12f else 0.08f),
+                                        containerColor = tint.copy(alpha = if (isRevealed)
+                                            ConfirmationComponentTokens.revealedFillAlpha else if (caution)
+                                            ConfirmationComponentTokens.cautionFillAlpha else ConfirmationComponentTokens.normalFillAlpha),
                                         contentColor = tint
                                     )
                                 ) {

@@ -182,6 +182,7 @@ import com.miowser.app.ui.theme.MotionTokens
 import com.miowser.app.ui.theme.UiElevation
 import com.miowser.app.ui.theme.UiIconSize
 import com.miowser.app.ui.theme.UiSpacing
+import com.miowser.app.ui.theme.HubLibraryTokens
 
 enum class HubSection { LIBRARY, DOWNLOADS, MORE }
 enum class HubDownloadSection { DOWNLOADING, DOWNLOADED }
@@ -1257,7 +1258,7 @@ private fun HubDownloadsTabContent(
                     onRefreshLink = onRefreshLink,
                     onPlayLocal = onOpenLocal,
                     modifier = Modifier.fillMaxWidth().weight(1f),
-                    bottomContentPadding = 80.dp,
+                    bottomContentPadding = HubLibraryTokens.gridBottomClearance,
                     emptyMessage = "No active or unfinished downloads."
                 )
             } else {
@@ -1313,9 +1314,11 @@ private fun HubDownloadedGrid(
     } else {
         LazyVerticalGrid(
             state = gridState,
-            columns = GridCells.Adaptive(minSize = 168.dp),
+            columns = GridCells.Adaptive(minSize = HubLibraryTokens.gridMinCell),
             modifier = modifier.testTag("downloaded_grid"),
-            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 80.dp),
+            contentPadding = PaddingValues(start = HubLibraryTokens.gridPadding,
+                end = HubLibraryTokens.gridPadding, top = HubLibraryTokens.gridPadding,
+                bottom = HubLibraryTokens.gridBottomClearance),
             horizontalArrangement = Arrangement.spacedBy(UiSpacing.m),
             verticalArrangement = Arrangement.spacedBy(UiSpacing.m)
         ) {
@@ -1693,9 +1696,11 @@ private fun HubLibraryContent(
         } else {
             LazyVerticalGrid(
                 state = gridState,
-                columns = if (libraryView == HubLibraryView.GRID) GridCells.Adaptive(minSize = 168.dp) else GridCells.Fixed(1),
+                columns = if (libraryView == HubLibraryView.GRID)
+                    GridCells.Adaptive(minSize = HubLibraryTokens.gridMinCell) else GridCells.Fixed(1),
                 modifier = Modifier.fillMaxWidth().weight(1f).testTag("library_grid"),
-                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 80.dp),
+                contentPadding = PaddingValues(start = HubLibraryTokens.gridPadding,
+                    end = HubLibraryTokens.gridPadding, bottom = HubLibraryTokens.gridBottomClearance),
                 horizontalArrangement = Arrangement.spacedBy(UiSpacing.m),
                 verticalArrangement = Arrangement.spacedBy(UiSpacing.m)
             ) {

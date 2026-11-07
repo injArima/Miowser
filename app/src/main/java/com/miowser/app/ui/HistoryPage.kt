@@ -67,6 +67,7 @@ import com.miowser.app.ui.theme.UiControlSize
 import com.miowser.app.ui.theme.UiCorners
 import com.miowser.app.ui.theme.UiIconSize
 import com.miowser.app.ui.theme.UiSpacing
+import com.miowser.app.ui.theme.HistoryRowTokens
 
 // A bulk delete pending confirmation — everything, or just one date's entries. Single-row
 // deletion (LibraryRow's own cross button) never goes through this: only operations that erase
@@ -288,23 +289,23 @@ private fun HistoryListItem(
     val shape = when (position) {
         SegmentedPosition.ONLY -> UiCorners.r24
         SegmentedPosition.FIRST -> RoundedCornerShape(
-            topStart = 24.dp,
-            topEnd = 24.dp,
-            bottomStart = 6.dp,
-            bottomEnd = 6.dp
+            topStart = HistoryRowTokens.outerCorner,
+            topEnd = HistoryRowTokens.outerCorner,
+            bottomStart = HistoryRowTokens.innerCorner,
+            bottomEnd = HistoryRowTokens.innerCorner
         )
-        SegmentedPosition.MIDDLE -> RoundedCornerShape(6.dp)
+        SegmentedPosition.MIDDLE -> RoundedCornerShape(HistoryRowTokens.innerCorner)
         SegmentedPosition.LAST -> RoundedCornerShape(
-            topStart = 6.dp,
-            topEnd = 6.dp,
-            bottomStart = 24.dp,
-            bottomEnd = 24.dp
+            topStart = HistoryRowTokens.innerCorner,
+            topEnd = HistoryRowTokens.innerCorner,
+            bottomStart = HistoryRowTokens.outerCorner,
+            bottomEnd = HistoryRowTokens.outerCorner
         )
     }
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = if (position == SegmentedPosition.LAST || position == SegmentedPosition.ONLY) 0.dp else 2.dp)
+            .padding(bottom = if (position == SegmentedPosition.LAST || position == SegmentedPosition.ONLY) 0.dp else HistoryRowTokens.segmentGap)
             .clickable(onClick = onClick),
         shape = shape,
         color = MaterialTheme.colorScheme.surfaceContainerLow
@@ -312,7 +313,7 @@ private fun HistoryListItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 80.dp)
+                .heightIn(min = HistoryRowTokens.minHeight)
                 .padding(start = UiSpacing.m, top = UiSpacing.compact, end = UiSpacing.xs, bottom = UiSpacing.compact),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -375,8 +376,8 @@ private fun HistorySiteIcon(entry: HistoryEntry) {
     }
 
     Surface(
-        modifier = Modifier.size(UiControlSize.action),
-        shape = UiCorners.r14,
+        modifier = Modifier.size(HistoryRowTokens.siteIconSize),
+        shape = HistoryRowTokens.siteIconShape,
         color = container,
         border = BorderStroke(1.dp, content.copy(alpha = 0.24f))
     ) {
@@ -412,7 +413,7 @@ private fun DateHeader(date: LocalDate, isFirst: Boolean, onDelete: () -> Unit) 
             )
         }
         Row(
-            modifier = Modifier.fillMaxWidth().height(48.dp),
+            modifier = Modifier.fillMaxWidth().height(HistoryRowTokens.headerHeight),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {

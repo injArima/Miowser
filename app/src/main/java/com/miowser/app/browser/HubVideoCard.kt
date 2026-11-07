@@ -64,6 +64,7 @@ import com.miowser.app.ui.theme.UiControlSize
 import com.miowser.app.ui.theme.UiCorners
 import com.miowser.app.ui.theme.UiIconSize
 import com.miowser.app.ui.theme.UiSpacing
+import com.miowser.app.ui.theme.HubVideoCardTokens
 
 /** Reusable 16:9 media card for the Library and future downloaded-media surfaces. */
 @OptIn(ExperimentalFoundationApi::class)
@@ -222,8 +223,9 @@ fun HubVideoCard(
     val artwork: @Composable () -> Unit = {
             Box(
                 modifier = Modifier
-                    .then(if (listMode) Modifier.width(136.dp).height(84.dp) else Modifier.fillMaxWidth().aspectRatio(16f / 9f))
-                    .clip(if (listMode) UiCorners.r14 else RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                    .then(if (listMode) Modifier.width(HubVideoCardTokens.listArtworkWidth)
+                        .height(HubVideoCardTokens.listArtworkHeight) else Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+                    .clip(if (listMode) UiCorners.r14 else HubVideoCardTokens.artworkTopShape)
                     .then(if (thumbnail == null) Modifier.background(placeholderBrush) else Modifier),
                 contentAlignment = Alignment.Center
             ) {
@@ -235,7 +237,7 @@ fun HubVideoCard(
                         modifier = Modifier.fillMaxSize()
                     )
                     Box(
-                        modifier = Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.18f))
+                        modifier = Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = HubVideoCardTokens.artworkOverlayAlpha))
                     )
                 }
                 if (centerArtwork != null) {
@@ -243,7 +245,7 @@ fun HubVideoCard(
                         bitmap = centerArtwork,
                         contentDescription = "App icon",
                         contentScale = ContentScale.Fit,
-                        modifier = Modifier.size(76.dp).clip(UiCorners.r18)
+                        modifier = Modifier.size(HubVideoCardTokens.centerArtworkSize).clip(UiCorners.r18)
                     )
                     Surface(
                         color = MaterialTheme.colorScheme.primaryContainer,
@@ -279,7 +281,8 @@ fun HubVideoCard(
                         Text(
                             formatMediaDuration(durationMs),
                             style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                            modifier = Modifier.padding(horizontal = HubVideoCardTokens.badgeHorizontalPadding,
+                                vertical = HubVideoCardTokens.badgeVerticalPadding)
                         )
                     }
                 }
@@ -291,7 +294,8 @@ fun HubVideoCard(
                         modifier = Modifier.align(Alignment.BottomStart).padding(UiSpacing.s)
                     ) {
                         Text(label, style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp))
+                            modifier = Modifier.padding(horizontal = HubVideoCardTokens.badgeHorizontalPadding,
+                                vertical = HubVideoCardTokens.badgeVerticalPadding))
                     }
                 }
                 statusLabel?.let { label ->
@@ -304,7 +308,8 @@ fun HubVideoCard(
                         Text(
                             label,
                             style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                            modifier = Modifier.padding(horizontal = HubVideoCardTokens.badgeHorizontalPadding,
+                                vertical = HubVideoCardTokens.badgeVerticalPadding)
                         )
                     }
                 }

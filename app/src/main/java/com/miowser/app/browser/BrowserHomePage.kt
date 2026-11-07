@@ -93,6 +93,7 @@ import com.miowser.app.ui.MiowserDropdownMenu
 import com.miowser.app.ui.theme.LocalMotionPolicy
 import com.miowser.app.ui.theme.MotionTokens
 import com.miowser.app.ui.theme.UiControlSize
+import com.miowser.app.ui.theme.BrowserHomeTokens
 import com.miowser.app.ui.theme.UiCorners
 import com.miowser.app.ui.theme.UiIconSize
 import com.miowser.app.ui.theme.UiSpacing
@@ -172,7 +173,7 @@ fun BrowserHomePage(
         // 52dp is compact enough for at least five columns on the narrowest normal phone width,
         // but Adaptive is free to add columns in landscape, split-screen, and wider portrait
         // layouts instead of leaving the grid artificially capped at five.
-        columns = GridCells.Adaptive(minSize = 52.dp),
+        columns = GridCells.Adaptive(minSize = BrowserHomeTokens.gridMinCell),
         modifier = modifier
             .fillMaxSize()
             .clickable(
@@ -181,16 +182,17 @@ fun BrowserHomePage(
             ) {
                 focusManager.clearFocus()
             },
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        contentPadding = PaddingValues(horizontal = BrowserHomeTokens.gridHorizontalPadding,
+            vertical = BrowserHomeTokens.gridVerticalPadding),
+        horizontalArrangement = Arrangement.spacedBy(BrowserHomeTokens.gridColumnGap),
         verticalArrangement = Arrangement.spacedBy(UiSpacing.compact)
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 22.dp),
+                modifier = Modifier.fillMaxWidth().padding(bottom = BrowserHomeTokens.heroBottomSpace),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Spacer(Modifier.height(76.dp))
+                Spacer(Modifier.height(BrowserHomeTokens.heroTopSpace))
                 Text(
                     if (isPrivate) "Private browsing" else "Miowser",
                     style = MaterialTheme.typography.headlineLarge,
@@ -604,7 +606,7 @@ private fun CompactDialTile(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Surface(
-            modifier = Modifier.size(46.dp),
+            modifier = Modifier.size(BrowserHomeTokens.speedDialTile),
             shape = MaterialTheme.shapes.medium,
             color = Color.Transparent,
             contentColor = if (selected) {

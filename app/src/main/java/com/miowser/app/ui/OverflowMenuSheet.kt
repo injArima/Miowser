@@ -100,6 +100,7 @@ import com.miowser.app.ui.theme.UiControlSize
 import com.miowser.app.ui.theme.UiCorners
 import com.miowser.app.ui.theme.UiIconSize
 import com.miowser.app.ui.theme.UiSpacing
+import com.miowser.app.ui.theme.BrowserMenuTokens
 
 /** Every full-page destination in the app. */
 enum class Screen {
@@ -107,9 +108,9 @@ enum class Screen {
     SITE_PERMISSIONS, CRASH_DIAGNOSTICS, TABS, ONBOARDING, ELEMENT_RULES
 }
 
-private val MENU_TILE_WIDTH = UiControlSize.touchTarget
-private val MENU_TILE_HEIGHT = UiControlSize.touchTarget
-private val MENU_ICON_SPACING = UiSpacing.compact
+private val MENU_TILE_WIDTH = BrowserMenuTokens.tileSize
+private val MENU_TILE_HEIGHT = BrowserMenuTokens.tileSize
+private val MENU_ICON_SPACING = BrowserMenuTokens.tileGap
 
 private data class MenuPresentation(
     val label: String,
@@ -268,10 +269,10 @@ fun OverflowMenuSheet(
           contentModifier.sheetVerticalEdgeFade(scrollState, MaterialTheme.colorScheme.surfaceContainerLow)
               .nestedScroll(collapseOnOverscroll).verticalScroll(scrollState)
           else contentModifier).padding(start = UiSpacing.l, end = UiSpacing.l, bottom = UiSpacing.m)) {
-        Surface(shape = UiCorners.r24,
+        Surface(shape = BrowserMenuTokens.sectionShape,
             color = MaterialTheme.colorScheme.surfaceContainer,
             modifier = Modifier.fillMaxWidth()) {
-          Column(Modifier.padding(horizontal = UiSpacing.s, vertical = UiSpacing.s)) {
+          Column(Modifier.padding(horizontal = BrowserMenuTokens.sectionInset, vertical = BrowserMenuTokens.sectionInset)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) { MenuSectionTitle("QUICK ACCESS") }
                 IconButton(onClick = {
@@ -384,7 +385,7 @@ fun OverflowMenuSheet(
         ) {
           Column {
             Spacer(Modifier.height(UiSpacing.m))
-            Surface(shape = UiCorners.r24,
+            Surface(shape = BrowserMenuTokens.sectionShape,
                 color = MaterialTheme.colorScheme.surfaceContainer,
                 modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(UiSpacing.l)) {
@@ -478,7 +479,7 @@ private fun MenuTile(
                 alpha = 0.92f
             }
         }
-        .clip(UiCorners.r16)
+        .clip(BrowserMenuTokens.tileShape)
 
     interactionModifier = if (editMode) {
         interactionModifier.pointerInput(label) {
@@ -501,15 +502,15 @@ private fun MenuTile(
         verticalArrangement = Arrangement.Center,
         modifier = interactionModifier.padding(UiSpacing.xs)
     ) {
-        Box(Modifier.size(UiControlSize.compact).clip(UiCorners.r14)
+        Box(Modifier.size(BrowserMenuTokens.tileContentSize).clip(BrowserMenuTokens.tileContentShape)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
             contentAlignment = Alignment.Center) {
             if (badgeCount > 0) {
                 BadgedBox(badge = { Badge { Text(badgeCount.coerceAtMost(99).toString()) } }) {
-                    Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(UiIconSize.standard))
+                    Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(BrowserMenuTokens.tileIconSize))
                 }
             } else {
-                Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(UiIconSize.standard))
+                Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(BrowserMenuTokens.tileIconSize))
             }
         }
     }
@@ -532,10 +533,10 @@ private fun MenuActionRow(icon: ImageVector, title: String, detail: String,
             onClick = onClick)
         .padding(vertical = UiSpacing.compact, horizontal = UiSpacing.xs),
         verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(UiControlSize.action).clip(UiCorners.r14)
+        Box(Modifier.size(BrowserMenuTokens.actionIconContainerSize).clip(UiCorners.r14)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
             contentAlignment = Alignment.Center) {
-            Icon(icon, null, tint = color, modifier = Modifier.size(22.dp))
+            Icon(icon, null, tint = color, modifier = Modifier.size(BrowserMenuTokens.actionIconSize))
         }
         Column(Modifier.weight(1f).padding(start = UiSpacing.comfortable)) {
             Text(title, style = MaterialTheme.typography.titleSmall, color = color)

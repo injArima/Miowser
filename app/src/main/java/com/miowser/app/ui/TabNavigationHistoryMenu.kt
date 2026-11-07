@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.TabHistoryMenuTokens
 
 data class TabNavigationEntry(
     val index: Int,
@@ -43,7 +44,8 @@ internal fun TabNavigationHistoryMenu(
     MiowserDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
-        modifier = Modifier.widthIn(min = 260.dp, max = 320.dp).heightIn(max = 376.dp)
+        modifier = Modifier.widthIn(min = TabHistoryMenuTokens.minWidth,
+            max = TabHistoryMenuTokens.maxWidth).heightIn(max = TabHistoryMenuTokens.maxHeight)
     ) {
         entries.forEach { entry ->
             MiowserMenuItem(

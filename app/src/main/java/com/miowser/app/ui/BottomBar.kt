@@ -56,6 +56,7 @@ import com.miowser.app.ui.theme.ExpressiveTokens
 import com.miowser.app.ui.theme.LocalMotionPolicy
 import com.miowser.app.ui.theme.MotionTokens
 import com.miowser.app.ui.theme.UiCorners
+import com.miowser.app.ui.theme.BottomNavigationTokens
 import com.miowser.app.ui.theme.UiElevation
 import com.miowser.app.ui.theme.UiIconSize
 import com.miowser.app.ui.theme.UiSpacing
@@ -134,11 +135,12 @@ fun BottomBar(
         modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
     ) {
         BoxWithConstraints {
-            val sidePadding = if (maxWidth >= 336.dp) 12.dp else 4.dp
+            val sidePadding = if (maxWidth >= BottomNavigationTokens.roomyWidthThreshold)
+                BottomNavigationTokens.roomySidePadding else BottomNavigationTokens.compactSidePadding
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = sidePadding, vertical = UiSpacing.s),
+                    .padding(horizontal = sidePadding, vertical = BottomNavigationTokens.verticalPadding),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
             Box {
@@ -199,7 +201,7 @@ fun BottomBar(
             }
             Box(
                 modifier = Modifier
-                    .size(ExpressiveTokens.minimumTouchTarget)
+                    .size(BottomNavigationTokens.buttonSize)
                     .clip(CircleShape)
                     .drawBehind { drawRect(homePressColor.value) }
                     .combinedClickable(
@@ -217,7 +219,7 @@ fun BottomBar(
             }
             Box(
                 modifier = Modifier
-                    .size(ExpressiveTokens.minimumTouchTarget)
+                    .size(BottomNavigationTokens.buttonSize)
                     .testTag("browser_tabs")
                     .clip(CircleShape)
                     .combinedClickable(
@@ -258,7 +260,7 @@ private fun BrowserNavigationButton(
 ) {
     Box(
         modifier = Modifier
-            .size(ExpressiveTokens.minimumTouchTarget)
+            .size(BottomNavigationTokens.buttonSize)
             .clip(CircleShape)
             .combinedClickable(
                 enabled = enabled,

@@ -78,6 +78,7 @@ import kotlinx.coroutines.flow.collect
 import com.miowser.app.ui.theme.UiControlSize
 import com.miowser.app.ui.theme.UiIconSize
 import com.miowser.app.ui.theme.UiSemanticColors
+import com.miowser.app.ui.theme.AddressBarTokens
 import com.miowser.app.ui.theme.UiSpacing
 
 /**
@@ -196,7 +197,7 @@ internal fun AddressBar(
                         state = textState,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(48.dp)
+                            .height(AddressBarTokens.fieldHeight)
                             .clip(addressBarShape)
                             .onSizeChanged { fieldSize = it }
                             .focusRequester(focusRequester)
@@ -237,7 +238,7 @@ internal fun AddressBar(
                                 ),
                                 leadingIcon = {
                                     Box(
-                                        modifier = Modifier.size(width = 48.dp, height = 44.dp).background(
+                                        modifier = Modifier.size(width = AddressBarTokens.accentWidth, height = AddressBarTokens.accentHeight).background(
                                             Brush.horizontalGradient(
                                                 listOf(
                                                     (if (isLoading) MaterialTheme.colorScheme.primary
@@ -279,7 +280,7 @@ internal fun AddressBar(
                                         MaterialTheme.colorScheme.primary
                                     else MaterialTheme.colorScheme.onSurfaceVariant
                                     Box(
-                                        modifier = Modifier.size(width = 48.dp, height = 44.dp).background(
+                                        modifier = Modifier.size(width = AddressBarTokens.accentWidth, height = AddressBarTokens.accentHeight).background(
                                             Brush.horizontalGradient(
                                                 listOf(Color.Transparent, trailingAccent.copy(alpha = 0.16f))
                                             )
@@ -289,7 +290,7 @@ internal fun AddressBar(
                                         if (fieldFocused) IconButton(
                                             onClick = onSubmit,
                                             enabled = textState.text.isNotBlank(),
-                                            modifier = Modifier.size(UiControlSize.compact)
+                                            modifier = Modifier.size(AddressBarTokens.submitSize)
                                         ) {
                                             Icon(
                                                 Icons.Rounded.Search,
