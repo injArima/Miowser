@@ -2,7 +2,6 @@ package com.miowser.app.browser
 
 import com.miowser.app.BuildConfig
 import android.content.Intent
-import android.graphics.Canvas
 import android.Manifest
 import android.app.Activity
 import android.print.PrintAttributes
@@ -16,7 +15,7 @@ import android.os.Message
 import android.provider.Settings
 import android.view.View
 import android.view.ViewGroup
-import android.view.MotionEvent
+import android.view.ViewTreeObserver
 import android.widget.Toast
 import android.widget.FrameLayout
 import android.webkit.CookieManager
@@ -2027,6 +2026,7 @@ fun BrowserScreen(
                         // loading indicator in the address bar.
                         var isRefreshing by remember { mutableStateOf(false) }
                         var isPulling by remember { mutableStateOf(false) }
+                        val pullObserver = remember { arrayOfNulls<ViewTreeObserver.OnPreDrawListener>(1) }
                         LaunchedEffect(tab.isLoading) {
                             if (!tab.isLoading) {
                                 isRefreshing = false
@@ -2040,23 +2040,19 @@ fun BrowserScreen(
                                     // WebView does not participate in Compose's nested scroll. Keep
                                     // SwipeRefreshLayout for top-of-page drag detection.
                                     val content = FrameLayout(ctx)
-                                    val swipeRefresh = object : SwipeRefreshLayout(ctx) {
-                                        override fun drawChild(canvas: Canvas, child: View, drawingTime: Long): Boolean {
-                                            // Keep WebView drag detection; Compose draws the Expressive
-                                            // indicator instead of SwipeRefreshLayout's circle drawable.
-                                            return child === content && super.drawChild(canvas, child, drawingTime)
-                                        }
-
-                                        override fun onTouchEvent(event: MotionEvent): Boolean {
-                                            val handled = super.onTouchEvent(event)
-                                            when (event.actionMasked) {
-                                                MotionEvent.ACTION_MOVE -> if (handled) isPulling = true
-                                                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> isPulling = false
-                                            }
-                                            return handled
-                                        }
-                                    }
+                                    val swipeRefresh = SwipeRefreshLayout(ctx)
                                     swipeRefresh.apply {
+                                        // The first child is SwipeRefreshLayout's own indicator.
+                                        // Hide its drawing without changing its touch or refresh logic.
+                                        val nativeSpinner = getChildAt(0)
+                                        nativeSpinner.alpha = 0f
+                                        val observer = ViewTreeObserver.OnPreDrawListener {
+                                            val pulling = nativeSpinner.visibility == View.VISIBLE
+                                            if (isPulling != pulling) isPulling = pulling
+                                            true
+                                        }
+                                        viewTreeObserver.addOnPreDrawListener(observer)
+                                        pullObserver[0] = observer
                                         val display = NativeVideoAssistantDisplay(ctx)
                                         content.addView(engine, FrameLayout.LayoutParams(-1, -1))
                                         content.addView(display, FrameLayout.LayoutParams(-1, -1))
@@ -2078,19 +2074,21 @@ fun BrowserScreen(
                                     swipeRefresh.visibility = if (
                                         tab.id == activeTabId && !tab.isShowingHome
                                     ) View.VISIBLE else View.INVISIBLE
-                                    // A drag changes Compose state; do not reset the native gesture
-                                    // on every recomposition while the finger is still moving.
-                                    if (swipeRefresh.isRefreshing != isRefreshing) {
-                                        swipeRefresh.isRefreshing = isRefreshing
-                                    }
+                                    swipeRefresh.isRefreshing = isRefreshing
                                 },
                                 onRelease = { host ->
+                                    pullObserver[0]?.let { observer ->
+                                        host.viewTreeObserver.takeIf { it.isAlive }
+                                            ?.removeOnPreDrawListener(observer)
+                                    }
+                                    pullObserver[0] = null
                                     releaseVideoAssistantHost(host, tab::detachVideoAssistantDisplay)
                                 }
                             )
                             if ((isPulling || isRefreshing) && tab.id == activeTabId && !tab.isShowingHome) {
                                 MiowserLoadingIndicator(
                                     modifier = Modifier.align(Alignment.TopCenter).padding(top = UiSpacing.m),
+                                    contained = true,
                                     description = "Refreshing page"
                                 )
                             }
