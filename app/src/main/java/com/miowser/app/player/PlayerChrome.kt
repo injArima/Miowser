@@ -39,6 +39,7 @@ import com.miowser.app.ui.theme.PlayerUiColors
 import com.miowser.app.ui.theme.UiControlSize
 import com.miowser.app.ui.theme.UiCorners
 import com.miowser.app.ui.theme.UiSpacing
+import com.miowser.app.settings.AppSettings
 
 /** Shared original player controls. No playback engine or clock is created by this UI. */
 @Composable
@@ -81,6 +82,7 @@ internal fun PlayerTopBar(
     onOrientationSelected: (PlayerOrientationMode) -> Unit,
     onToggleRotationLock: () -> Unit,
     onDownload: (() -> Unit)?,
+    onBrowseSource: (() -> Unit)? = null,
     onCaution: (() -> Unit)? = null,
     onPip: (() -> Unit)?,
     audioOnly: Boolean,
@@ -117,6 +119,10 @@ internal fun PlayerTopBar(
                     onCaution,
                     contentColor = PlayerUiColors.caution
                 )
+                Spacer(Modifier.width(gap))
+            }
+            if (onBrowseSource != null) {
+                RoundPlayerButton(Icons.Rounded.OpenInBrowser, "Browse source page", onBrowseSource)
                 Spacer(Modifier.width(gap))
             }
             if (onPip != null) {
@@ -520,6 +526,15 @@ internal fun PlayerBottomChrome(
                         MiowserMenuItem(text = { Text("Brightness & volume") },
                             leadingIcon = { Icon(Icons.Rounded.Tune, contentDescription = null) },
                             onClick = onAdjustmentsRequested)
+                        val context = androidx.compose.ui.platform.LocalContext.current
+                        val sourceBrowsing = AppSettings.current.companionBrowsingEnabled
+                        MiowserMenuItem(text = { Text(if (sourceBrowsing) "Source browsing: On" else "Source browsing: Off") },
+                            selected = sourceBrowsing,
+                            leadingIcon = { Icon(Icons.Rounded.OpenInBrowser, contentDescription = null) },
+                            onClick = {
+                                AppSettings.update(context) { it.copy(companionBrowsingEnabled = !sourceBrowsing) }
+                                onSpeedMenuChange(false)
+                            })
                         extraSpeedOptions()
                         listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { speed ->
                             MiowserMenuItem(

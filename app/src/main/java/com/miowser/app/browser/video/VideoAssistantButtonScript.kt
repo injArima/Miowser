@@ -268,16 +268,13 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             api.failed();
             schedule();
         }
-        function click(event, expected) {
-            // Page scripts cannot programmatically activate this action.
-            if (!event.isTrusted || disposed || pending || !policy.enabled || !api.bound() ||
-                document.fullscreenElement || !selected || selected.embedded ||
-                (expected && selected !== expected) || !eligible(selected)) return;
-            var view = viewport(), currentBox = clip(selected, view);
+        function beginEntry(record) {
+            if (disposed || pending || !policy.enabled || !api.bound() ||
+                document.fullscreenElement || !record || record.embedded || !eligible(record)) return false;
+            var view = viewport(), currentBox = clip(record, view);
             if ((currentBox.right - currentBox.left) * view.scale < 120 ||
-                (currentBox.bottom - currentBox.top) * view.scale < 80) { hide(); return; }
-            event.preventDefault(); event.stopPropagation();
-            var record = selected, video = record.video;
+                (currentBox.bottom - currentBox.top) * view.scale < 80) { hide(); return false; }
+            var video = record.video;
             record.lastInteraction = performance.now();
             api.changed();
             pending = true;
@@ -298,6 +295,12 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 var result = video.requestFullscreen();
                 if (result && typeof result.catch === 'function') result.catch(function () { failed(entry); });
             } catch (ignored) { failed(entry); }
+            return true;
+        }
+        function click(event, expected) {
+            // Page scripts cannot programmatically activate this action.
+            if (!event.isTrusted || !selected || (expected && selected !== expected)) return;
+            if (beginEntry(selected)) { event.preventDefault(); event.stopPropagation(); }
         }
         function makeButton() {
             if (host) return;
@@ -503,6 +506,10 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                     pendingExternal = null;
                 }
                 if (pressGuard && pressGuard.request === request) cancelPress();
+            },
+            companionEnter: function (elementId) {
+                var record = api.records().find(function (entry) { return entry.id === elementId; });
+                return beginEntry(record);
             },
             externalCandidate: function (candidate) {
                 if (candidate.active) external.set(candidate.documentId, candidate);

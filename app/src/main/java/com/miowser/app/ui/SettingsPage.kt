@@ -229,6 +229,14 @@ fun SettingsPage(
 
             SettingsSection("Media") {
                 SettingRow(
+                    "Browse source while playing",
+                    "Pause the player to browse the source page, then open the next video in Miowser.",
+                    settings.companionBrowsingEnabled
+                ) {
+                    onUpdate(settings.copy(companionBrowsingEnabled = it))
+                }
+                SectionDivider()
+                SettingRow(
                     "Background playback",
                     "Allow headphone mode to keep playing when Miowser is minimized or the screen is off.",
                     settings.backgroundPlaybackEnabled

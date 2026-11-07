@@ -536,6 +536,10 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
                 if (controls) controls.receive(message);
                 return;
             }
+            if (message.type === 'companionEnter') {
+                if (assistant && typeof message.elementId === 'string') assistant.companionEnter(message.elementId);
+                return;
+            }
             if (message.type === 'nativeDisplayReady' || message.type === 'nativeDisplayLost') {
                 if (assistant) {
                     if (message.type === 'nativeDisplayLost') assistant.nativeLost();

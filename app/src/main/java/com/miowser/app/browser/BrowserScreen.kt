@@ -8,6 +8,7 @@ import android.print.PrintAttributes
 import android.print.PrintManager
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -38,6 +39,8 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -88,6 +91,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -288,6 +292,7 @@ fun BrowserScreen(
     onShortcutHandled: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var videoButtonForeground by remember(lifecycleOwner) {
         mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
@@ -338,6 +343,13 @@ fun BrowserScreen(
     var hubLibrarySort by rememberSaveable { mutableStateOf(initialHubSettings.librarySort) }
     var playbackRequest by remember { mutableStateOf<PlaybackRequest?>(null) }
     var fullscreenVideo by remember { mutableStateOf<WebFullscreenVideo?>(null) }
+    var companionTabId by remember { mutableStateOf<Long?>(null) }
+    var companionTemporaryTabIds by remember { mutableStateOf(emptySet<Long>()) }
+    var companionFromWeb by remember { mutableStateOf(false) }
+    var companionOriginalTabId by remember { mutableStateOf<Long?>(null) }
+    var companionOldWasPlaying by remember { mutableStateOf(false) }
+    var companionDetectorOpen by remember { mutableStateOf(false) }
+    var companionVideoHint by remember { mutableStateOf(false) }
     var browserVideoAudioOnly by remember { mutableStateOf(false) }
     val backgroundPlaybackEnabled = AppSettings.current.backgroundPlaybackEnabled
     LaunchedEffect(showingHub, hubSection, playbackRequest != null, fullscreenVideo != null, activeScreen) {
@@ -553,8 +565,24 @@ fun BrowserScreen(
     var activeTabId by remember { mutableStateOf<Long?>(null) }
 
     fun showWebFullscreen(ownerId: Long, view: View, callback: WebChromeClient.CustomViewCallback) {
-        if (ownerId == activeTabId && !showingHub && activeScreen == null && playbackRequest == null) {
+        val fromCompanion = companionFromWeb && companionTabId == ownerId
+        if ((ownerId == activeTabId || fromCompanion) && !showingHub &&
+            activeScreen == null && playbackRequest == null) {
             exitWebFullscreen()
+            if (fromCompanion) {
+                tabs.firstOrNull { it.id == ownerId }?.setCompanionTracking(false)
+                val discarded = tabs.filter { it.id in companionTemporaryTabIds && it.id != ownerId }
+                tabs.removeAll(discarded)
+                discarded.forEach { tab -> coroutineScope.launch { delay(100); tab.destroy() } }
+                companionTemporaryTabIds = emptySet()
+                activeTabId = ownerId
+                companionTabId = null
+                companionFromWeb = false
+                companionOriginalTabId = null
+                companionOldWasPlaying = false
+                companionDetectorOpen = false
+                companionVideoHint = false
+            }
             fullscreenVideo = WebFullscreenVideo(ownerId, view, callback)
             tabController.tabs.firstOrNull { it.id == ownerId }?.startBrowserVideoFullscreen()
         } else {
@@ -808,6 +836,54 @@ fun BrowserScreen(
         return tab
     }
 
+    fun openCompanionBrowser(pageUrl: String, fromWeb: Boolean) {
+        if (companionTabId != null || !AppSettings.current.companionBrowsingEnabled) return
+        val source = pageUrl.takeIf { it.startsWith("https://", true) || it.startsWith("http://", true) } ?: return
+        val sourceTabId = if (fromWeb) fullscreenVideo?.tabId else activeTabId
+        val sourceTab = tabs.firstOrNull { it.id == sourceTabId }
+        val companion = createAndInsertTab(source, sourceTabId, privateTab = sourceTab?.isPrivate == true)
+        if (runCatching { companion.ensureWebView() }.isFailure) {
+            tabs.remove(companion)
+            companion.destroy()
+            Toast.makeText(context, "Could not open the source page", Toast.LENGTH_SHORT).show()
+            return
+        }
+        companionFromWeb = fromWeb
+        companionOriginalTabId = sourceTabId
+        companionOldWasPlaying = if (fromWeb) sourceTab?.browserVideoPlayer?.intendedPlaying == true else false
+        if (fromWeb) sourceTab?.browserVideoPlayer?.pause()
+        companionVideoHint = false
+        companionDetectorOpen = false
+        companion.setCompanionTracking(true)
+        companionTemporaryTabIds = setOf(companion.id)
+        companionTabId = companion.id
+    }
+
+    fun closeCompanionBrowser(keepTab: Boolean = false, resumeOld: Boolean = true) {
+        val companionId = companionTabId ?: return
+        val oldFromWeb = companionFromWeb
+        val oldWasPlaying = companionOldWasPlaying
+        val originalId = companionOriginalTabId
+        companionTabId = null
+        companionFromWeb = false
+        companionOriginalTabId = null
+        companionOldWasPlaying = false
+        companionDetectorOpen = false
+        companionVideoHint = false
+        tabs.firstOrNull { it.id == companionId }?.setCompanionTracking(false)
+        if (activeTabId == companionId && originalId != null) activeTabId = originalId
+        if (resumeOld && oldFromWeb) {
+            tabs.firstOrNull { it.id == originalId }?.browserVideoPlayer?.let { controller ->
+                if (oldWasPlaying && controller.intendedPlaying == false) controller.playPause()
+                else if (!oldWasPlaying && controller.intendedPlaying == true) controller.pause()
+            }
+        }
+        val discarded = tabs.filter { it.id in companionTemporaryTabIds && (!keepTab || it.id != companionId) }
+        tabs.removeAll(discarded)
+        discarded.forEach { tab -> coroutineScope.launch { delay(100); tab.destroy() } }
+        companionTemporaryTabIds = emptySet()
+    }
+
     fun finalizeClosedTab(pending: ClosedTabUndo) {
         if (pending.resolved) return
         pending.resolved = true
@@ -931,7 +1007,13 @@ fun BrowserScreen(
         val transport = resultMsg.obj as WebView.WebViewTransport
         transport.webView = child.ensureWebView()
         resultMsg.sendToTarget()
-        activeTabId = child.id
+        if (openerTabId == companionTabId) {
+            opener.setCompanionTracking(false)
+            child.setCompanionTracking(true)
+            companionTemporaryTabIds = companionTemporaryTabIds + child.id
+            companionTabId = child.id
+        }
+        else activeTabId = child.id
     }
 
     // Decides a page-triggered new tab's fate per Settings.newTabConfirmation — see that enum's
@@ -1115,7 +1197,7 @@ fun BrowserScreen(
     // Save meaningful session edits while foregrounded, not only when Android pauses us.
     LaunchedEffect(recordsReady) {
         if (recordsReady) androidx.compose.runtime.snapshotFlow {
-            TabSessionStore.snapshot(tabs, activeTabId)
+            TabSessionStore.snapshot(tabs.filterNot { it.id in companionTemporaryTabIds }, activeTabId)
         }.collect { snapshot -> TabSessionStore.saveSnapshot(context, snapshot) }
     }
 
@@ -2020,6 +2102,7 @@ fun BrowserScreen(
                 // hosts composed and changes visibility. The controller owns destruction;
                 // onRelease only detaches so a temporary host removal cannot destroy a warm page.
                 tabs.forEach { tab ->
+                    if (tab.id == companionTabId) return@forEach
                     val engine = tab.liveWebView ?: return@forEach
                     key(tab.id, engine) {
                         // Pull feedback is separate from ordinary navigation, which has its own
@@ -2891,7 +2974,17 @@ fun BrowserScreen(
                         is PlaybackRequest.Remote -> ({ downloadFromPlayer(request) })
                         is PlaybackRequest.Local -> null
                     },
+                    onBrowseSource = request.let { playback ->
+                        val page = when (playback) {
+                            is PlaybackRequest.Remote -> playback.pageUrl
+                            is PlaybackRequest.Local -> playback.pageUrl
+                        }
+                        if (AppSettings.current.companionBrowsingEnabled && !page.isNullOrBlank())
+                            ({ openCompanionBrowser(page, fromWeb = false) }) else null
+                    },
+                    companionBrowsing = companionTabId != null && !companionFromWeb,
                     onDismiss = {
+                        closeCompanionBrowser(resumeOld = false)
                         libraryPlayRequestId++
                         playbackRequest = null
                         libraryPlaybackQueue = null
@@ -3431,14 +3524,108 @@ fun BrowserScreen(
                     tabs.firstOrNull { it.id == fullscreen.tabId }?.let { owner ->
                         BrowserVideoPlayerOverlay(owner.browserVideoPlayer, owner.title, ::exitWebFullscreen,
                             sourceLabel = SiteProtection.host(owner.url).orEmpty(),
+                            onBrowseSource = if (AppSettings.current.companionBrowsingEnabled) ({
+                                openCompanionBrowser(owner.url, fromWeb = true)
+                            }) else null,
                             detectedSubtitles = com.miowser.app.player.detectedSubtitlesForPage(
                                 owner.url, owner.detectedMedia),
                             userAgent = owner.liveWebView?.settings?.userAgentString ?: "Miowser",
                             backgroundPlaybackEnabled = backgroundPlaybackEnabled,
                             onAudioOnlyChanged = { browserVideoAudioOnly = it })
                     }
+                    if (companionFromWeb && companionTabId != null) {
+                        Box(Modifier.fillMaxSize()
+                            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.5f))
+                            .clickable(onClick = {}), contentAlignment = Alignment.Center) {
+                            Text("Paused while browsing", color = com.miowser.app.ui.theme.PlayerUiColors.content,
+                                style = MaterialTheme.typography.titleMedium)
+                        }
+                    }
                 }
             }
+        }
+        tabs.firstOrNull { it.id == companionTabId }?.let { companion ->
+            CompanionBrowserPane(
+                tab = companion,
+                onNavigate = { input ->
+                    val target = UrlOrSearchResolver.resolve(input, AppSettings.current.searchUrlTemplate)
+                    if (target.isNotBlank()) navigateTab(companion, target)
+                },
+                onClose = { closeCompanionBrowser() },
+                showVideoHint = companionVideoHint,
+                modifier = Modifier.align(if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
+                    Alignment.CenterEnd else Alignment.BottomCenter).zIndex(5f)
+            )
+        }
+        if (companionDetectorOpen && !companionFromWeb) {
+            BackHandler { companionDetectorOpen = false }
+            Box(Modifier.fillMaxSize().zIndex(6f)) {
+            tabs.firstOrNull { it.id == companionTabId }?.let { companion ->
+                val videos = companion.detectedMedia.filter {
+                    detectorCategory(it) == DetectorCategory.VIDEOS && rendererResourceKind(it.url) == null
+                }
+                DetectedMediaPage(
+                    items = videos,
+                    userAgent = companion.liveWebView?.settings?.userAgentString ?: "Miowser",
+                    onCopyUrl = { url -> coroutineScope.launch {
+                        clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("url", url)))
+                        showActionSnackbar("URL copied")
+                    } },
+                    onPlay = { item ->
+                        val next = detectedPlaybackRequest(item, companion)
+                        companion.pausePageMedia()
+                        companion.liveWebView?.onPause()
+                        closeCompanionBrowser(keepTab = true, resumeOld = false)
+                        activeTabId = companion.id
+                        showingHub = false
+                        libraryPlaybackQueue = null
+                        playbackFromLibrary = false
+                        libraryPlayRequestId++
+                        playbackRequest = next
+                    },
+                    onAddToLibrary = {}, onDownload = {},
+                    savedMediaUrls = emptySet(), showLibraryAction = false, canSaveToLibrary = false,
+                    scanProgress = null, onScan = { _, _ -> }, onCancelScan = {},
+                    minimumDurationSeconds = 0, selectionOnly = true,
+                    onBack = { companionDetectorOpen = false },
+                )
+            }
+            }
+        }
+    }
+
+    val companionTab = tabs.firstOrNull { it.id == companionTabId }
+    val companionVideoKey = companionTab?.companionVideoKey
+    LaunchedEffect(companionTabId, companionVideoKey, companionFromWeb) {
+        val tab = companionTab ?: return@LaunchedEffect
+        val key = companionVideoKey ?: return@LaunchedEffect
+        if (!companionFromWeb) return@LaunchedEffect
+        delay(650)
+        if (tab.companionVideoKey != key || companionTabId != tab.id) return@LaunchedEffect
+        if (!tab.requestCompanionFullscreen(key)) {
+            companionVideoHint = true
+            return@LaunchedEffect
+        }
+        delay(2_500)
+        if (companionTabId == tab.id && fullscreenVideo?.tabId != tab.id) companionVideoHint = true
+    }
+    LaunchedEffect(fullscreenVideo, playbackRequest, companionTabId, companionFromWeb) {
+        if (companionTabId != null &&
+            (companionFromWeb && fullscreenVideo == null || !companionFromWeb && playbackRequest == null)) {
+            closeCompanionBrowser(resumeOld = false)
+        }
+    }
+    val companionVideoCount = companionTab?.detectedMedia?.count {
+        detectorCategory(it) == DetectorCategory.VIDEOS && rendererResourceKind(it.url) == null
+    } ?: 0
+    LaunchedEffect(companionTabId, companionVideoKey, companionFromWeb, companionVideoCount) {
+        val tab = companionTab ?: return@LaunchedEffect
+        val key = companionVideoKey ?: return@LaunchedEffect
+        if (companionFromWeb || companionVideoCount == 0 || companionDetectorOpen) return@LaunchedEffect
+        delay(500)
+        if (companionTabId == tab.id && tab.companionVideoKey == key) {
+            tab.pausePageMedia()
+            companionDetectorOpen = true
         }
     }
 
@@ -3538,7 +3725,7 @@ fun BrowserScreen(
     // WebView.onPause can suspend JavaScript), then pause the WebView itself. Returning from the
     // player resumes the WebView engine but leaves the page's media element paused so two players
     // cannot immediately begin speaking at once.
-    LaunchedEffect(activeTabId, showingHub, playbackRequest, startupReady, activeScreen,
+    LaunchedEffect(activeTabId, showingHub, playbackRequest, companionTabId, fullscreenVideo, startupReady, activeScreen,
         activeTab?.isShowingHome, activeTab?.rendererUnavailable, rendererTransferActivity) {
         if (startupReady && !showingHub && activeScreen == null && playbackRequest == null &&
             activeTab != null && !activeTab.rendererUnavailable) {
@@ -3551,9 +3738,11 @@ fun BrowserScreen(
         tabs.forEach { tab ->
             val visibleBrowser = !showingHub && activeScreen == null &&
                 playbackRequest == null && tab.id == activeTabId
-            val shouldRunBrowser = visibleBrowser || tab.rendererTransferCount > 0
+            val shouldRunBrowser = visibleBrowser || tab.id == companionTabId ||
+                tab.id == fullscreenVideo?.tabId || tab.rendererTransferCount > 0
             if (shouldRunBrowser) {
-                if (!visibleBrowser) tab.pausePageMedia()
+                if (!visibleBrowser && tab.id != companionTabId && tab.id != fullscreenVideo?.tabId)
+                    tab.pausePageMedia()
                 tab.liveWebView?.onResume()
             } else {
                 if (tab.id == activeTabId &&
@@ -3585,7 +3774,8 @@ fun BrowserScreen(
     val enabledVideoButtonAppearance = remember(videoButtonAppearance) { videoButtonAppearance.copy(enabled = true) }
     SideEffect {
         tabs.forEach { tab ->
-            val enabled = allowVideoButton && tab.id == activeTabId && !tab.isShowingHome && tab.pageError == null
+            val enabled = (allowVideoButton && tab.id == activeTabId ||
+                tab.id == companionTabId) && !tab.isShowingHome && tab.pageError == null
             tab.updateVideoAssistantButton(if (enabled) enabledVideoButtonAppearance else videoButtonAppearance)
         }
     }
@@ -3597,14 +3787,14 @@ fun BrowserScreen(
         }
         tabs.forEach { it.applyBrowserPreferences(AppSettings.current) }
     }
-    LaunchedEffect(activeTabId, fileSelection.ownerId, pendingGeolocationOwnerId, pendingNewTabRequest,
+    LaunchedEffect(activeTabId, companionTabId, fileSelection.ownerId, pendingGeolocationOwnerId, pendingNewTabRequest,
         pendingHttpNavigation, pendingCertificateError, fullscreenVideo, tabController.liveEngineCount,
         tabs.map { it.isLoading to it.hasPlayingMedia }, pendingWebPermission, pendingRuntimePermission,
         DownloadQueue.downloads.map { it.id to it.status }) {
         tabController.configureMemory(context)
         tabController.setVisible(activeTabId, listOfNotNull(fileSelection.ownerId, pendingGeolocationOwnerId,
             pendingNewTabRequest?.openerTabId, pendingHttpNavigation?.tabId,
-            pendingCertificateError?.tabId, fullscreenVideo?.tabId).toSet() +
+            pendingCertificateError?.tabId, fullscreenVideo?.tabId, companionTabId).toSet() +
             if (pendingWebPermission != null || pendingRuntimePermission != null) tabs.map { it.id }.toSet() else emptySet())
     }
     DisposableEffect(tabController, context.applicationContext) {
@@ -3645,7 +3835,8 @@ fun BrowserScreen(
                         } else tab.liveWebView?.onPause()
                     }
                     // Final checkpoint in addition to the foreground session-change observer.
-                    if (recordsReady) TabSessionStore.save(context, tabs, activeTabId)
+                    if (recordsReady) TabSessionStore.save(context,
+                        tabs.filterNot { it.id in companionTemporaryTabIds }, activeTabId)
                     DownloadQueue.persist(context)
                 }
                 Lifecycle.Event.ON_STOP -> {

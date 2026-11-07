@@ -216,6 +216,11 @@ class Tab(
     private var elementPickerBridge: ElementPickerBridge? = null
     private var liveVideoTracker: LiveVideoTracker? = null
     internal val browserVideoPlayer = BrowserVideoController()
+    internal var companionVideoKey by mutableStateOf<com.miowser.app.browser.video.CompanionVideoKey?>(null)
+        private set
+    internal fun requestCompanionFullscreen(key: com.miowser.app.browser.video.CompanionVideoKey): Boolean =
+        liveVideoTracker?.requestCompanionFullscreen(key) == true
+    internal fun setCompanionTracking(enabled: Boolean) { liveVideoTracker?.setCompanionTracking(enabled) }
     internal fun startBrowserVideoFullscreen() { liveVideoTracker?.onNativeFullscreenShown() }
     internal fun finishBrowserVideoFullscreen() { liveVideoTracker?.onNativeFullscreenHidden() }
     internal fun pauseBrowserVideoHost(pip: Boolean) { liveVideoTracker?.onHostPaused(pip) }
@@ -825,6 +830,7 @@ class Tab(
             installVideoSnifferScript() // must also run before loadUrl()
             // Add-on telemetry only; the existing grabber and playback entry points stay intact.
             liveVideoTracker = LiveVideoTracker(this@Tab.id, this, videoButtonPolicy, browserVideoPlayer,
+                onPlayingVideoChanged = { companionVideoKey = it },
                 onFullscreenFailure = {
                     if (alive.get() && videoButtonPolicy.enabled) android.widget.Toast.makeText(tabContext,
                         "This page couldn't open video fullscreen. Its original player is still available.",

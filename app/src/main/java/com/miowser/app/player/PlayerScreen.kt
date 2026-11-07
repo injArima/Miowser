@@ -239,6 +239,8 @@ fun PlayerScreen(
     onPlayNext: (() -> Unit)? = null,
     onDownload: (() -> Unit)? = null,
     onOpenSourcePage: (() -> Unit)? = null,
+    onBrowseSource: (() -> Unit)? = null,
+    companionBrowsing: Boolean = false,
     recordInLibrary: Boolean = true,
     onDismiss: () -> Unit
 ) {
@@ -324,7 +326,8 @@ fun PlayerScreen(
     if (ready && (localPlaylistRequest == null ||
             (activeLocalRequest == localPlaylistRequest && retainedLocalSession.value != null))) {
         PlayerContent(request, playlist, onSelectPlaylistEntry, onPlayPrevious, onPlayNext,
-            onDownload, onOpenSourcePage, recordInLibrary, onDismiss, transport, orientationMode,
+            onDownload, onOpenSourcePage, onBrowseSource, companionBrowsing,
+            recordInLibrary, onDismiss, transport, orientationMode,
             { orientationMode = it },
             retainedLocalSession.value.takeIf { localPlaylistRequest != null })
     } else {
@@ -351,6 +354,8 @@ private fun PlayerContent(
     onPlayNext: (() -> Unit)? = null,
     onDownload: (() -> Unit)? = null,
     onOpenSourcePage: (() -> Unit)? = null,
+    onBrowseSource: (() -> Unit)? = null,
+    companionBrowsing: Boolean = false,
     recordInLibrary: Boolean = true,
     onDismiss: () -> Unit,
     remoteTransport: RemotePlayerTransport?,
@@ -506,6 +511,16 @@ private fun PlayerContent(
         PlaybackSession.create(context, request, remoteTransport, attachedExternalSubtitleUrl != null)
     }
     val exoPlayer = session.player
+    var resumeAfterCompanion by remember(request) { mutableStateOf(false) }
+    LaunchedEffect(companionBrowsing, exoPlayer) {
+        if (companionBrowsing) {
+            resumeAfterCompanion = exoPlayer.playWhenReady
+            exoPlayer.pause()
+        } else if (resumeAfterCompanion) {
+            resumeAfterCompanion = false
+            exoPlayer.play()
+        }
+    }
 
     DisposableEffect(exoPlayer) {
         PlayerPlaybackService.attach(context, exoPlayer, request.title)
@@ -1104,6 +1119,7 @@ private fun PlayerContent(
                                 else PlayerOrientationMode.lockCurrent(activity))
                         },
                         onDownload = onDownload,
+                        onBrowseSource = onBrowseSource,
                         onPip = if (!audioOnly && playbackError == null && activity is MainActivity &&
                             context.packageManager.hasSystemFeature(
                                 android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)) ({
@@ -1247,6 +1263,13 @@ private fun PlayerContent(
             }
         }
 
+        if (companionBrowsing) {
+            Box(Modifier.fillMaxSize().background(PlayerUiColors.backdrop.copy(alpha = 0.52f))
+                .clickable(enabled = true, onClick = {}), contentAlignment = Alignment.Center) {
+                Text("Paused while browsing", color = PlayerUiColors.content,
+                    style = MaterialTheme.typography.titleMedium)
+            }
+        }
         gestureFeedback?.takeUnless { controlsVisible &&
             (it.kind == PlayerGestureKind.PLAY || it.kind == PlayerGestureKind.PAUSE) }?.let { feedback ->
             PlayerGestureFeedbackOverlay(

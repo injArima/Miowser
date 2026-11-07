@@ -70,6 +70,7 @@ import com.miowser.app.ui.theme.UiSpacing
 @Composable
 internal fun BrowserVideoPlayerOverlay(controller: BrowserPlaybackControls, title: String,
     onExit: () -> Unit, sourceLabel: String = "", backgroundPlaybackEnabled: Boolean = true,
+    onBrowseSource: (() -> Unit)? = null,
     detectedSubtitles: List<DetectedMedia> = emptyList(), userAgent: String = "Miowser",
     onAudioOnlyChanged: (Boolean) -> Unit = {}) {
     val browserState by controller.state.collectAsState()
@@ -82,7 +83,7 @@ internal fun BrowserVideoPlayerOverlay(controller: BrowserPlaybackControls, titl
         } else state.owner?.let { owner ->
             key(owner) {
                 BrowserVideoControlsContent(controller, state, title, sourceLabel, onExit,
-                    backgroundPlaybackEnabled, detectedSubtitles, userAgent, onAudioOnlyChanged)
+                    backgroundPlaybackEnabled, onBrowseSource, detectedSubtitles, userAgent, onAudioOnlyChanged)
             }
         }
     }
@@ -92,6 +93,7 @@ internal fun BrowserVideoPlayerOverlay(controller: BrowserPlaybackControls, titl
 @OptIn(ExperimentalLayoutApi::class)
 private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, state: BrowserVideoPresentation,
     title: String, sourceLabel: String, onExit: () -> Unit, backgroundPlaybackEnabled: Boolean,
+    onBrowseSource: (() -> Unit)?,
     detectedSubtitles: List<DetectedMedia>, userAgent: String,
     onAudioOnlyChanged: (Boolean) -> Unit) {
     val video = state.video ?: return
@@ -344,6 +346,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                                         orientationMode = if (orientationMode.locked) PlayerOrientationMode.AUTOMATIC
                                             else PlayerOrientationMode.lockCurrent(activity)
                                     }, onDownload = null,
+                                    onBrowseSource = onBrowseSource,
                                     onCaution = {
                                         closeMenus()
                                         visible = true

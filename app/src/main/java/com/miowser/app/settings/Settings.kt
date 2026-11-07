@@ -93,6 +93,7 @@ data class Settings(
     val reduceMotion: Boolean = false,
     val libraryBehavior: LibraryBehavior = LibraryBehavior.AUTOMATIC,
     val backgroundPlaybackEnabled: Boolean = true,
+    val companionBrowsingEnabled: Boolean = false,
     val crashDiagnosticsEnabled: Boolean = true
 ) {
     val autoDeleteInactiveTabs: Boolean get() = inactiveTabRetention != InactiveTabRetention.NEVER

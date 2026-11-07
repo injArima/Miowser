@@ -92,6 +92,7 @@ fun DetectedMediaPage(
     onScan: (depth: Int, pageLimit: Int) -> Unit,
     onCancelScan: () -> Unit,
     minimumDurationSeconds: Int,
+    selectionOnly: Boolean = false,
     onBack: () -> Unit
 ) {
     var depth by remember { mutableIntStateOf(1) }
@@ -107,10 +108,10 @@ fun DetectedMediaPage(
     val hiddenCount = items.size - durationFilteredItems.size
 
     SimplePageScaffold(
-        title = "Detected media",
+        title = if (selectionOnly) "Choose video" else "Detected media",
         onBack = onBack,
         actions = {
-            IconButton(onClick = { showScanSettings = true }) {
+            if (!selectionOnly) IconButton(onClick = { showScanSettings = true }) {
                 Icon(Icons.Rounded.Construction, contentDescription = "Scan settings")
             }
         }
@@ -124,7 +125,7 @@ fun DetectedMediaPage(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            if (groups.isNotEmpty()) {
+            if (groups.isNotEmpty() && !selectionOnly) {
                 Row(
                     modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
                         .padding(horizontal = UiSpacing.m, vertical = UiSpacing.compact),
@@ -190,7 +191,8 @@ fun DetectedMediaPage(
                                     isSaved = item.url in savedMediaUrls ||
                                         item.hlsRenditions.any { it.url in savedMediaUrls },
                                     showLibraryAction = showLibraryAction,
-                                    canSaveToLibrary = canSaveToLibrary
+                                    canSaveToLibrary = canSaveToLibrary,
+                                    showDownloadAction = !selectionOnly
                                 )
                             }
                         }
@@ -314,7 +316,8 @@ private fun DetectedMediaRow(
     onAddToLibrary: (DetectedMedia) -> Unit,
     isSaved: Boolean,
     showLibraryAction: Boolean,
-    canSaveToLibrary: Boolean
+    canSaveToLibrary: Boolean,
+    showDownloadAction: Boolean = true
 ) {
     if (item.type == MediaType.SUBTITLE || item.mimeType?.startsWith("text/", ignoreCase = true) == true) {
         TextualMediaRow(item, onCopyUrl, onOpen, onDownload)
@@ -392,7 +395,7 @@ private fun DetectedMediaRow(
                             }, modifier = Modifier.size(UiIconSize.menu))
                     }
                 }
-                if (item.isConfirmed || rendererResourceKind(item.url) != null) {
+                if (showDownloadAction && (item.isConfirmed || rendererResourceKind(item.url) != null)) {
                     IconButton(onClick = { onDownload(item) }, modifier = Modifier.size(38.dp)) {
                         Icon(Icons.Rounded.Download, contentDescription = "Download",
                             modifier = Modifier.size(19.dp))

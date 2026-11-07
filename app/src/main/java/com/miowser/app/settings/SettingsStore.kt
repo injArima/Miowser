@@ -21,6 +21,7 @@ private const val KEY_INACTIVE_TAB_RETENTION = "inactive_tab_retention"
 private const val KEY_REDUCE_MOTION = "reduce_motion"
 private const val KEY_LIBRARY_BEHAVIOR = "library_behavior"
 private const val KEY_BACKGROUND_PLAYBACK_ENABLED = "background_playback_enabled"
+private const val KEY_COMPANION_BROWSING_ENABLED = "companion_browsing_enabled"
 private const val KEY_CRASH_DIAGNOSTICS_ENABLED = "crash_diagnostics_enabled"
 private const val KEY_CRASH_DIAGNOSTICS_MIGRATED = "crash_diagnostics_default_on_v2"
 
@@ -68,6 +69,9 @@ object SettingsStore {
             backgroundPlaybackEnabled = prefs.getBoolean(
                 KEY_BACKGROUND_PLAYBACK_ENABLED, defaults.backgroundPlaybackEnabled
             ),
+            companionBrowsingEnabled = prefs.getBoolean(
+                KEY_COMPANION_BROWSING_ENABLED, defaults.companionBrowsingEnabled
+            ),
             crashDiagnosticsEnabled = crashDiagnosticsEnabled(context)
         )
     }
@@ -93,6 +97,7 @@ object SettingsStore {
                 .putBoolean(KEY_REDUCE_MOTION, settings.reduceMotion)
                 .putString(KEY_LIBRARY_BEHAVIOR, settings.libraryBehavior.name)
                 .putBoolean(KEY_BACKGROUND_PLAYBACK_ENABLED, settings.backgroundPlaybackEnabled)
+                .putBoolean(KEY_COMPANION_BROWSING_ENABLED, settings.companionBrowsingEnabled)
                 .putBoolean(KEY_CRASH_DIAGNOSTICS_ENABLED, settings.crashDiagnosticsEnabled)
                 .putBoolean(KEY_CRASH_DIAGNOSTICS_MIGRATED, true)
                 .commit()

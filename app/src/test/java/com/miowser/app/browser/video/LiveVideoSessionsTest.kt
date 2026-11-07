@@ -4,6 +4,17 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LiveVideoSessionsTest {
+    @Test fun companionHandoffRequiresActualLongAudiblePlayback() {
+        val episode = video().copy(durationMs = 1_200_000)
+        assertTrue(episode.isCompanionPlaybackCandidate())
+        assertFalse(episode.copy(muted = true).isCompanionPlaybackCandidate())
+        assertFalse(episode.copy(playing = false).isCompanionPlaybackCandidate())
+        assertFalse(episode.copy(durationMs = 20_000).isCompanionPlaybackCandidate())
+        assertFalse(episode.copy(videoWidth = 160, videoHeight = 90).isCompanionPlaybackCandidate())
+        assertFalse(episode.copy(readyState = 1).isCompanionPlaybackCandidate())
+        assertTrue(episode.copy(durationMs = null).isCompanionPlaybackCandidate())
+    }
+
     @Test fun aLongBackgroundOrPipSessionProtectsOnlyItsExactOwnerFromLeaseExpiry() {
         val store = LiveVideoSessionRegistry(7)
         val frame = store.openFrame("doc")!!

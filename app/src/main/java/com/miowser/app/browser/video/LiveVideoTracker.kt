@@ -18,6 +18,7 @@ import java.util.UUID
 internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     initialButtonPolicy: VideoAssistantButtonPolicy = VideoAssistantButtonPolicy(),
     private val playback: BrowserVideoController = BrowserVideoController(),
+    private val onPlayingVideoChanged: (CompanionVideoKey?) -> Unit = {},
     private val onFullscreenFailure: () -> Unit = {}) {
     private data class Channel(val frameId: Long, val document: String, val token: String,
         val navigation: Long, val connectedAt: Long, val mainFrame: Boolean, var lastUpdate: Long = -1,
@@ -42,6 +43,8 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     private var owner: Owner? = null
     private var fallbackOwner: Owner? = null // Release-only identity; cannot receive player commands.
     private var nativeFullscreen = false
+    private var lastCompanionVideo: CompanionVideoKey? = null
+    private var companionTrackingEnabled = false
     private val recovery = BrowserVideoRecovery()
     private var pausedBeforeHostPause = false
     private var recoveryTimeout: Runnable? = null
@@ -104,6 +107,8 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
         }
         channels.clear()
         registry.reset()
+        lastCompanionVideo = null
+        onPlayingVideoChanged(null)
         main.removeCallbacks(prune)
         pruneScheduled = false
     }
@@ -293,6 +298,14 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
         .put("screenBottomInset", BrowserFloatingActionLayout.VIDEO_BOTTOM_INSET_DP)
 
     private fun publish() {
+        val playing = if (companionTrackingEnabled) registry.snapshot().asSequence()
+            .filter { it.state.isCompanionPlaybackCandidate() }
+            .maxByOrNull { it.updatedAtMs }
+            ?.let { CompanionVideoKey(it.id, it.state.sourceRevision) } else null
+        if (playing != lastCompanionVideo) {
+            lastCompanionVideo = playing
+            onPlayingVideoChanged(playing)
+        }
         val current = owner
         if (nativeFullscreen && current != null) {
             val session = registry.snapshot().firstOrNull { it.id == current.id }
@@ -321,6 +334,27 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     }
 
     fun onNativeFullscreenShown() { nativeFullscreen = true; publish() }
+    fun setCompanionTracking(enabled: Boolean) {
+        if (companionTrackingEnabled == enabled) return
+        companionTrackingEnabled = enabled
+        if (enabled) publish()
+        else {
+            lastCompanionVideo = null
+            onPlayingVideoChanged(null)
+        }
+    }
+    fun requestCompanionFullscreen(key: CompanionVideoKey): Boolean {
+        val session = registry.snapshot().firstOrNull {
+            it.id == key.id && it.state.sourceRevision == key.sourceRevision && it.state.playing
+        } ?: return false
+        val channel = channels.entries.firstOrNull { it.value.frameId == session.id.frameId &&
+            it.value.navigation == session.id.navigation && it.value.document == session.id.documentId } ?: return false
+        return runCatching {
+            channel.key.postMessage(boundMessage("companionEnter", channel.value)
+                .put("elementId", session.id.elementId).toString())
+            true
+        }.getOrDefault(false)
+    }
     fun onNativeFullscreenHidden(reason: String? = null) {
         // Send the exact owner's release before detaching; never exit a later/unrelated element.
         ownerMessage("releaseFullscreen")
