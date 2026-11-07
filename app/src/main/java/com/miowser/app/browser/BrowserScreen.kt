@@ -2,6 +2,7 @@ package com.miowser.app.browser
 
 import com.miowser.app.BuildConfig
 import android.content.Intent
+import android.graphics.Canvas
 import android.Manifest
 import android.app.Activity
 import android.print.PrintAttributes
@@ -15,6 +16,7 @@ import android.os.Message
 import android.provider.Settings
 import android.view.View
 import android.view.ViewGroup
+import android.view.MotionEvent
 import android.widget.Toast
 import android.widget.FrameLayout
 import android.webkit.CookieManager
@@ -154,6 +156,7 @@ import com.miowser.app.ui.BottomBar
 import com.miowser.app.ui.BrowsingDataPage
 import com.miowser.app.ui.CrashDiagnosticsPage
 import com.miowser.app.ui.HistoryPage
+import com.miowser.app.ui.MiowserLoadingIndicator
 import com.miowser.app.ui.ElementRulesPage
 import com.miowser.app.ui.LinkContextMenu
 import com.miowser.app.ui.MiowserSnackbarHost
@@ -2017,58 +2020,81 @@ fun BrowserScreen(
                 // Only acquired engines have AndroidView hosts. Ordinary switching keeps those
                 // hosts composed and changes visibility. The controller owns destruction;
                 // onRelease only detaches so a temporary host removal cannot destroy a warm page.
-                val pullToRefreshTint = MaterialTheme.colorScheme.primary.toArgb()
                 tabs.forEach { tab ->
                     val engine = tab.liveWebView ?: return@forEach
                     key(tab.id, engine) {
-                        // Tracks only a pull-triggered reload, not every ordinary page load —
-                        // SwipeRefreshLayout.isRefreshing shows its spinner regardless of what set
-                        // it, so tying this directly to tab.isLoading would flash the spinner on
-                        // top of the page for a plain link tap too, not just an actual pull.
+                        // Pull feedback is separate from ordinary navigation, which has its own
+                        // loading indicator in the address bar.
                         var isRefreshing by remember { mutableStateOf(false) }
+                        var isPulling by remember { mutableStateOf(false) }
                         LaunchedEffect(tab.isLoading) {
-                            if (!tab.isLoading) isRefreshing = false
-                        }
-                        AndroidView(
-                            modifier = Modifier.fillMaxSize(),
-                            factory = { ctx ->
-                                // Compose's own pull-to-refresh relies on the nested-scroll system
-                                // to know when a drag is happening at the very top of scrollable
-                                // content — the stock WebView never participates in that system, so
-                                // it can't tell Compose whether it has scrolled to the top. The
-                                // older View-based SwipeRefreshLayout sidesteps that: it asks the
-                                // child directly via canChildScrollUp below, which WebView answers
-                                // correctly through its ordinary View.canScrollVertically.
-                                SwipeRefreshLayout(ctx).apply {
-                                    val content = FrameLayout(ctx)
-                                    val display = NativeVideoAssistantDisplay(ctx)
-                                    content.addView(engine, FrameLayout.LayoutParams(-1, -1))
-                                    content.addView(display, FrameLayout.LayoutParams(-1, -1))
-                                    addView(
-                                        content,
-                                        ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-                                    )
-                                    tab.attachVideoAssistantDisplay(engine, display)
-                                    setColorSchemeColors(pullToRefreshTint)
-                                    setOnChildScrollUpCallback { _, _ ->
-                                        display.ownsGesture || (tab.liveWebView === engine && engine.canScrollVertically(-1))
-                                    }
-                                    setOnRefreshListener {
-                                        isRefreshing = true
-                                        tab.reload()
-                                    }
-                                }
-                            },
-                            update = { swipeRefresh ->
-                                swipeRefresh.visibility = if (
-                                    tab.id == activeTabId && !tab.isShowingHome
-                                ) View.VISIBLE else View.INVISIBLE
-                                swipeRefresh.isRefreshing = isRefreshing
-                            },
-                            onRelease = { host ->
-                                releaseVideoAssistantHost(host, tab::detachVideoAssistantDisplay)
+                            if (!tab.isLoading) {
+                                isRefreshing = false
+                                isPulling = false
                             }
-                        )
+                        }
+                        Box(Modifier.fillMaxSize()) {
+                            AndroidView(
+                                modifier = Modifier.fillMaxSize(),
+                                factory = { ctx ->
+                                    // WebView does not participate in Compose's nested scroll. Keep
+                                    // SwipeRefreshLayout for top-of-page drag detection.
+                                    val content = FrameLayout(ctx)
+                                    val swipeRefresh = object : SwipeRefreshLayout(ctx) {
+                                        override fun drawChild(canvas: Canvas, child: View, drawingTime: Long): Boolean {
+                                            // Keep WebView drag detection; Compose draws the Expressive
+                                            // indicator instead of SwipeRefreshLayout's circle drawable.
+                                            return child === content && super.drawChild(canvas, child, drawingTime)
+                                        }
+
+                                        override fun onTouchEvent(event: MotionEvent): Boolean {
+                                            val handled = super.onTouchEvent(event)
+                                            when (event.actionMasked) {
+                                                MotionEvent.ACTION_MOVE -> if (handled) isPulling = true
+                                                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> isPulling = false
+                                            }
+                                            return handled
+                                        }
+                                    }
+                                    swipeRefresh.apply {
+                                        val display = NativeVideoAssistantDisplay(ctx)
+                                        content.addView(engine, FrameLayout.LayoutParams(-1, -1))
+                                        content.addView(display, FrameLayout.LayoutParams(-1, -1))
+                                        addView(
+                                            content,
+                                            ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                                        )
+                                        tab.attachVideoAssistantDisplay(engine, display)
+                                        setOnChildScrollUpCallback { _, _ ->
+                                            display.ownsGesture || (tab.liveWebView === engine && engine.canScrollVertically(-1))
+                                        }
+                                        setOnRefreshListener {
+                                            isRefreshing = true
+                                            tab.reload()
+                                        }
+                                    }
+                                },
+                                update = { swipeRefresh ->
+                                    swipeRefresh.visibility = if (
+                                        tab.id == activeTabId && !tab.isShowingHome
+                                    ) View.VISIBLE else View.INVISIBLE
+                                    // A drag changes Compose state; do not reset the native gesture
+                                    // on every recomposition while the finger is still moving.
+                                    if (swipeRefresh.isRefreshing != isRefreshing) {
+                                        swipeRefresh.isRefreshing = isRefreshing
+                                    }
+                                },
+                                onRelease = { host ->
+                                    releaseVideoAssistantHost(host, tab::detachVideoAssistantDisplay)
+                                }
+                            )
+                            if ((isPulling || isRefreshing) && tab.id == activeTabId && !tab.isShowingHome) {
+                                MiowserLoadingIndicator(
+                                    modifier = Modifier.align(Alignment.TopCenter).padding(top = UiSpacing.m),
+                                    description = "Refreshing page"
+                                )
+                            }
+                        }
                     }
                 }
                 activeTab?.pageError?.let { message ->

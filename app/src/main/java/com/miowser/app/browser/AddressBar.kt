@@ -78,7 +78,6 @@ import kotlinx.coroutines.flow.collect
 import com.miowser.app.ui.theme.UiControlSize
 import com.miowser.app.ui.theme.UiSemanticColors
 import com.miowser.app.ui.theme.AddressBarTokens
-import com.miowser.app.ui.theme.LoadingIndicatorTokens
 import com.miowser.app.ui.theme.UiSpacing
 
 /**
@@ -252,7 +251,6 @@ internal fun AddressBar(
                                         IconButton(onClick = onOpenSiteInfo) {
                                             if (isLoading) {
                                                 MiowserLoadingIndicator(
-                                                    size = LoadingIndicatorTokens.address,
                                                     description = "Loading page"
                                                 )
                                             } else {
