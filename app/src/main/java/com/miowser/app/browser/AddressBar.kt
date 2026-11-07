@@ -34,7 +34,7 @@ import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Badge
-import com.miowser.app.ui.MiowserLoadingIndicator
+import com.miowser.app.ui.WebPageProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -250,9 +250,7 @@ internal fun AddressBar(
                                     ) {
                                         IconButton(onClick = onOpenSiteInfo) {
                                             if (isLoading) {
-                                                MiowserLoadingIndicator(
-                                                    description = "Loading page"
-                                                )
+                                                WebPageProgressIndicator()
                                             } else {
                                                 Icon(
                                                     imageVector = when (siteSecurity) {

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.HourglassEmpty
 import androidx.compose.material3.ContainedLoadingIndicator
+import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
@@ -55,5 +56,25 @@ fun MiowserLoadingIndicator(
         ContainedLoadingIndicator(modifier = indicatorModifier)
     } else {
         LoadingIndicator(modifier = indicatorModifier)
+    }
+}
+
+/** Webpage navigation uses the wavy circular progress style shown in Material 3 guidelines. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun WebPageProgressIndicator(modifier: Modifier = Modifier) {
+    val indicatorModifier = modifier.size(LoadingIndicatorTokens.address)
+        .semantics { contentDescription = "Loading page" }
+    if (LocalMotionPolicy.current.reduced) {
+        Box(indicatorModifier, contentAlignment = Alignment.Center) {
+            Icon(
+                Icons.Rounded.HourglassEmpty,
+                contentDescription = null,
+                modifier = Modifier.size(LoadingIndicatorTokens.compact),
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+    } else {
+        CircularWavyProgressIndicator(modifier = indicatorModifier)
     }
 }

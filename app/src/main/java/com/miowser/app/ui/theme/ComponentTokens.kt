@@ -120,5 +120,6 @@ object ActionButtonTokens {
 
 /** Loading sizes keep Expressive indicators proportional to their surrounding controls. */
 object LoadingIndicatorTokens {
+    val address = UiControlSize.action
     val compact = UiIconSize.standard
 }
