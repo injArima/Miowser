@@ -561,6 +561,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
                 if (message.type === 'resumeFullscreen') {
                     if (matches && controls) controls.release();
                     var resumed = matches && owner.video.isConnected && assistant.rich(message.elementId, message.attempt, true);
+                    if (resumed && message.paused === true) owner.video.pause();
                     packet('fullscreenResumed', {elementId: message.elementId, attempt: message.attempt,
                         recoveryId: message.recoveryId, ok: !!resumed});
                 } else if (matches) {

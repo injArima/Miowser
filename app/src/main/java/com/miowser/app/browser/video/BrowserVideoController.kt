@@ -63,6 +63,7 @@ internal class BrowserVideoController : BrowserPlaybackControls {
     override val state = mutable.asStateFlow()
     private var sender: ((BrowserVideoCommand) -> Boolean)? = null
     private var desiredPlaying: Boolean? = null
+    val intendedPlaying: Boolean? get() = desiredPlaying ?: mutable.value.session?.state?.playing
 
     fun connect(sender: (BrowserVideoCommand) -> Boolean) { this.sender = sender }
     fun attach(session: LiveVideoSession, attempt: Long) {

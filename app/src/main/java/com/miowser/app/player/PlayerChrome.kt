@@ -76,9 +76,9 @@ internal fun PlayerLoadingSpinner(modifier: Modifier = Modifier) {
 @Composable
 internal fun PlayerTopBar(
     isLandscape: Boolean,
-    rotationLocked: Boolean,
+    orientationMode: PlayerOrientationMode,
     playbackSpeed: Float,
-    onRotate: () -> Unit,
+    onOrientationSelected: (PlayerOrientationMode) -> Unit,
     onToggleRotationLock: () -> Unit,
     onDownload: (() -> Unit)?,
     onCaution: (() -> Unit)? = null,
@@ -132,8 +132,8 @@ internal fun PlayerTopBar(
             Spacer(Modifier.width(gap))
             RotationPlayerButton(
                 isLandscape = isLandscape,
-                locked = rotationLocked,
-                onRotate = onRotate,
+                mode = orientationMode,
+                onOrientationSelected = onOrientationSelected,
                 onToggleLock = onToggleRotationLock
             )
             Spacer(Modifier.width(gap))
@@ -322,32 +322,42 @@ internal fun PlayerBufferedTimeline(
 @Composable
 internal fun RotationPlayerButton(
     isLandscape: Boolean,
-    locked: Boolean,
-    onRotate: () -> Unit,
+    mode: PlayerOrientationMode,
+    onOrientationSelected: (PlayerOrientationMode) -> Unit,
     onToggleLock: () -> Unit
 ) {
+    var menuExpanded by remember { mutableStateOf(false) }
     val icon = when {
-        !locked -> Icons.Rounded.ScreenRotation
+        !mode.locked -> Icons.Rounded.ScreenRotation
         isLandscape -> Icons.Rounded.ScreenLockLandscape
         else -> Icons.Rounded.ScreenLockPortrait
     }
-    val description = if (locked) {
-        "Rotation locked. Tap to rotate, hold to unlock"
-    } else {
-        "Rotate screen. Hold to lock rotation"
-    }
-    Surface(
-        shape = CircleShape,
-        color = Color.Transparent,
-        contentColor = if (locked) MaterialTheme.colorScheme.primary else PlayerUiColors.content,
-        modifier = Modifier
-            .size(UiControlSize.touchTarget)
-            .clip(CircleShape)
-            .combinedClickable(enabled = LocalPlayerControlsActive.current,
-                onClick = onRotate, onLongClick = onToggleLock)
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription = description, modifier = Modifier.size(25.dp))
+    Box {
+        Surface(
+            shape = CircleShape,
+            color = Color.Transparent,
+            contentColor = if (mode.locked) MaterialTheme.colorScheme.primary else PlayerUiColors.content,
+            modifier = Modifier
+                .size(UiControlSize.touchTarget)
+                .clip(CircleShape)
+                .combinedClickable(enabled = LocalPlayerControlsActive.current,
+                    onClick = onToggleLock, onLongClick = { menuExpanded = true })
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = if (mode.locked) "Unlock orientation. Hold for orientation options"
+                    else "Lock orientation. Hold for orientation options", modifier = Modifier.size(25.dp))
+            }
+        }
+        MiowserDropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+            Text("Orientation", style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.padding(horizontal = UiSpacing.m, vertical = UiSpacing.s))
+            PlayerOrientationMode.entries.forEach { option ->
+                MiowserMenuItem(text = { Text(option.label) }, selected = mode == option,
+                    trailingIcon = if (mode == option) {
+                        { Icon(Icons.Rounded.Check, contentDescription = null) }
+                    } else null,
+                    onClick = { menuExpanded = false; onOrientationSelected(option) })
+            }
         }
     }
 }

@@ -6,7 +6,6 @@ import android.app.Activity
 import com.miowser.app.MainActivity
 import android.content.Context
 import android.content.ContextWrapper
-import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.media.AudioManager
 import android.graphics.Typeface
@@ -85,6 +84,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.focus.FocusRequester
@@ -224,13 +224,6 @@ internal data class PlayerGestureFeedback(
     val seekDeltaMs: Long? = null
 )
 
-/** Player-wide rotation state survives replacement of a playlist item and its loading screen. */
-private class PlayerOrientationState {
-    var locked by mutableStateOf(false)
-    var pendingManualOrientation by mutableStateOf<Int?>(null)
-    var relockAfterManualRotation by mutableStateOf(false)
-}
-
 /**
  * Miowser's full-screen player shell. Media3 still performs playback, adaptive streaming, and
  * decoding; its stock controller is disabled and this Compose overlay owns the visible controls.
@@ -251,7 +244,7 @@ fun PlayerScreen(
 ) {
     val context = LocalContext.current
     val activity = context.findActivity()
-    val orientationState = remember { PlayerOrientationState() }
+    var orientationMode by rememberSaveable { mutableStateOf(PlayerOrientationMode.AUTOMATIC) }
     val initialLocalPlaylistRequest = remember {
         (request as? PlaybackRequest.Local)?.takeIf { playlist.isNotEmpty() }
     }
@@ -284,7 +277,7 @@ fun PlayerScreen(
     DisposableEffect(activity) {
         val previousOrientation = activity?.requestedOrientation
         val previousBrightness = activity?.window?.attributes?.screenBrightness
-        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+        activity?.requestedOrientation = orientationMode.requestedOrientation
         PlayerDisplayPreferenceStore.brightness(context)?.let { saved ->
             activity?.window?.let { window ->
                 window.attributes = window.attributes.apply { screenBrightness = saved }
@@ -300,6 +293,19 @@ fun PlayerScreen(
                 }
             }
         }
+    }
+    LaunchedEffect(activity, orientationMode) {
+        activity?.requestedOrientation = orientationMode.requestedOrientation
+    }
+    val playerLifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(activity, playerLifecycleOwner, orientationMode) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                activity?.requestedOrientation = orientationMode.requestedOrientation
+            }
+        }
+        playerLifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { playerLifecycleOwner.lifecycle.removeObserver(observer) }
     }
     var transport by remember(request) { mutableStateOf<RemotePlayerTransport?>(null) }
     var ready by remember(request) { mutableStateOf(request !is PlaybackRequest.Remote) }
@@ -318,7 +324,8 @@ fun PlayerScreen(
     if (ready && (localPlaylistRequest == null ||
             (activeLocalRequest == localPlaylistRequest && retainedLocalSession.value != null))) {
         PlayerContent(request, playlist, onSelectPlaylistEntry, onPlayPrevious, onPlayNext,
-            onDownload, onOpenSourcePage, recordInLibrary, onDismiss, transport, orientationState,
+            onDownload, onOpenSourcePage, recordInLibrary, onDismiss, transport, orientationMode,
+            { orientationMode = it },
             retainedLocalSession.value.takeIf { localPlaylistRequest != null })
     } else {
         BackHandler(onBack = onDismiss)
@@ -347,7 +354,8 @@ private fun PlayerContent(
     recordInLibrary: Boolean = true,
     onDismiss: () -> Unit,
     remoteTransport: RemotePlayerTransport?,
-    orientationState: PlayerOrientationState,
+    orientationMode: PlayerOrientationMode,
+    onOrientationModeSelected: (PlayerOrientationMode) -> Unit,
     retainedSession: PlaybackSession?
 ) {
     val context = LocalContext.current
@@ -491,23 +499,6 @@ private fun PlayerContent(
         if (gestureFeedback != null) {
             delay(900)
             gestureFeedback = null
-        }
-    }
-
-    // A manual rotate request temporarily pins the requested direction. Once Android reports that
-    // the turn completed, return to sensor rotation or re-lock the exact new orientation.
-    LaunchedEffect(configuration.orientation, orientationState.pendingManualOrientation,
-        orientationState.relockAfterManualRotation) {
-        val target = orientationState.pendingManualOrientation ?: return@LaunchedEffect
-        if (configuration.orientation == target) {
-            delay(300)
-            activity?.requestedOrientation = if (orientationState.relockAfterManualRotation) {
-                ActivityInfo.SCREEN_ORIENTATION_LOCKED
-            } else {
-                ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
-            }
-            orientationState.pendingManualOrientation = null
-            orientationState.relockAfterManualRotation = false
         }
     }
 
@@ -761,6 +752,7 @@ private fun PlayerContent(
     val backgroundPlaybackAllowed = rememberUpdatedState(backgroundPlaybackEnabled)
     DisposableEffect(lifecycleOwner, exoPlayer) {
         var resumeWhenActive = false
+        var pausedWhenInactive = false
         var pauseControlRevision = 0L
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -770,14 +762,18 @@ private fun PlayerContent(
                     val keepPlaying = enteringOrInPip ||
                         (backgroundAudioOnly.value && backgroundPlaybackAllowed.value)
                     resumeWhenActive = !keepPlaying && exoPlayer.playWhenReady
+                    pausedWhenInactive = !keepPlaying && !exoPlayer.playWhenReady
                     pauseControlRevision = PlayerPlaybackService.externalControlRevision
                     if (!keepPlaying) exoPlayer.pause()
                     saveLibraryProgress(true)
                 }
                 Lifecycle.Event.ON_RESUME -> {
-                    if (resumeWhenActive &&
-                        pauseControlRevision == PlayerPlaybackService.externalControlRevision) exoPlayer.play()
+                    if (pauseControlRevision == PlayerPlaybackService.externalControlRevision) {
+                        if (pausedWhenInactive) exoPlayer.pause()
+                        else if (resumeWhenActive) exoPlayer.play()
+                    }
                     resumeWhenActive = false
+                    pausedWhenInactive = false
                 }
                 else -> Unit
             }
@@ -1098,32 +1094,12 @@ private fun PlayerContent(
                 } else {
                     PlayerTopBar(
                         isLandscape = isLandscape,
-                        rotationLocked = orientationState.locked,
+                        orientationMode = orientationMode,
                         playbackSpeed = playbackSpeed,
-                        onRotate = {
-                            val target = if (isLandscape) {
-                                Configuration.ORIENTATION_PORTRAIT
-                            } else {
-                                Configuration.ORIENTATION_LANDSCAPE
-                            }
-                            orientationState.pendingManualOrientation = target
-                            orientationState.relockAfterManualRotation = orientationState.locked
-                            activity?.requestedOrientation = if (target == Configuration.ORIENTATION_LANDSCAPE) {
-                                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                            } else {
-                                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                            }
-                        },
+                        onOrientationSelected = onOrientationModeSelected,
                         onToggleRotationLock = {
-                            orientationState.pendingManualOrientation = null
-                            orientationState.relockAfterManualRotation = false
-                            val shouldLock = !orientationState.locked
-                            orientationState.locked = shouldLock
-                            activity?.requestedOrientation = if (shouldLock) {
-                                ActivityInfo.SCREEN_ORIENTATION_LOCKED
-                            } else {
-                                ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
-                            }
+                            onOrientationModeSelected(if (orientationMode.locked) PlayerOrientationMode.AUTOMATIC
+                                else PlayerOrientationMode.lockCurrent(activity))
                         },
                         onDownload = onDownload,
                         onPip = if (!audioOnly && playbackError == null && activity is MainActivity &&

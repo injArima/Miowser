@@ -43,6 +43,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     private var fallbackOwner: Owner? = null // Release-only identity; cannot receive player commands.
     private var nativeFullscreen = false
     private val recovery = BrowserVideoRecovery()
+    private var pausedBeforeHostPause = false
     private var recoveryTimeout: Runnable? = null
     private var nextCommand = 0L
     private val pending = mutableMapOf<String, Pending>()
@@ -329,6 +330,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     }
 
     fun onHostPaused(pip: Boolean) {
+        pausedBeforeHostPause = playback.intendedPlaying == false
         cancelRecovery()
         recovery.pause()
         ownerMessage("suspendFullscreen", pip = pip)
@@ -349,23 +351,24 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
         }
         recoveryTimeout = timeout
         main.postDelayed(timeout, 4_000)
-        if (!ownerMessage("resumeFullscreen")) {
+        if (!ownerMessage("resumeFullscreen", paused = pausedBeforeHostPause)) {
             clearOwner("The video connection is unavailable. Return to the website.")
         }
+        pausedBeforeHostPause = false
     }
 
     private fun protectedOwner(): LiveVideoId? = owner?.id?.takeIf {
         nativeFullscreen && (recovery.paused || recoveryTimeout != null)
     }
 
-    private fun ownerMessage(type: String, pip: Boolean = false): Boolean {
+    private fun ownerMessage(type: String, pip: Boolean = false, paused: Boolean = false): Boolean {
         val current = owner ?: fallbackOwner?.takeIf { type == "releaseFullscreen" } ?: return false
         val entry = channels.entries.firstOrNull { it.value.frameId == current.id.frameId &&
             it.value.navigation == current.id.navigation && it.value.document == current.id.documentId } ?: return false
         return runCatching {
             entry.key.postMessage(boundMessage(type, entry.value)
                 .put("elementId", current.id.elementId).put("attempt", current.attempt)
-                .put("recoveryId", recovery.requestId).put("pip", pip).toString())
+                .put("recoveryId", recovery.requestId).put("pip", pip).put("paused", paused).toString())
             true
         }.getOrDefault(false)
     }

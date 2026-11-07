@@ -3,7 +3,6 @@ package com.miowser.app.browser.video
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
-import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.media.AudioManager
@@ -34,6 +33,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -122,8 +122,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
     val timeline = remember { BrowserVideoTimelineInteraction() }
     var scrubbing by remember { mutableStateOf(false) }
     var interaction by remember { mutableIntStateOf(0) }
-    var rotationLocked by remember { mutableStateOf(false) }
-    var pendingRotation by remember { mutableStateOf<Boolean?>(null) }
+    var orientationMode by rememberSaveable { mutableStateOf(PlayerOrientationMode.AUTOMATIC) }
     val modal = overlays.isPresent || adjustments || audioPanel || guidanceVisible
     val latestAudioOnly by rememberUpdatedState(state.audioOnly)
     var selectedSubtitleUrl by remember { mutableStateOf<String?>(null) }
@@ -225,7 +224,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
     DisposableEffect(controller, activity) {
         val original = activity?.requestedOrientation
         val originalBrightness = activity?.window?.attributes?.screenBrightness
-        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+        activity?.requestedOrientation = orientationMode.requestedOrientation
         PlayerDisplayPreferenceStore.brightness(context)?.let { saved ->
             activity?.window?.let { window ->
                 window.attributes = window.attributes.apply { screenBrightness = saved }
@@ -241,13 +240,17 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
             if (originalBrightness != null) activity.window.attributes = activity.window.attributes.apply { screenBrightness = originalBrightness }
         }
     }
-    LaunchedEffect(activity, landscape, pendingRotation, rotationLocked) {
-        if (pendingRotation == landscape) {
-            delay(300)
-            activity?.requestedOrientation = if (rotationLocked) ActivityInfo.SCREEN_ORIENTATION_LOCKED
-                else ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
-            pendingRotation = null
+    LaunchedEffect(activity, orientationMode) {
+        activity?.requestedOrientation = orientationMode.requestedOrientation
+    }
+    DisposableEffect(activity, lifecycleOwner, orientationMode) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                activity?.requestedOrientation = orientationMode.requestedOrientation
+            }
         }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     LaunchedEffect(controller, owner, state.controlsEnabled, video.sourceRevision) {
         if (state.controlsEnabled) {
@@ -334,13 +337,12 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                                     .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top))
                                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.End)).padding(UiSpacing.xl))
                             else {
-                                PlayerTopBar(landscape, rotationLocked, video.speed.toFloat(),
-                                    onRotate = {
-                                        interaction++; pendingRotation = !landscape
-                                        activity?.requestedOrientation = if (landscape) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                                    }, onToggleRotationLock = {
-                                        interaction++; pendingRotation = null; rotationLocked = !rotationLocked
-                                        activity?.requestedOrientation = if (rotationLocked) ActivityInfo.SCREEN_ORIENTATION_LOCKED else ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+                                PlayerTopBar(landscape, orientationMode, video.speed.toFloat(),
+                                    onOrientationSelected = { interaction++; orientationMode = it },
+                                    onToggleRotationLock = {
+                                        interaction++
+                                        orientationMode = if (orientationMode.locked) PlayerOrientationMode.AUTOMATIC
+                                            else PlayerOrientationMode.lockCurrent(activity)
                                     }, onDownload = null,
                                     onCaution = {
                                         closeMenus()
