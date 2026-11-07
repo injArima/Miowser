@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -77,26 +78,35 @@ internal fun MiowserConfirmationDialog(
                                 val caution = action.tone == ConfirmationTone.CAUTION
                                 val tint = if (caution) MaterialTheme.colorScheme.error
                                     else MaterialTheme.colorScheme.primary
-                                OutlinedButton(
-                                    onClick = {
-                                        if (action.firstTapDescription != null && !isRevealed) {
-                                            revealedAction = actionIndex
-                                        } else action.onClick()
-                                    },
-                                    enabled = action.enabled,
-                                    modifier = Modifier.weight(1f).heightIn(min = ConfirmationComponentTokens.actionMinHeight),
-                                    shape = MaterialTheme.shapes.extraLarge,
-                                    border = BorderStroke(1.dp, tint.copy(alpha = if (isRevealed)
-                                        ConfirmationComponentTokens.revealedBorderAlpha else ConfirmationComponentTokens.normalBorderAlpha)),
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        containerColor = tint.copy(alpha = if (isRevealed)
-                                            ConfirmationComponentTokens.revealedFillAlpha else if (caution)
-                                            ConfirmationComponentTokens.cautionFillAlpha else ConfirmationComponentTokens.normalFillAlpha),
-                                        contentColor = tint
-                                    )
-                                ) {
-                                    Text(action.label, textAlign = TextAlign.Center,
-                                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                val buttonModifier = Modifier.weight(1f)
+                                    .heightIn(min = ConfirmationComponentTokens.actionMinHeight)
+                                if (isRevealed && action.firstTapDescription != null) {
+                                    FilledTonalButton(onClick = action.onClick,
+                                        enabled = action.enabled, modifier = buttonModifier,
+                                        shape = MaterialTheme.shapes.extraLarge,
+                                        colors = ButtonDefaults.filledTonalButtonColors(
+                                            containerColor = if (caution) MaterialTheme.colorScheme.errorContainer
+                                                else MaterialTheme.colorScheme.secondaryContainer,
+                                            contentColor = if (caution) MaterialTheme.colorScheme.onErrorContainer
+                                                else MaterialTheme.colorScheme.onSecondaryContainer)) {
+                                        Text(action.label, textAlign = TextAlign.Center,
+                                            maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    }
+                                } else {
+                                    OutlinedButton(onClick = {
+                                        if (action.firstTapDescription != null) revealedAction = actionIndex
+                                        else action.onClick()
+                                    }, enabled = action.enabled, modifier = buttonModifier,
+                                        shape = MaterialTheme.shapes.extraLarge,
+                                        border = BorderStroke(1.dp, tint.copy(alpha = ConfirmationComponentTokens.normalBorderAlpha)),
+                                        colors = ButtonDefaults.outlinedButtonColors(
+                                            containerColor = if (caution) MaterialTheme.colorScheme.errorContainer.copy(
+                                                alpha = ConfirmationComponentTokens.cautionFillAlpha)
+                                                else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            contentColor = tint)) {
+                                        Text(action.label, textAlign = TextAlign.Center,
+                                            maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    }
                                 }
                             }
                         }

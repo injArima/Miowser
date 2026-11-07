@@ -30,6 +30,7 @@ These named contracts are in `ComponentTokens.kt`. When changing a component's d
 | Tab history menu | Width 260–320 dp; maximum height 376 dp | Long press navigation popup |
 | Hub library | Grid minimum cell 168 dp, inset 12 dp, bottom clearance 80 dp; folder rail height 56 dp | Library and download grids, folder rail |
 | Hub video card | List artwork 136 × 84 dp; center artwork 76 dp; badge inset 6 × 3 dp; top corners 24 dp; artwork overlay alpha 0.18 | Library grid and list cards |
+| Action buttons | Shape radius 24 dp; minimum target height 48 dp | Shared Material 3 primary, tonal, outlined, text, and caution actions |
 
 Component tokens should reference the primitive spacing, size, and shape scales where the values match. Material theme roles remain the source for colors, type, and default component shapes. Player UI is outside the component-token scope of this pass.
 

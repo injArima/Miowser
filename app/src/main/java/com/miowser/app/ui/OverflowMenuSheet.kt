@@ -51,6 +51,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -493,26 +496,40 @@ private fun MenuTile(
                 }
             )
         }
-    } else {
-        interactionModifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-    }
+    } else interactionModifier
 
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-        modifier = interactionModifier.padding(UiSpacing.xs)
-    ) {
-        Box(Modifier.size(BrowserMenuTokens.tileContentSize).clip(BrowserMenuTokens.tileContentShape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-            contentAlignment = Alignment.Center) {
-            if (badgeCount > 0) {
-                BadgedBox(badge = { Badge { Text(badgeCount.coerceAtMost(99).toString()) } }) {
-                    Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(BrowserMenuTokens.tileIconSize))
-                }
-            } else {
-                Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(BrowserMenuTokens.tileIconSize))
+    Box(modifier = interactionModifier, contentAlignment = Alignment.Center) {
+        if (editMode) {
+            Box(Modifier.size(BrowserMenuTokens.tileContentSize)
+                .clip(BrowserMenuTokens.tileContentShape)
+                .background(MaterialTheme.colorScheme.secondaryContainer),
+                contentAlignment = Alignment.Center) {
+                MenuTileGlyph(icon, badgeCount, contentColor)
+            }
+        } else {
+            FilledTonalIconButton(onClick = onClick, enabled = enabled,
+                modifier = Modifier.size(BrowserMenuTokens.tileContentSize),
+                shape = BrowserMenuTokens.tileContentShape,
+                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer)) {
+                MenuTileGlyph(icon, badgeCount)
             }
         }
+    }
+}
+
+@Composable
+private fun MenuTileGlyph(icon: ImageVector, badgeCount: Int,
+    tint: androidx.compose.ui.graphics.Color = LocalContentColor.current) {
+    if (badgeCount > 0) {
+        BadgedBox(badge = { Badge { Text(badgeCount.coerceAtMost(99).toString()) } }) {
+            Icon(icon, contentDescription = null, tint = tint,
+                modifier = Modifier.size(BrowserMenuTokens.tileIconSize))
+        }
+    } else {
+        Icon(icon, contentDescription = null, tint = tint,
+            modifier = Modifier.size(BrowserMenuTokens.tileIconSize))
     }
 }
 

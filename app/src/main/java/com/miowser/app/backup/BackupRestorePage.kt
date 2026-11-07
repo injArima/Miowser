@@ -49,6 +49,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.launch
 import kotlin.coroutines.resume
 import com.miowser.app.ui.theme.UiSpacing
+import com.miowser.app.ui.MiowserActionButton
 
 @Composable
 fun BackupRestorePage(activeDownloads: Boolean, onBack: () -> Unit) {
@@ -213,7 +214,7 @@ fun BackupRestorePage(activeDownloads: Boolean, onBack: () -> Unit) {
     if (finishedRestore) AlertDialog(onDismissRequest = {},
         title = { Text("Restore complete") },
         text = { Text(message ?: "Miowser will close now. Reopen it to load your restored data.") },
-        confirmButton = { TextButton(onClick = {
+        confirmButton = { MiowserActionButton(onClick = {
             var owner: Context? = context
             while (owner is ContextWrapper && owner !is Activity) owner = owner.baseContext
             (owner as? Activity)?.finishAffinity()

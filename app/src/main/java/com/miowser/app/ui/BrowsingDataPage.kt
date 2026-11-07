@@ -51,7 +51,8 @@ fun BrowsingDataPage(onClear: (BrowsingDataSelection) -> Unit, onBack: () -> Uni
             DataChoice("Library records", selected.libraryRecords) {
                 selected = selected.copy(libraryRecords = it)
             }
-            Button(onClick = { confirm = true }, enabled = selected.hasSelection(),
+            MiowserActionButton(onClick = { confirm = true }, enabled = selected.hasSelection(),
+                style = AppButtonStyle.CAUTION,
                 modifier = Modifier.padding(top = UiSpacing.xl)) { Text("Clear selected data") }
         }
     }

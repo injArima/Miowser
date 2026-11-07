@@ -63,11 +63,8 @@ object ConfirmationComponentTokens {
     val verticalPadding = 26.dp
     val actionMinHeight = 52.dp
     val actionGap = UiSpacing.compact
-    const val revealedBorderAlpha = 0.8f
     const val normalBorderAlpha = 0.38f
-    const val revealedFillAlpha = 0.22f
     const val cautionFillAlpha = 0.12f
-    const val normalFillAlpha = 0.08f
 }
 
 object SnackbarComponentTokens {
@@ -108,4 +105,10 @@ object HubVideoCardTokens {
     val badgeVerticalPadding = 3.dp
     val artworkTopShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
     const val artworkOverlayAlpha = 0.18f
+}
+
+/** Material 3 text-button family; visual emphasis follows the action's role. */
+object ActionButtonTokens {
+    val shape = UiCorners.r24
+    val minHeight = UiControlSize.touchTarget
 }

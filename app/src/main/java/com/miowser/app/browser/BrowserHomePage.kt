@@ -94,6 +94,8 @@ import com.miowser.app.ui.theme.LocalMotionPolicy
 import com.miowser.app.ui.theme.MotionTokens
 import com.miowser.app.ui.theme.UiControlSize
 import com.miowser.app.ui.theme.BrowserHomeTokens
+import com.miowser.app.ui.AppButtonStyle
+import com.miowser.app.ui.MiowserActionButton
 import com.miowser.app.ui.theme.UiCorners
 import com.miowser.app.ui.theme.UiIconSize
 import com.miowser.app.ui.theme.UiSpacing
@@ -723,8 +725,8 @@ private fun SpeedDialEditorDialog(
                 )
             }
         },
-        confirmButton = { TextButton(enabled = canSave, onClick = { onSave(savedTitle, url) }) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        confirmButton = { MiowserActionButton(enabled = canSave, onClick = { onSave(savedTitle, url) }) { Text("Save") } },
+        dismissButton = { MiowserActionButton(onClick = onDismiss, style = AppButtonStyle.CAUTION) { Text("Cancel") } }
     )
 }
 
@@ -749,8 +751,8 @@ private fun FolderEditorDialog(
             )
         },
         confirmButton = {
-            TextButton(enabled = name.isNotBlank(), onClick = { onSave(name) }) { Text("Save") }
+            MiowserActionButton(enabled = name.isNotBlank(), onClick = { onSave(name) }) { Text("Save") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { MiowserActionButton(onClick = onDismiss, style = AppButtonStyle.CAUTION) { Text("Cancel") } }
     )
 }

@@ -52,6 +52,7 @@ import com.miowser.app.settings.isValidCustomSearchUrl
 import kotlin.math.roundToInt
 import com.miowser.app.ui.theme.UiIconSize
 import com.miowser.app.ui.theme.UiSpacing
+import com.miowser.app.ui.MiowserActionButton
 
 /** Browser preferences apply immediately; editable URL templates have explicit Save actions. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -124,7 +125,7 @@ fun SettingsPage(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
-                        TextButton(
+                        MiowserActionButton(
                             onClick = { onUpdate(settings.copy(customSearchUrl = customSearchDraft)) },
                             enabled = valid && customSearchDraft != settings.customSearchUrl
                         ) { Text("Save custom search") }
@@ -147,7 +148,7 @@ fun SettingsPage(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
-                        TextButton(
+                        MiowserActionButton(
                             onClick = { onUpdate(settings.copy(homePageUrl = homePageDraft)) },
                             enabled = homePageDraft.isNotBlank() && homePageDraft != settings.homePageUrl
                         ) { Text("Save home page") }

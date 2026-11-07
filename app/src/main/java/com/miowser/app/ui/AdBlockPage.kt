@@ -61,6 +61,8 @@ import java.io.ByteArrayOutputStream
 import java.text.DateFormat
 import java.util.Date
 import com.miowser.app.ui.theme.UiSpacing
+import com.miowser.app.ui.AppButtonStyle
+import com.miowser.app.ui.MiowserActionButton
 
 private const val MAX_IMPORTED_RULE_BYTES = 256 * 1024
 
@@ -197,10 +199,11 @@ fun AdBlockPage(
             }
 
             item {
-                FilledTonalButton(
+                MiowserActionButton(
                     onClick = onRefreshAll,
                     enabled = !isRefreshing && !isAddingLists,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    style = AppButtonStyle.TONAL
                 ) {
                     if (isRefreshingAll) {
                         CircularProgressIndicator(
@@ -528,12 +531,12 @@ private fun RenameSubscriptionDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = { onRename(name.trim()) },
+            MiowserActionButton(onClick = { onRename(name.trim()) },
                 enabled = name.trim().isNotEmpty() && name.trim() != subscription.name) {
                 Text("Rename")
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { MiowserActionButton(onClick = onDismiss, style = AppButtonStyle.CAUTION) { Text("Cancel") } }
     )
 }
 
@@ -561,9 +564,9 @@ private fun AddSubscriptionDialog(onAdd: (String, String) -> Unit, onDismiss: ()
             }
         },
         confirmButton = {
-            TextButton(onClick = { onAdd(name, url) }, enabled = url.isNotBlank()) { Text("Add") }
+            MiowserActionButton(onClick = { onAdd(name, url) }, enabled = url.isNotBlank()) { Text("Add") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { MiowserActionButton(onClick = onDismiss, style = AppButtonStyle.CAUTION) { Text("Cancel") } }
     )
 }
 

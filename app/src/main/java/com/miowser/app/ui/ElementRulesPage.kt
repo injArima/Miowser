@@ -79,8 +79,9 @@ fun ElementRulesPage(
                                 Text(host, style = MaterialTheme.typography.titleMedium,
                                     modifier = Modifier.weight(1f), maxLines = 1,
                                     overflow = TextOverflow.Ellipsis)
-                                TextButton(onClick = { onRevertSite(host) }) {
-                                    Text("Revert all", color = MaterialTheme.colorScheme.error)
+                                MiowserActionButton(onClick = { onRevertSite(host) },
+                                    style = AppButtonStyle.CAUTION) {
+                                    Text("Revert all")
                                 }
                             }
                             siteRules.forEachIndexed { index, rule ->
@@ -124,8 +125,9 @@ private fun ElementRuleManagementRow(
                     label = { Text(if (action == ElementRuleAction.HIDE) "Hide" else "Delete") }
                 )
             }
-            TextButton(onClick = { onRevert(rule) }) {
-                Text("Revert", color = MaterialTheme.colorScheme.error)
+            MiowserActionButton(onClick = { onRevert(rule) },
+                style = AppButtonStyle.CAUTION) {
+                Text("Revert")
             }
         }
     }

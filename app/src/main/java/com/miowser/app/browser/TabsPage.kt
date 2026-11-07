@@ -44,7 +44,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconToggleButton
+import androidx.compose.material3.FilledTonalIconToggleButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -154,28 +155,29 @@ fun TabsPage(
                             })
                     }
                 }
-                IconToggleButton(
+                FilledTonalIconToggleButton(
                     checked = section == 0,
-                    onCheckedChange = { section = 0 },
-                    modifier = Modifier.clip(UiCorners.r14).background(
-                        if (section == 0) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                        UiCorners.r14
-                    )
+                    onCheckedChange = { if (it) section = 0 },
+                    colors = IconButtonDefaults.filledTonalIconToggleButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        checkedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        checkedContentColor = MaterialTheme.colorScheme.onPrimaryContainer)
                 ) {
-                    Icon(Icons.Rounded.Language, contentDescription = "Browsing tabs",
-                        tint = if (section == 0) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(Icons.Rounded.Language, contentDescription = "Browsing tabs")
                 }
-                IconToggleButton(
+                FilledTonalIconToggleButton(
                     checked = section == 1,
-                    onCheckedChange = { section = 1 },
-                    modifier = Modifier.padding(end = UiSpacing.s).clip(UiCorners.r14).background(
-                        if (section == 1) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                        UiCorners.r14
-                    )
+                    onCheckedChange = { if (it) section = 1 },
+                    modifier = Modifier.padding(end = UiSpacing.s),
+                    colors = IconButtonDefaults.filledTonalIconToggleButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        checkedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        checkedContentColor = MaterialTheme.colorScheme.onPrimaryContainer)
                 ) {
                     IncognitoIcon(
-                        tint = if (section == 1) MaterialTheme.colorScheme.primary
+                        tint = if (section == 1) MaterialTheme.colorScheme.onPrimaryContainer
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(UiIconSize.standard).semantics { contentDescription = "Private tabs" }
                     )

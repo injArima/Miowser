@@ -43,6 +43,8 @@ import com.miowser.app.ui.ConfirmationAction
 import com.miowser.app.ui.MiowserConfirmationDialog
 import com.miowser.app.ui.theme.UiIconSize
 import com.miowser.app.ui.theme.UiSpacing
+import com.miowser.app.ui.AppButtonStyle
+import com.miowser.app.ui.MiowserActionButton
 
 private enum class FolderRuleKind { WEBSITE, TITLE }
 
@@ -237,8 +239,8 @@ internal fun LibraryFolderRuleEditor(folderId: String, onDismiss: () -> Unit) {
                     }
                 }
             },
-            confirmButton = { TextButton(enabled = !busy && kind != null, onClick = ::saveRule) { Text("Save rule") } },
-            dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+            confirmButton = { MiowserActionButton(enabled = !busy && kind != null, onClick = ::saveRule) { Text("Save rule") } },
+            dismissButton = { MiowserActionButton(onClick = onDismiss, style = AppButtonStyle.CAUTION) { Text("Cancel") } }
         )
     }
 }

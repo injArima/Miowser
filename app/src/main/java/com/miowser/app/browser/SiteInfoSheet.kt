@@ -65,6 +65,8 @@ import kotlin.math.roundToInt
 import com.miowser.app.ui.theme.UiCorners
 import com.miowser.app.ui.theme.UiIconSize
 import com.miowser.app.ui.theme.UiSpacing
+import com.miowser.app.ui.AppButtonStyle
+import com.miowser.app.ui.MiowserActionButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -541,8 +543,8 @@ private fun ElementRuleRow(
                     label = { Text(if (action == ElementRuleAction.HIDE) "Hide" else "Delete") }
                 )
             }
-            TextButton(onClick = onRevert) {
-                Text("Revert", color = MaterialTheme.colorScheme.error)
+            MiowserActionButton(onClick = onRevert, style = AppButtonStyle.CAUTION) {
+                Text("Revert")
             }
         }
     }

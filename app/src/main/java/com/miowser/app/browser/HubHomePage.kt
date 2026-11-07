@@ -183,6 +183,8 @@ import com.miowser.app.ui.theme.UiElevation
 import com.miowser.app.ui.theme.UiIconSize
 import com.miowser.app.ui.theme.UiSpacing
 import com.miowser.app.ui.theme.HubLibraryTokens
+import com.miowser.app.ui.AppButtonStyle
+import com.miowser.app.ui.MiowserActionButton
 
 enum class HubSection { LIBRARY, DOWNLOADS, MORE }
 enum class HubDownloadSection { DOWNLOADING, DOWNLOADED }
@@ -656,21 +658,21 @@ fun HubHomePage(
             else "Primary places it at the Library root. Subfolder places it inside ${LibraryFolders.entries.firstOrNull { it.id == importLocationParent }?.name ?: "the current folder"}.") },
         confirmButton = {
             Row {
-                TextButton(onClick = {
+                MiowserActionButton(onClick = {
                     importLocationVisible = false
                     importParentId = null
                     importFolderPicker.launch(null)
-                }) { Text("Primary") }
-                TextButton(enabled = importLocationParent != null || LibraryFolders.entries.isNotEmpty(), onClick = {
+                }, style = AppButtonStyle.TONAL) { Text("Primary") }
+                MiowserActionButton(enabled = importLocationParent != null || LibraryFolders.entries.isNotEmpty(), onClick = {
                     importLocationVisible = false
                     if (importLocationParent != null) {
                         importParentId = importLocationParent
                         importFolderPicker.launch(null)
                     } else choosingImportParent = true
-                }) { Text("Subfolder") }
+                }, style = AppButtonStyle.OUTLINED) { Text("Subfolder") }
             }
         },
-        dismissButton = { TextButton(onClick = { importLocationVisible = false }) { Text("Cancel") } }
+        dismissButton = { MiowserActionButton(onClick = { importLocationVisible = false }, style = AppButtonStyle.CAUTION) { Text("Cancel") } }
     )
     if (choosingImportParent) ExpressiveBottomSheet(onDismissRequest = { choosingImportParent = false }) {
         ExpressiveSheetHeading("Choose parent folder")

@@ -27,6 +27,8 @@ import com.miowser.app.ui.theme.UiCorners
 import com.miowser.app.ui.theme.UiElevation
 import com.miowser.app.ui.theme.UiIconSize
 import com.miowser.app.ui.theme.UiSpacing
+import com.miowser.app.ui.AppButtonStyle
+import com.miowser.app.ui.MiowserActionButton
 
 @Composable
 fun ElementPickerPrompt(onCancel: () -> Unit, modifier: Modifier = Modifier) {
@@ -59,12 +61,9 @@ fun ElementPickerPrompt(onCancel: () -> Unit, modifier: Modifier = Modifier) {
                 Text("Tap a page element to select it", style = MaterialTheme.typography.bodySmall,
                     color = colors.onSurfaceVariant)
             }
-            TextButton(
+            MiowserActionButton(
                 onClick = onCancel,
-                colors = ButtonDefaults.textButtonColors(
-                    containerColor = colors.errorContainer,
-                    contentColor = colors.onErrorContainer
-                )
+                style = AppButtonStyle.CAUTION
             ) {
                 Text("Cancel")
             }

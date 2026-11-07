@@ -69,6 +69,8 @@ import com.miowser.app.ui.theme.MotionTokens
 import com.miowser.app.ui.theme.UiControlSize
 import com.miowser.app.ui.theme.UiIconSize
 import com.miowser.app.ui.theme.UiSpacing
+import com.miowser.app.ui.AppButtonStyle
+import com.miowser.app.ui.MiowserActionButton
 
 internal const val UNFILED_FOLDER_ID = ""
 
@@ -199,11 +201,11 @@ internal fun LibraryFolderStrip(
                     error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
             },
-            confirmButton = { TextButton(onClick = {
+            confirmButton = { MiowserActionButton(onClick = {
                 if (LibraryFolders.rename(context, folder.id, editedName)) renaming = null
                 else error = "Enter a unique name in this folder"
             }) { Text("Save") } },
-            dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } }
+            dismissButton = { MiowserActionButton(onClick = { renaming = null }, style = AppButtonStyle.CAUTION) { Text("Cancel") } }
         )
     }
     deleting?.let { folder ->
@@ -404,11 +406,11 @@ internal fun LibraryFolderCreationFlow(parentId: String?, onFinished: () -> Unit
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },
-        confirmButton = { TextButton(onClick = {
+        confirmButton = { MiowserActionButton(onClick = {
             if (LibraryFolders.add(context, name, parentId = parentId) != null) onFinished()
             else error = "Enter a unique name in this folder"
         }) { Text("Create") } },
-        dismissButton = { TextButton(onClick = onFinished) { Text("Cancel") } }
+        dismissButton = { MiowserActionButton(onClick = onFinished, style = AppButtonStyle.CAUTION) { Text("Cancel") } }
     )
 }
 
@@ -508,11 +510,11 @@ internal fun LibrarySubfolderCard(
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },
-        confirmButton = { TextButton(onClick = {
+        confirmButton = { MiowserActionButton(onClick = {
             if (LibraryFolders.rename(context, folder.id, editedName)) renaming = false
             else error = "Enter a unique name in this folder"
         }) { Text("Save") } },
-        dismissButton = { TextButton(onClick = { renaming = false }) { Text("Cancel") } }
+        dismissButton = { MiowserActionButton(onClick = { renaming = false }, style = AppButtonStyle.CAUTION) { Text("Cancel") } }
     )
     if (deleting) FolderDeleteDialog(folder, onDismiss = { deleting = false }, onDelete = { withVideos ->
         deleting = false

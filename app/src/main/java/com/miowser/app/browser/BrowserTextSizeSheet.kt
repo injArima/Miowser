@@ -11,7 +11,7 @@ import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
@@ -25,6 +25,7 @@ import com.miowser.app.ui.CompactSheetDragHandle
 import com.miowser.app.ui.MiowserBottomSheetShape
 import kotlin.math.roundToInt
 import com.miowser.app.ui.theme.UiSpacing
+import com.miowser.app.ui.MiowserActionButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,12 +44,12 @@ internal fun BrowserTextSizeSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { onChange(textZoomPercent - 10) },
+                OutlinedIconButton(onClick = { onChange(textZoomPercent - 10) },
                     enabled = textZoomPercent > 50) {
                     Icon(Icons.Rounded.Remove, "Decrease text size")
                 }
                 Text("$textZoomPercent%", style = MaterialTheme.typography.headlineSmall)
-                IconButton(onClick = { onChange(textZoomPercent + 10) },
+                OutlinedIconButton(onClick = { onChange(textZoomPercent + 10) },
                     enabled = textZoomPercent < 200) {
                     Icon(Icons.Rounded.Add, "Increase text size")
                 }
@@ -59,7 +60,7 @@ internal fun BrowserTextSizeSheet(
                 modifier = Modifier.fillMaxWidth())
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = { onChange(100) }) { Text("Reset text size") }
-                Button(onClick = onDismiss) { Text("Done") }
+                MiowserActionButton(onClick = onDismiss) { Text("Done") }
             }
         }
     }

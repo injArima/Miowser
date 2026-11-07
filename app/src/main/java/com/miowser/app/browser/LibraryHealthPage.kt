@@ -62,6 +62,8 @@ import com.miowser.app.ui.SimplePageScaffold
 import kotlinx.coroutines.launch
 import com.miowser.app.ui.theme.UiCorners
 import com.miowser.app.ui.theme.UiSpacing
+import com.miowser.app.ui.AppButtonStyle
+import com.miowser.app.ui.MiowserActionButton
 
 private const val MAX_VISIBLE_ISSUES = 20
 
@@ -291,9 +293,8 @@ private fun EntryIssueSection(
                         overflow = TextOverflow.Ellipsis)
                     Row(Modifier.align(Alignment.End)) {
                         TextButton(onClick = { onLocate(entry) }) { Text("Locate") }
-                        TextButton(onClick = { onRemove(entry) }) {
-                            Text("Remove", color = MaterialTheme.colorScheme.error)
-                        }
+                        MiowserActionButton(onClick = { onRemove(entry) },
+                            style = AppButtonStyle.CAUTION) { Text("Remove") }
                     }
                 }
             }
@@ -342,9 +343,8 @@ private fun RemoteWithoutSourceSection(entries: List<LibraryEntry>, onRemove: (L
             ) {
                 Text(entry.title.ifBlank { "Untitled video" }, modifier = Modifier.weight(1f),
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
-                TextButton(onClick = { onRemove(entry) }) {
-                    Text("Remove", color = MaterialTheme.colorScheme.error)
-                }
+                MiowserActionButton(onClick = { onRemove(entry) },
+                    style = AppButtonStyle.CAUTION) { Text("Remove") }
             }
         }
         HiddenIssueCount(entries.size)

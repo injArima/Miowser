@@ -13,6 +13,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.miowser.app.ui.AppButtonStyle
+import com.miowser.app.ui.MiowserActionButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -96,12 +98,13 @@ internal fun BlobMediaActionDialog(
         },
         confirmButton = {
             Column(horizontalAlignment = Alignment.End) {
-                if (!savingToLibrary) TextButton(onClick = onSaveBlob) {
+                if (!savingToLibrary) MiowserActionButton(onClick = onSaveBlob) {
                     Text(if (playing) "Try saving blob, then play" else "Save blob as file")
                 }
-                if (playing) TextButton(onClick = onReturnToPage) { Text("Play on website") }
+                if (playing) MiowserActionButton(onClick = onReturnToPage,
+                    style = AppButtonStyle.OUTLINED) { Text("Play on website") }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { MiowserActionButton(onClick = onDismiss, style = AppButtonStyle.CAUTION) { Text("Cancel") } }
     )
 }
