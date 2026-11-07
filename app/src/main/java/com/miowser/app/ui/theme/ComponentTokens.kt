@@ -44,6 +44,7 @@ object BrowserMenuTokens {
     val tileIconSize = UiIconSize.standard
     val tileShape = UiCorners.r16
     val tileContentShape = UiCorners.r14
+    val tileContentPressedShape = UiCorners.r8
     val sectionShape = UiCorners.r24
     val sectionInset = UiSpacing.s
     val actionIconContainerSize = UiControlSize.action
@@ -110,6 +111,7 @@ object HubVideoCardTokens {
 /** Material 3 text-button family; visual emphasis follows the action's role. */
 object ActionButtonTokens {
     val shape = UiCorners.r24
+    val pressedShape = UiCorners.r12
     val minHeight = UiControlSize.touchTarget
     val cautionOutlineWidth = 1.dp
     const val cautionOutlineAlpha = 0.5f

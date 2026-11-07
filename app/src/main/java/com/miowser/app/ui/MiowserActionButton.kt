@@ -25,23 +25,27 @@ fun MiowserActionButton(
     content: @Composable RowScope.() -> Unit
 ) {
     val buttonModifier = modifier.heightIn(min = ActionButtonTokens.minHeight)
+    val expressiveShapes = ButtonDefaults.shapes(
+        shape = ActionButtonTokens.shape,
+        pressedShape = ActionButtonTokens.pressedShape
+    )
     when (style) {
         AppButtonStyle.PRIMARY -> Button(onClick = onClick, modifier = buttonModifier,
-            enabled = enabled, shape = ActionButtonTokens.shape, content = content)
+            enabled = enabled, shapes = expressiveShapes, content = content)
         AppButtonStyle.TONAL -> FilledTonalButton(onClick = onClick, modifier = buttonModifier,
-            enabled = enabled, shape = ActionButtonTokens.shape, content = content)
+            enabled = enabled, shapes = expressiveShapes, content = content)
         AppButtonStyle.OUTLINED -> OutlinedButton(onClick = onClick, modifier = buttonModifier,
-            enabled = enabled, shape = ActionButtonTokens.shape, content = content)
+            enabled = enabled, shapes = expressiveShapes, content = content)
         AppButtonStyle.TEXT -> TextButton(onClick = onClick, modifier = buttonModifier,
-            enabled = enabled, shape = ActionButtonTokens.shape, content = content)
+            enabled = enabled, shapes = expressiveShapes, content = content)
         AppButtonStyle.CAUTION -> FilledTonalButton(onClick = onClick, modifier = buttonModifier,
-            enabled = enabled, shape = ActionButtonTokens.shape,
+            enabled = enabled, shapes = expressiveShapes,
             colors = ButtonDefaults.filledTonalButtonColors(
                 containerColor = MaterialTheme.colorScheme.errorContainer,
                 contentColor = MaterialTheme.colorScheme.onErrorContainer),
             content = content)
         AppButtonStyle.CAUTION_OUTLINED -> OutlinedButton(onClick = onClick,
-            modifier = buttonModifier, enabled = enabled, shape = ActionButtonTokens.shape,
+            modifier = buttonModifier, enabled = enabled, shapes = expressiveShapes,
             border = BorderStroke(ActionButtonTokens.cautionOutlineWidth, MaterialTheme.colorScheme.error.copy(
                 alpha = ActionButtonTokens.cautionOutlineAlpha)),
             colors = ButtonDefaults.outlinedButtonColors(

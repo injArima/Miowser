@@ -40,6 +40,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.OutlinedTextField
@@ -167,7 +168,8 @@ internal fun LibraryFolderStrip(
         }
         Box {
             FilledTonalIconButton(onClick = { createMenuOpen = true },
-                modifier = Modifier.size(UiControlSize.touchTarget)) {
+                modifier = Modifier.size(UiControlSize.touchTarget),
+                shapes = IconButtonDefaults.shapes()) {
                 Icon(Icons.Rounded.Add, contentDescription = "Create Library folder")
             }
             MiowserDropdownMenu(expanded = createMenuOpen, onDismissRequest = { createMenuOpen = false }) {

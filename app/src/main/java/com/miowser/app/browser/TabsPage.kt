@@ -158,6 +158,7 @@ fun TabsPage(
                 FilledTonalIconToggleButton(
                     checked = section == 0,
                     onCheckedChange = { if (it) section = 0 },
+                    shapes = IconButtonDefaults.toggleableShapes(),
                     colors = IconButtonDefaults.filledTonalIconToggleButtonColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainer,
                         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -169,6 +170,7 @@ fun TabsPage(
                 FilledTonalIconToggleButton(
                     checked = section == 1,
                     onCheckedChange = { if (it) section = 1 },
+                    shapes = IconButtonDefaults.toggleableShapes(),
                     modifier = Modifier.padding(end = UiSpacing.s),
                     colors = IconButtonDefaults.filledTonalIconToggleButtonColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainer,

@@ -28,6 +28,7 @@ import androidx.compose.ui.window.Dialog
 import com.miowser.app.ui.theme.UiElevation
 import com.miowser.app.ui.theme.UiSpacing
 import com.miowser.app.ui.theme.ConfirmationComponentTokens
+import com.miowser.app.ui.theme.ActionButtonTokens
 
 internal enum class ConfirmationTone { NORMAL, CAUTION }
 
@@ -49,6 +50,10 @@ internal fun MiowserConfirmationDialog(
     actions: List<ConfirmationAction>
 ) {
     var revealedAction by remember(title) { mutableIntStateOf(-1) }
+    val actionShapes = ButtonDefaults.shapes(
+        shape = MaterialTheme.shapes.extraLarge,
+        pressedShape = ActionButtonTokens.pressedShape
+    )
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
@@ -83,7 +88,7 @@ internal fun MiowserConfirmationDialog(
                                 if (isRevealed && action.firstTapDescription != null) {
                                     FilledTonalButton(onClick = action.onClick,
                                         enabled = action.enabled, modifier = buttonModifier,
-                                        shape = MaterialTheme.shapes.extraLarge,
+                                        shapes = actionShapes,
                                         colors = ButtonDefaults.filledTonalButtonColors(
                                             containerColor = if (caution) MaterialTheme.colorScheme.errorContainer
                                                 else MaterialTheme.colorScheme.secondaryContainer,
@@ -97,7 +102,7 @@ internal fun MiowserConfirmationDialog(
                                         if (action.firstTapDescription != null) revealedAction = actionIndex
                                         else action.onClick()
                                     }, enabled = action.enabled, modifier = buttonModifier,
-                                        shape = MaterialTheme.shapes.extraLarge,
+                                        shapes = actionShapes,
                                         border = BorderStroke(1.dp, tint.copy(alpha = ConfirmationComponentTokens.normalBorderAlpha)),
                                         colors = ButtonDefaults.outlinedButtonColors(
                                             containerColor = if (caution) MaterialTheme.colorScheme.errorContainer.copy(

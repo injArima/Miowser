@@ -509,7 +509,9 @@ private fun MenuTile(
         } else {
             FilledTonalIconButton(onClick = onClick, enabled = enabled,
                 modifier = Modifier.size(BrowserMenuTokens.tileContentSize),
-                shape = BrowserMenuTokens.tileContentShape,
+                shapes = IconButtonDefaults.shapes(
+                    shape = BrowserMenuTokens.tileContentShape,
+                    pressedShape = BrowserMenuTokens.tileContentPressedShape),
                 colors = IconButtonDefaults.filledTonalIconButtonColors(
                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer)) {

@@ -1,6 +1,6 @@
 # Miowser button roles
 
-Miowser uses Material 3 Compose buttons. The app's own action family is `MiowserActionButton`, with dimensions in `ActionButtonTokens` and colors from `MaterialTheme.colorScheme`. Keep these choices consistent as buttons are added.
+Miowser uses Material 3 Expressive Compose buttons from the coordinated beta BOM. The app's own action family is `MiowserActionButton`, with dimensions and pressed shapes in `ActionButtonTokens` and colors from `MaterialTheme.colorScheme`. Keep these choices consistent as buttons are added. The non-player theme uses Expressive motion and honors Reduce motion.
 
 | Role | Material 3 component | Use in Miowser |
 | --- | --- | --- |
@@ -16,10 +16,11 @@ Miowser uses Material 3 Compose buttons. The app's own action family is `Miowser
 | Frequent shortcut | `FilledTonalIconButton` | Browser quick access; reorder gestures retain their separate edit state. |
 | Main floating creation | `FloatingActionButton` | New tab and primary hub action. |
 | Secondary floating action | `FilledTonalIconButton` | Browser jump to top, which is not a page's primary action. |
-| Option selection | `FilterChip` for wrapping sets; existing Material 3 `SegmentedButton` for the Downloads two-way switch | Settings presets and Downloads. Material 3 Expressive recommends connected button groups in place of segmented buttons; the app currently uses Material 3 1.4.0, which does not expose that component. |
+| Option selection | `FilterChip` for wrapping sets; connected `ToggleButton` pair for Downloads | Settings presets and Downloads. The Downloads pair morphs between selected and unselected shapes. |
 
 The rich and WebView players use Material 3 surfaces for their video-overlay controls because those controls must remain legible over moving video and preserve long-press gestures. The player overlay palette stays separate from the browser and hub theme. Navigation controls with long-press actions also retain their gesture handling.
 
-Sources: [Material 3 buttons](https://m3.material.io/components/buttons), [Android Compose button guidance](https://developer.android.com/develop/ui/compose/components/button), [icon buttons](https://developer.android.com/develop/ui/compose/components/icon-button), [segmented buttons](https://developer.android.com/develop/ui/compose/components/segmented-button).
+Sources: [Material 3 buttons](https://m3.material.io/components/buttons), [Material 3 button groups](https://m3.material.io/components/button-groups), [Compose Material 3 releases](https://developer.android.com/jetpack/androidx/releases/compose-material3), [icon buttons](https://developer.android.com/develop/ui/compose/components/icon-button).
 
 See [the page-by-page button audit](BUTTON_AUDIT_0.1.33.md) for the actual controls changed in versions 0.1.32 and 0.1.33.
+See [the Expressive button changes](BUTTON_AUDIT_0.1.34.md) for version 0.1.34.

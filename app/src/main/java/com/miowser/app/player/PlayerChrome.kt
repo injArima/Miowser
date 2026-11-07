@@ -257,11 +257,25 @@ internal fun PlayerBufferedTimeline(
     onScrubFinished: () -> Unit
 ) {
     val accent = MaterialTheme.colorScheme.primary
+    val timelineRange = 0f..durationMs.coerceAtLeast(1L).toFloat()
+    val sliderState = remember(durationMs) {
+        SliderState(
+            value = positionMs.coerceIn(0L, durationMs.coerceAtLeast(0L)).toFloat(),
+            trackRange = timelineRange
+        )
+    }
+    SideEffect {
+        if (!sliderState.isDragging) {
+            sliderState.value = positionMs.coerceIn(0L, durationMs.coerceAtLeast(0L)).toFloat()
+        }
+    }
     Slider(
-        value = positionMs.coerceIn(0L, durationMs.coerceAtLeast(0L)).toFloat(),
-        onValueChange = { onScrub(it.roundToLong()) },
+        state = sliderState,
+        onValueChange = {
+            sliderState.value = it
+            onScrub(it.roundToLong())
+        },
         onValueChangeFinished = onScrubFinished,
-        valueRange = 0f..durationMs.coerceAtLeast(1L).toFloat(),
         enabled = durationMs > 0 && LocalPlayerControlsActive.current,
         modifier = Modifier.fillMaxWidth().height(38.dp),
         thumb = {

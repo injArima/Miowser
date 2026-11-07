@@ -215,10 +215,7 @@ fun SettingsPage(
                             onUpdate(settings.copy(grabberMinimumDurationSeconds = minimumSeconds))
                         },
                         valueRange = 0f..1_800f,
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
-                        thumb = {
-                            Box(Modifier.size(UiIconSize.standard).background(MaterialTheme.colorScheme.primary, CircleShape))
-                        }
+                        modifier = Modifier.fillMaxWidth().height(56.dp)
                     )
                     Description("Fine tune from Off to 30 minutes in 5-second increments.")
                 }

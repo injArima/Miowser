@@ -8,6 +8,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.miowser.app.ui.theme.UiControlSize
@@ -27,7 +28,8 @@ internal fun SearchFieldActions(
             }
         }
         FilledTonalIconButton(onClick = onSubmit, enabled = submitEnabled,
-            modifier = Modifier.size(UiControlSize.compact)) {
+            modifier = Modifier.size(UiControlSize.compact),
+            shapes = IconButtonDefaults.shapes()) {
             Icon(Icons.AutoMirrored.Rounded.KeyboardReturn, contentDescription = submitDescription)
         }
     }

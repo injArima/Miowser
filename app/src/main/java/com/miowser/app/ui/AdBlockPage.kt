@@ -32,6 +32,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -492,7 +493,8 @@ private fun SubscriptionRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
-                FilledTonalIconButton(onClick = onRefresh, enabled = refreshEnabled) {
+                FilledTonalIconButton(onClick = onRefresh, enabled = refreshEnabled,
+                    shapes = IconButtonDefaults.shapes()) {
                     Icon(Icons.Rounded.Refresh, contentDescription = "Refresh ${subscription.name}")
                 }
                 IconButton(onClick = onRename) {

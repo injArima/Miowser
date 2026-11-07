@@ -3,6 +3,7 @@ package com.miowser.app.ui.theme
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -114,6 +115,8 @@ fun MiowserTheme(
     ProvideMotionPolicy {
         MaterialTheme(
             colorScheme = colorScheme,
+            motionScheme = if (LocalMotionPolicy.current.reduced) MotionScheme.standard()
+                else MotionScheme.expressive(),
             typography = ExpressiveTypography,
             shapes = ExpressiveShapes,
             content = content

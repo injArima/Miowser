@@ -75,9 +75,8 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.ButtonGroupDefaults
+import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Text
@@ -122,6 +121,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.platform.testTag
@@ -1212,23 +1212,24 @@ private fun HubDownloadsTabContent(
     val lists = rememberSaveableStateHolder()
     val view = LocalView.current
     Column(modifier = modifier) {
-        SingleChoiceSegmentedButtonRow(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.l, vertical = UiSpacing.s)
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.l, vertical = UiSpacing.s),
+            horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
         ) {
             HubDownloadSection.entries.forEachIndexed { index, section ->
-                SegmentedButton(
-                    modifier = Modifier.weight(1f).testTag("hub_downloads_${section.name.lowercase()}"),
-                    selected = selectedSection == section,
-                    onClick = {
-                        if (selectedSection != section) {
+                ToggleButton(
+                    modifier = Modifier.weight(1f)
+                        .testTag("hub_downloads_${section.name.lowercase()}")
+                        .semantics { role = Role.RadioButton },
+                    checked = selectedSection == section,
+                    onCheckedChange = { checked ->
+                        if (checked && selectedSection != section) {
                             view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
                             onSectionSelected(section)
                         }
                     },
-                    shape = SegmentedButtonDefaults.itemShape(
-                        index = index,
-                        count = HubDownloadSection.entries.size
-                    )
+                    shapes = if (index == 0) ButtonGroupDefaults.connectedLeadingButtonShapes()
+                        else ButtonGroupDefaults.connectedTrailingButtonShapes()
                 ) {
                     val count = if (section == HubDownloadSection.DOWNLOADING) {
                         downloading.size
