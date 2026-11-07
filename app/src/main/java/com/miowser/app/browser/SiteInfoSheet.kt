@@ -543,7 +543,7 @@ private fun ElementRuleRow(
                     label = { Text(if (action == ElementRuleAction.HIDE) "Hide" else "Delete") }
                 )
             }
-            MiowserActionButton(onClick = onRevert, style = AppButtonStyle.CAUTION) {
+            MiowserActionButton(onClick = onRevert, style = AppButtonStyle.CAUTION_OUTLINED) {
                 Text("Revert")
             }
         }

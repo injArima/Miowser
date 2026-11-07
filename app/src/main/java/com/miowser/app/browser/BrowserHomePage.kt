@@ -726,7 +726,7 @@ private fun SpeedDialEditorDialog(
             }
         },
         confirmButton = { MiowserActionButton(enabled = canSave, onClick = { onSave(savedTitle, url) }) { Text("Save") } },
-        dismissButton = { MiowserActionButton(onClick = onDismiss, style = AppButtonStyle.CAUTION) { Text("Cancel") } }
+        dismissButton = { MiowserActionButton(onClick = onDismiss, style = AppButtonStyle.CAUTION_OUTLINED) { Text("Cancel") } }
     )
 }
 
@@ -753,6 +753,6 @@ private fun FolderEditorDialog(
         confirmButton = {
             MiowserActionButton(enabled = name.isNotBlank(), onClick = { onSave(name) }) { Text("Save") }
         },
-        dismissButton = { MiowserActionButton(onClick = onDismiss, style = AppButtonStyle.CAUTION) { Text("Cancel") } }
+        dismissButton = { MiowserActionButton(onClick = onDismiss, style = AppButtonStyle.CAUTION_OUTLINED) { Text("Cancel") } }
     )
 }

@@ -294,7 +294,7 @@ private fun EntryIssueSection(
                     Row(Modifier.align(Alignment.End)) {
                         TextButton(onClick = { onLocate(entry) }) { Text("Locate") }
                         MiowserActionButton(onClick = { onRemove(entry) },
-                            style = AppButtonStyle.CAUTION) { Text("Remove") }
+                            style = AppButtonStyle.CAUTION_OUTLINED) { Text("Remove") }
                     }
                 }
             }
@@ -344,7 +344,7 @@ private fun RemoteWithoutSourceSection(entries: List<LibraryEntry>, onRemove: (L
                 Text(entry.title.ifBlank { "Untitled video" }, modifier = Modifier.weight(1f),
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 MiowserActionButton(onClick = { onRemove(entry) },
-                    style = AppButtonStyle.CAUTION) { Text("Remove") }
+                    style = AppButtonStyle.CAUTION_OUTLINED) { Text("Remove") }
             }
         }
         HiddenIssueCount(entries.size)

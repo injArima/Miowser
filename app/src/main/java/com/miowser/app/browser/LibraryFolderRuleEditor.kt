@@ -170,7 +170,8 @@ internal fun LibraryFolderRuleEditor(folderId: String, onDismiss: () -> Unit) {
                     }) { Text("Contains any of (OR)") }
                 }
             },
-            dismissButton = { TextButton(onClick = { choosingOperator = false }) { Text("Cancel") } }
+            dismissButton = { MiowserActionButton(onClick = { choosingOperator = false },
+                style = AppButtonStyle.CAUTION_OUTLINED) { Text("Cancel") } }
         )
     } else {
         AlertDialog(
@@ -240,7 +241,7 @@ internal fun LibraryFolderRuleEditor(folderId: String, onDismiss: () -> Unit) {
                 }
             },
             confirmButton = { MiowserActionButton(enabled = !busy && kind != null, onClick = ::saveRule) { Text("Save rule") } },
-            dismissButton = { MiowserActionButton(onClick = onDismiss, style = AppButtonStyle.CAUTION) { Text("Cancel") } }
+            dismissButton = { MiowserActionButton(onClick = onDismiss, style = AppButtonStyle.CAUTION_OUTLINED) { Text("Cancel") } }
         )
     }
 }

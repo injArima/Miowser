@@ -672,7 +672,7 @@ fun HubHomePage(
                 }, style = AppButtonStyle.OUTLINED) { Text("Subfolder") }
             }
         },
-        dismissButton = { MiowserActionButton(onClick = { importLocationVisible = false }, style = AppButtonStyle.CAUTION) { Text("Cancel") } }
+        dismissButton = { MiowserActionButton(onClick = { importLocationVisible = false }, style = AppButtonStyle.CAUTION_OUTLINED) { Text("Cancel") } }
     )
     if (choosingImportParent) ExpressiveBottomSheet(onDismissRequest = { choosingImportParent = false }) {
         ExpressiveSheetHeading("Choose parent folder")

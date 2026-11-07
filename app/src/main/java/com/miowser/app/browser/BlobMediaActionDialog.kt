@@ -105,6 +105,6 @@ internal fun BlobMediaActionDialog(
                     style = AppButtonStyle.OUTLINED) { Text("Play on website") }
             }
         },
-        dismissButton = { MiowserActionButton(onClick = onDismiss, style = AppButtonStyle.CAUTION) { Text("Cancel") } }
+        dismissButton = { MiowserActionButton(onClick = onDismiss, style = AppButtonStyle.CAUTION_OUTLINED) { Text("Cancel") } }
     )
 }

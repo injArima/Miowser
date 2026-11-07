@@ -37,6 +37,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -165,7 +166,8 @@ internal fun LibraryFolderStrip(
             }
         }
         Box {
-            IconButton(onClick = { createMenuOpen = true }) {
+            FilledTonalIconButton(onClick = { createMenuOpen = true },
+                modifier = Modifier.size(UiControlSize.touchTarget)) {
                 Icon(Icons.Rounded.Add, contentDescription = "Create Library folder")
             }
             MiowserDropdownMenu(expanded = createMenuOpen, onDismissRequest = { createMenuOpen = false }) {
@@ -205,7 +207,7 @@ internal fun LibraryFolderStrip(
                 if (LibraryFolders.rename(context, folder.id, editedName)) renaming = null
                 else error = "Enter a unique name in this folder"
             }) { Text("Save") } },
-            dismissButton = { MiowserActionButton(onClick = { renaming = null }, style = AppButtonStyle.CAUTION) { Text("Cancel") } }
+            dismissButton = { MiowserActionButton(onClick = { renaming = null }, style = AppButtonStyle.CAUTION_OUTLINED) { Text("Cancel") } }
         )
     }
     deleting?.let { folder ->
@@ -410,7 +412,7 @@ internal fun LibraryFolderCreationFlow(parentId: String?, onFinished: () -> Unit
             if (LibraryFolders.add(context, name, parentId = parentId) != null) onFinished()
             else error = "Enter a unique name in this folder"
         }) { Text("Create") } },
-        dismissButton = { MiowserActionButton(onClick = onFinished, style = AppButtonStyle.CAUTION) { Text("Cancel") } }
+        dismissButton = { MiowserActionButton(onClick = onFinished, style = AppButtonStyle.CAUTION_OUTLINED) { Text("Cancel") } }
     )
 }
 
@@ -514,7 +516,7 @@ internal fun LibrarySubfolderCard(
             if (LibraryFolders.rename(context, folder.id, editedName)) renaming = false
             else error = "Enter a unique name in this folder"
         }) { Text("Save") } },
-        dismissButton = { MiowserActionButton(onClick = { renaming = false }, style = AppButtonStyle.CAUTION) { Text("Cancel") } }
+        dismissButton = { MiowserActionButton(onClick = { renaming = false }, style = AppButtonStyle.CAUTION_OUTLINED) { Text("Cancel") } }
     )
     if (deleting) FolderDeleteDialog(folder, onDismiss = { deleting = false }, onDelete = { withVideos ->
         deleting = false

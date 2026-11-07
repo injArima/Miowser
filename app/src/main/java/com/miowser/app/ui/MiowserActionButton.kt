@@ -1,5 +1,6 @@
 package com.miowser.app.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.Button
@@ -13,7 +14,7 @@ import androidx.compose.ui.Modifier
 import com.miowser.app.ui.theme.ActionButtonTokens
 
 /** An action's emphasis is chosen at the call site; all variants remain Material 3 buttons. */
-enum class AppButtonStyle { PRIMARY, TONAL, OUTLINED, TEXT, CAUTION }
+enum class AppButtonStyle { PRIMARY, TONAL, OUTLINED, TEXT, CAUTION, CAUTION_OUTLINED }
 
 @Composable
 fun MiowserActionButton(
@@ -38,6 +39,15 @@ fun MiowserActionButton(
             colors = ButtonDefaults.filledTonalButtonColors(
                 containerColor = MaterialTheme.colorScheme.errorContainer,
                 contentColor = MaterialTheme.colorScheme.onErrorContainer),
+            content = content)
+        AppButtonStyle.CAUTION_OUTLINED -> OutlinedButton(onClick = onClick,
+            modifier = buttonModifier, enabled = enabled, shape = ActionButtonTokens.shape,
+            border = BorderStroke(ActionButtonTokens.cautionOutlineWidth, MaterialTheme.colorScheme.error.copy(
+                alpha = ActionButtonTokens.cautionOutlineAlpha)),
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = MaterialTheme.colorScheme.errorContainer.copy(
+                    alpha = ActionButtonTokens.cautionContainerAlpha),
+                contentColor = MaterialTheme.colorScheme.error),
             content = content)
     }
 }

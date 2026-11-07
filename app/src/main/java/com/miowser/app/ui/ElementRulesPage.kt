@@ -80,7 +80,7 @@ fun ElementRulesPage(
                                     modifier = Modifier.weight(1f), maxLines = 1,
                                     overflow = TextOverflow.Ellipsis)
                                 MiowserActionButton(onClick = { onRevertSite(host) },
-                                    style = AppButtonStyle.CAUTION) {
+                                    style = AppButtonStyle.CAUTION_OUTLINED) {
                                     Text("Revert all")
                                 }
                             }
@@ -126,7 +126,7 @@ private fun ElementRuleManagementRow(
                 )
             }
             MiowserActionButton(onClick = { onRevert(rule) },
-                style = AppButtonStyle.CAUTION) {
+                style = AppButtonStyle.CAUTION_OUTLINED) {
                 Text("Revert")
             }
         }

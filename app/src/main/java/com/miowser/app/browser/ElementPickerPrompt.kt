@@ -63,7 +63,7 @@ fun ElementPickerPrompt(onCancel: () -> Unit, modifier: Modifier = Modifier) {
             }
             MiowserActionButton(
                 onClick = onCancel,
-                style = AppButtonStyle.CAUTION
+                style = AppButtonStyle.CAUTION_OUTLINED
             ) {
                 Text("Cancel")
             }

@@ -50,7 +50,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.SmallFloatingActionButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
@@ -2196,7 +2196,7 @@ fun BrowserScreen(
                         .padding(BrowserFloatingActionLayout.EDGE_DP.dp)
                         .zIndex(1f)
                 ) {
-                    SmallFloatingActionButton(
+                    FilledTonalIconButton(
                         onClick = { activeTab?.jumpToTop() },
                         modifier = Modifier.size(BrowserFloatingActionLayout.JUMP_SIZE_DP.dp).testTag("browser_jump_to_top")
                     ) {

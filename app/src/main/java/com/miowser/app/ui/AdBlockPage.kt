@@ -27,6 +27,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
@@ -491,7 +492,7 @@ private fun SubscriptionRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
-                IconButton(onClick = onRefresh, enabled = refreshEnabled) {
+                FilledTonalIconButton(onClick = onRefresh, enabled = refreshEnabled) {
                     Icon(Icons.Rounded.Refresh, contentDescription = "Refresh ${subscription.name}")
                 }
                 IconButton(onClick = onRename) {
@@ -536,7 +537,7 @@ private fun RenameSubscriptionDialog(
                 Text("Rename")
             }
         },
-        dismissButton = { MiowserActionButton(onClick = onDismiss, style = AppButtonStyle.CAUTION) { Text("Cancel") } }
+        dismissButton = { MiowserActionButton(onClick = onDismiss, style = AppButtonStyle.CAUTION_OUTLINED) { Text("Cancel") } }
     )
 }
 
@@ -566,7 +567,7 @@ private fun AddSubscriptionDialog(onAdd: (String, String) -> Unit, onDismiss: ()
         confirmButton = {
             MiowserActionButton(onClick = { onAdd(name, url) }, enabled = url.isNotBlank()) { Text("Add") }
         },
-        dismissButton = { MiowserActionButton(onClick = onDismiss, style = AppButtonStyle.CAUTION) { Text("Cancel") } }
+        dismissButton = { MiowserActionButton(onClick = onDismiss, style = AppButtonStyle.CAUTION_OUTLINED) { Text("Cancel") } }
     )
 }
 

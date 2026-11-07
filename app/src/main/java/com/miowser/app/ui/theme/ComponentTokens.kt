@@ -111,4 +111,7 @@ object HubVideoCardTokens {
 object ActionButtonTokens {
     val shape = UiCorners.r24
     val minHeight = UiControlSize.touchTarget
+    val cautionOutlineWidth = 1.dp
+    const val cautionOutlineAlpha = 0.5f
+    const val cautionContainerAlpha = 0.15f
 }
