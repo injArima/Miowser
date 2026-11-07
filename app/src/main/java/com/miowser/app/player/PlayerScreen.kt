@@ -963,11 +963,13 @@ private fun PlayerContent(
     val togglePlayback: () -> Boolean = {
         if (exoPlayer.playWhenReady) {
             exoPlayer.pause()
+            isPlaying = false
             controlsActivity++ // Cancel a pending auto-hide if pause lands on its timeout.
             false
         } else {
             if (playbackEnded) exoPlayer.seekTo(0L)
             exoPlayer.play()
+            isPlaying = true
             true
         }
     }
@@ -1131,7 +1133,7 @@ private fun PlayerContent(
                         modifier = Modifier.align(Alignment.TopCenter)
                     )
 
-                    PlayerCenterControls(
+                    if (controlsVisible) PlayerCenterControls(
                         isPlaying = isPlaying,
                         isBuffering = isBuffering,
                         playlistActive = playlist.isNotEmpty(),
@@ -1245,7 +1247,8 @@ private fun PlayerContent(
             }
         }
 
-        gestureFeedback?.let { feedback ->
+        gestureFeedback?.takeUnless { controlsVisible &&
+            (it.kind == PlayerGestureKind.PLAY || it.kind == PlayerGestureKind.PAUSE) }?.let { feedback ->
             PlayerGestureFeedbackOverlay(
                 feedback = feedback,
                 modifier = when (feedback.kind) {

@@ -32,7 +32,8 @@ internal data class BrowserVideoPlaybackState(
     val pendingSeekMs: Long? = null,
     val message: String? = null,
     val phase: BrowserVideoPhase = BrowserVideoPhase.IDLE,
-    val audioOnly: Boolean = false
+    val audioOnly: Boolean = false,
+    val pendingPlaying: Boolean? = null
 ) {
     val controlsEnabled: Boolean get() = session != null && phase == BrowserVideoPhase.ACTIVE
     val canSeek: Boolean get() = controlsEnabled && session?.state?.browserSeekWindow()?.durationMs?.let { it > 0 } == true
@@ -63,6 +64,7 @@ internal class BrowserVideoController : BrowserPlaybackControls {
     override val state = mutable.asStateFlow()
     private var sender: ((BrowserVideoCommand) -> Boolean)? = null
     private var desiredPlaying: Boolean? = null
+    private var desiredPlayingSinceMs = 0L
     val intendedPlaying: Boolean? get() = desiredPlaying ?: mutable.value.session?.state?.playing
 
     fun connect(sender: (BrowserVideoCommand) -> Boolean) { this.sender = sender }
@@ -77,8 +79,12 @@ internal class BrowserVideoController : BrowserPlaybackControls {
     fun sample(session: LiveVideoSession) {
         if (mutable.value.session?.id != session.id) return
         val changed = mutable.value.session?.state?.sourceRevision != session.state.sourceRevision
-        if (changed || desiredPlaying == session.state.playing) desiredPlaying = null
+        if (changed || desiredPlaying == session.state.playing ||
+            (desiredPlaying != null && System.nanoTime() / 1_000_000L - desiredPlayingSinceMs > 1_500L)) {
+            desiredPlaying = null
+        }
         mutable.value = mutable.value.copy(session = session,
+            pendingPlaying = desiredPlaying,
             pendingSeekMs = if (changed) null else mutable.value.pendingSeekMs,
             message = if (changed) null else mutable.value.message)
     }
@@ -93,7 +99,7 @@ internal class BrowserVideoController : BrowserPlaybackControls {
     private fun transition(phase: BrowserVideoPhase) {
         if (mutable.value.session == null) return
         desiredPlaying = null
-        mutable.value = mutable.value.copy(phase = phase, pendingSeekMs = null, message = null)
+        mutable.value = mutable.value.copy(phase = phase, pendingSeekMs = null, pendingPlaying = null, message = null)
     }
     fun disconnect() { detach(); sender = null }
 
@@ -102,9 +108,22 @@ internal class BrowserVideoController : BrowserPlaybackControls {
         val sample = mutable.value.session?.state ?: return
         val target = !(desiredPlaying ?: sample.playing)
         desiredPlaying = target
-        if (!send(if (target) BrowserVideoAction.PLAY else BrowserVideoAction.PAUSE)) desiredPlaying = null
+        desiredPlayingSinceMs = System.nanoTime() / 1_000_000L
+        mutable.value = mutable.value.copy(pendingPlaying = target)
+        if (!send(if (target) BrowserVideoAction.PLAY else BrowserVideoAction.PAUSE)) {
+            desiredPlaying = null
+            mutable.value = mutable.value.copy(pendingPlaying = null)
+        }
     }
-    override fun pause() { desiredPlaying = false; send(BrowserVideoAction.PAUSE) }
+    override fun pause() {
+        desiredPlaying = false
+        desiredPlayingSinceMs = System.nanoTime() / 1_000_000L
+        mutable.value = mutable.value.copy(pendingPlaying = false)
+        if (!send(BrowserVideoAction.PAUSE)) {
+            desiredPlaying = null
+            mutable.value = mutable.value.copy(pendingPlaying = null)
+        }
+    }
     override fun skip(deltaMs: Long) {
         if (!mutable.value.canSeek) return
         val position = mutable.value.session?.state?.positionMs ?: return
@@ -153,8 +172,9 @@ internal class BrowserVideoController : BrowserPlaybackControls {
 
     fun completed(action: BrowserVideoAction, ok: Boolean) {
         if (mutable.value.session == null) return
-        if (action.family == "transport") desiredPlaying = null
+        if (action.family == "transport" && !ok) desiredPlaying = null
         mutable.value = mutable.value.copy(
+            pendingPlaying = desiredPlaying,
             pendingSeekMs = if (action.family == "seek") null else mutable.value.pendingSeekMs,
             message = if (ok) null else when (action.family) {
                 "seek" -> "The website didn't confirm that seek. Try another position."

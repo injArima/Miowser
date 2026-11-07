@@ -313,7 +313,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                     } }, durationMs = { controller.state.value.session?.state?.browserSeekWindow()?.durationMs ?: 0L },
                     onSingleTap = { interaction++; visible = !visible },
                     onTogglePlayPause = {
-                        val playing = controller.state.value.session?.state?.playing == true
+                        val playing = controller.state.value.let { it.pendingPlaying ?: it.session?.state?.playing } == true
                         act(controller::playPause); !playing
                     }, onStartHoldToSpeed = { speedHold.start(controller).also { holdingSpeed = it } },
                     onStopHoldToSpeed = { speedHold.stop(controller); holdingSpeed = false },
@@ -362,7 +362,8 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                                     },
                                     onOpenPlaylist = null, playlistFocus = playlistFocus, playlistPosition = 0, playlistSize = 0,
                                     onLock = { locked = true; closeMenus() }, onDismiss = onExit, modifier = Modifier.align(Alignment.TopCenter))
-                                PlayerCenterControls(video.playing, video.buffering, false, null, null,
+                                if (visible) PlayerCenterControls(state.pendingPlaying ?: video.playing,
+                                    video.buffering, false, null, null,
                                     onReplay = { skip(-10_000) }, onPlayPause = { act(controller::playPause) },
                                     onForward = { skip(10_000) }, modifier = Modifier.align(Alignment.Center), seekEnabled = state.canSeek,
                                     showSeekControls = state.canSeek)
@@ -389,7 +390,8 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                         }
                     }
                 }
-                if (!locked && !modal) feedback?.let {
+                if (!locked && !modal) feedback?.takeUnless { visible &&
+                    (it.kind == PlayerGestureKind.PLAY || it.kind == PlayerGestureKind.PAUSE) }?.let {
                     PlayerGestureFeedbackOverlay(it, when (it.kind) {
                         PlayerGestureKind.BRIGHTNESS -> Modifier.align(Alignment.CenterStart).padding(start = 28.dp)
                         PlayerGestureKind.VOLUME -> Modifier.align(Alignment.CenterEnd).padding(end = 28.dp)
