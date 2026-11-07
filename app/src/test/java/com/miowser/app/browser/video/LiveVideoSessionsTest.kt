@@ -7,12 +7,14 @@ class LiveVideoSessionsTest {
     @Test fun companionHandoffRequiresActualLongAudiblePlayback() {
         val episode = video().copy(durationMs = 1_200_000)
         assertTrue(episode.isCompanionPlaybackCandidate())
-        assertFalse(episode.copy(muted = true).isCompanionPlaybackCandidate())
+        assertTrue(episode.copy(muted = true).isCompanionPlaybackCandidate())
         assertFalse(episode.copy(playing = false).isCompanionPlaybackCandidate())
         assertFalse(episode.copy(durationMs = 20_000).isCompanionPlaybackCandidate())
+        assertFalse(episode.copy(durationMs = 20_000, muted = true).isCompanionPlaybackCandidate())
         assertFalse(episode.copy(videoWidth = 160, videoHeight = 90).isCompanionPlaybackCandidate())
         assertFalse(episode.copy(readyState = 1).isCompanionPlaybackCandidate())
         assertTrue(episode.copy(durationMs = null).isCompanionPlaybackCandidate())
+        assertFalse(episode.copy(durationMs = null, muted = true).isCompanionPlaybackCandidate())
     }
 
     @Test fun aLongBackgroundOrPipSessionProtectsOnlyItsExactOwnerFromLeaseExpiry() {

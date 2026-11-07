@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import com.miowser.app.ui.ExpressiveBottomSheet
 import kotlin.math.roundToInt
 import com.miowser.app.ui.theme.UiSpacing
+import com.miowser.app.settings.AppSettings
 
 /** Visible, labelled alternatives to the brightness/volume gestures. */
 @Composable
@@ -29,7 +30,7 @@ internal fun PlayerAdjustmentsSheet(activity: Activity?, onDismiss: () -> Unit,
     var volume by remember { mutableFloatStateOf(audio.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat()) }
     ExpressiveBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(horizontal = UiSpacing.l), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Brightness & volume", style = MaterialTheme.typography.titleLarge)
+            Text("Player adjustments", style = MaterialTheme.typography.titleLarge)
             Text("Brightness ${(brightness * 100).roundToInt()}%")
             Slider(value = brightness, valueRange = 0.01f..1f, enabled = activity != null,
                 modifier = Modifier.semantics { contentDescription = "Screen brightness" },
@@ -47,6 +48,19 @@ internal fun PlayerAdjustmentsSheet(activity: Activity?, onDismiss: () -> Unit,
                     volume = value; onVolumeInteraction()
                     audio.setStreamVolume(AudioManager.STREAM_MUSIC, value.roundToInt(), 0)
                 })
+            HorizontalDivider(modifier = Modifier.padding(vertical = UiSpacing.s))
+            val companionBrowsing = AppSettings.current.companionBrowsingEnabled
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(UiSpacing.m)) {
+                Column(Modifier.weight(1f)) {
+                    Text("Browse source while playing", style = MaterialTheme.typography.titleSmall)
+                    Text("Pause this player while you choose the next video from its page.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = companionBrowsing, onCheckedChange = { enabled ->
+                    AppSettings.update(context) { it.copy(companionBrowsingEnabled = enabled) }
+                })
+            }
         }
     }
 }

@@ -57,10 +57,10 @@ data class LiveVideoSession(
 
 internal data class CompanionVideoKey(val id: LiveVideoId, val sourceRevision: Long)
 
-/** A real, audible playback surface, rather than a muted preview or a short advertisement. */
+/** A playing episode, including known long videos that begin muted; short previews stay excluded. */
 internal fun LiveVideoState.isCompanionPlaybackCandidate(): Boolean =
-    playing && !muted && videoWidth >= 240 && videoHeight >= 135 && readyState >= 2 &&
-        (durationMs == null || durationMs >= 60_000L)
+    playing && videoWidth >= 240 && videoHeight >= 135 && readyState >= 2 &&
+        (durationMs == null && !muted || durationMs != null && durationMs >= 60_000L)
 
 /** Pure, bounded owner-thread registry. Rendering cadence does not drive browser recomposition. */
 internal class LiveVideoSessionRegistry(private val tabId: Long) {

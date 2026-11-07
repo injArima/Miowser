@@ -218,8 +218,6 @@ class Tab(
     internal val browserVideoPlayer = BrowserVideoController()
     internal var companionVideoKey by mutableStateOf<com.miowser.app.browser.video.CompanionVideoKey?>(null)
         private set
-    internal fun requestCompanionFullscreen(key: com.miowser.app.browser.video.CompanionVideoKey): Boolean =
-        liveVideoTracker?.requestCompanionFullscreen(key) == true
     internal fun setCompanionTracking(enabled: Boolean) { liveVideoTracker?.setCompanionTracking(enabled) }
     internal fun startBrowserVideoFullscreen() { liveVideoTracker?.onNativeFullscreenShown() }
     internal fun finishBrowserVideoFullscreen() { liveVideoTracker?.onNativeFullscreenHidden() }

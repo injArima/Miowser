@@ -10,6 +10,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
     var documentId = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
     var videos = new Map(), ids = new WeakMap(), nextId = 0, sequence = 0;
     var binding = null, timer = null, heartbeat = null, observer = null;
+    var helloRetry = null, helloAttempts = 0;
     var intersection = null, resize = null, running = false, lastSent = -1000;
     var assistant = null;
     var controls = null, fullscreenSerial = 0, lifecycleSerial = -1;
@@ -30,7 +31,9 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         var active = false;
         videos.forEach(function (record) {
             var video = record.video;
-            if (video.isConnected && !video.paused && !video.ended && !video.muted && video.volume > 0)
+            if (video.isConnected && !video.paused && !video.ended &&
+                (!video.muted && video.volume > 0 ||
+                    Number.isFinite(video.duration) && video.duration >= 60))
                 active = true;
         });
         // Idle/muted previews must not occupy the bounded frame table ahead of the
@@ -38,6 +41,8 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         if (!active && frameRoutes.size === 0) return;
         lastHelloAt = performance.now();
         send({type: 'hello', documentId: documentId});
+        if (helloRetry === null && helloAttempts++ < 5)
+            helloRetry = setTimeout(function () { helloRetry = null; if (!binding) hello(); }, 600);
     }
     function childFrame(source) {
         var roots = [document];
@@ -267,7 +272,9 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         var id = ids.get(video);
         if (id && videos.has(id)) { schedule(); return; }
         if (videos.size >= MAX_VIDEOS) {
-            if (video.paused || video.ended || video.muted || !(video.volume > 0)) return;
+            if (video.paused || video.ended ||
+                (video.muted || !(video.volume > 0)) &&
+                !(Number.isFinite(video.duration) && video.duration >= 60)) return;
             var idle = null;
             videos.forEach(function (record) {
                 if (!idle && (record.video.paused || record.video.ended || record.video.muted ||
@@ -284,8 +291,14 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         ['loadedmetadata', 'durationchange', 'loadstart', 'emptied', 'resize', 'play', 'pause',
             'playing', 'waiting', 'seeking', 'seeked', 'timeupdate', 'ratechange', 'volumechange', 'ended', 'progress', 'error']
             .forEach(function (type) {
-                video.addEventListener(type, schedule);
-                record.cleanups.push(function () { video.removeEventListener(type, schedule); });
+                var changed = function () {
+                    if (assistant && (type === 'play' || type === 'playing' ||
+                        type === 'loadedmetadata' || type === 'durationchange'))
+                        assistant.maybeAutoEnter(record);
+                    schedule();
+                };
+                video.addEventListener(type, changed);
+                record.cleanups.push(function () { video.removeEventListener(type, changed); });
             });
         [video.textTracks, video.audioTracks].forEach(function (tracks) {
             if (!tracks || !tracks.addEventListener) return;
@@ -342,6 +355,8 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
                 watcher.observe(shadow, {childList: true, subtree: true,
                     attributes: true, attributeFilter: ['src']});
                 shadow.addEventListener('play', onPlay, true);
+                shadow.addEventListener('loadedmetadata', onPlay, true);
+                shadow.addEventListener('volumechange', onPlay, true);
                 shadowObservers.set(shadow, {observer: watcher, host: node});
                 scan(shadow);
             }
@@ -349,12 +364,19 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         }
         if (root === document) shadowSweep = node ? walker : null;
     }
-    function onPlay(event) { watch(event.target); }
+    function onPlay(event) {
+        watch(event.target);
+        var record = videos.get(ids.get(event.target));
+        if (record && assistant) assistant.maybeAutoEnter(record);
+    }
     function processMutations(mutations) {
         videos.forEach(function (record) { if (!record.video.isConnected) unwatch(record); });
         shadowObservers.forEach(function (entry, root) {
             if (entry.host.isConnected) return;
-            entry.observer.disconnect(); root.removeEventListener('play', onPlay, true);
+            entry.observer.disconnect();
+            ['play', 'loadedmetadata', 'volumechange'].forEach(function (type) {
+                root.removeEventListener(type, onPlay, true);
+            });
             shadowObservers.delete(root);
         });
         mutations.forEach(function (mutation) {
@@ -464,6 +486,8 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         listen(document, 'DOMContentLoaded', function () { scan(document); connect(); });
         // A late-starting player must not be permanently crowded out by eight idle previews.
         listen(document, 'play', onPlay, true);
+        listen(document, 'loadedmetadata', onPlay, true);
+        listen(document, 'volumechange', onPlay, true);
         listen(document, 'visibilitychange', visibility);
         listen(window, 'message', onFrameMessage);
         function scrollDisplay() { if (assistant) assistant.scroll(); schedule(); }
@@ -488,6 +512,8 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         assistant = null;
         if (timer !== null) clearTimeout(timer);
         timer = null;
+        if (helloRetry !== null) clearTimeout(helloRetry);
+        helloRetry = null;
         clearInterval(heartbeat);
         heartbeat = null;
         if (observer) observer.disconnect();
@@ -523,6 +549,8 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
                 if (message.documentId !== documentId || !Number.isSafeInteger(message.navigation) ||
                     typeof message.token !== 'string' || message.token.length > 80) return;
                 binding = {navigation: message.navigation, token: message.token};
+                if (helloRetry !== null) clearTimeout(helloRetry);
+                helloRetry = null; helloAttempts = 0;
                 if (assistant) assistant.policy(message.button);
                 schedule(); return;
             }
@@ -534,10 +562,6 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             }
             if (message.type === 'control') {
                 if (controls) controls.receive(message);
-                return;
-            }
-            if (message.type === 'companionEnter') {
-                if (assistant && typeof message.elementId === 'string') assistant.companionEnter(message.elementId);
                 return;
             }
             if (message.type === 'nativeDisplayReady' || message.type === 'nativeDisplayLost') {

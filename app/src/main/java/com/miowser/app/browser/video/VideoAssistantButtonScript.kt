@@ -10,6 +10,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         var restore = null, entryTimeout = null, fullscreenExitTimer = null;
         var displayVersion = 0, displayKey = '', nativeReady = false, focused = false;
         var pressGuard = null, pressTimer = null;
+        var autoAttempted = new Set();
         var external = new Map(), frameCandidateVisible = false, lastFrameCandidateAt = 0,
             lastFrameCandidateId = null;
         var pendingExternal = null;
@@ -176,11 +177,15 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             if (record.embedded) return performance.now() - record.seenAt < 3500 &&
                 record.target && Number.isFinite(record.target.x) && Number.isFinite(record.target.y);
             var video = record.video;
-            // Mirror Samsung's inspected assistant gate: the selected media client must be
-            // actively playing and audible. Muted autoplay previews therefore never qualify.
+            // Require active playback. Only known long videos can qualify while muted;
+            // short muted autoplay previews stay out of the assistant.
             if (!video.isConnected || !(video.currentSrc || video.src || video.srcObject) ||
                 !(video.videoWidth > 0) || !(video.videoHeight > 0) || video.paused || video.ended ||
-                video.muted || !(video.volume > 0) || typeof video.requestFullscreen !== 'function') return false;
+                typeof video.requestFullscreen !== 'function') return false;
+            // A long, known-duration video may autoplay muted. Short muted previews
+            // remain ineligible, but a chosen episode can enter with sound.
+            if ((video.muted || !(video.volume > 0)) &&
+                !(Number.isFinite(video.duration) && video.duration >= 60)) return false;
             var style = window.getComputedStyle(video);
             return style.display !== 'none' && style.visibility !== 'hidden' && style.visibility !== 'collapse' &&
                 Number(style.opacity) !== 0;
@@ -265,10 +270,10 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             if (disposed || restore !== entry) return;
             pending = false;
             restoreControls();
-            api.failed();
+            if (!entry.automatic) api.failed();
             schedule();
         }
-        function beginEntry(record) {
+        function beginEntry(record, automatic) {
             if (disposed || pending || !policy.enabled || !api.bound() ||
                 document.fullscreenElement || !record || record.embedded || !eligible(record)) return false;
             var view = viewport(), currentBox = clip(record, view);
@@ -283,10 +288,11 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 objectFit: video.style ? video.style.getPropertyValue('object-fit') : undefined,
                 fitPriority: video.style ? video.style.getPropertyPriority('object-fit') : ''};
             var entry = restore;
+            entry.automatic = automatic === true;
             if (!video.paused && !video.ended) prepareEntryPlayback(entry);
             entryTimeout = setTimeout(function () {
                 if (restore === entry && document.fullscreenElement !== entry.video) failed(entry);
-            }, 8000);
+            }, entry.automatic ? 2000 : 8000);
             hide();
             try {
                 // Hide from the first fullscreen frame, before the native overlay attaches.
@@ -301,6 +307,16 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             // Page scripts cannot programmatically activate this action.
             if (!event.isTrusted || !selected || (expected && selected !== expected)) return;
             if (beginEntry(selected)) { event.preventDefault(); event.stopPropagation(); }
+        }
+        function autoEnter(record) {
+            if (!policy.autoEnter || !policy.enabled || !api.bound() || disposed || !record ||
+                record.embedded || pending || document.fullscreenElement ||
+                !Number.isFinite(record.video.duration) || record.video.duration < 60 || !eligible(record)) return false;
+            var key = record.id + ':' + (record.video.currentSrc || record.video.src || record.sourceRevision);
+            if (autoAttempted.has(key)) return false;
+            if (!beginEntry(record, true)) return false;
+            autoAttempted.add(key);
+            return true;
         }
         function makeButton() {
             if (host) return;
@@ -374,6 +390,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                         Math.max(box.top, view.top));
                 }
             });
+            if (best && autoEnter(best)) return;
             if (policy.embedded) {
                 selected = best;
                 if (!best) { hide(); return; }
@@ -443,6 +460,10 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         }
         function fullscreenChanged() {
             if (restore && document.fullscreenElement === restore.video) {
+                // An explicit player handoff should retain normal audio even when the
+                // source page used muted autoplay to begin the episode.
+                if (restore.video.muted) restore.video.muted = false;
+                if (!(restore.video.volume > 0)) restore.video.volume = 1;
                 cancelFullscreenExit();
                 cancelEntryTimeout();
                 api.fullscreen(restore.record, restore.attempt, true);
@@ -507,10 +528,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 }
                 if (pressGuard && pressGuard.request === request) cancelPress();
             },
-            companionEnter: function (elementId) {
-                var record = api.records().find(function (entry) { return entry.id === elementId; });
-                return beginEntry(record);
-            },
+            maybeAutoEnter: autoEnter,
             externalCandidate: function (candidate) {
                 if (candidate.active) external.set(candidate.documentId, candidate);
                 else external.delete(candidate.documentId);
@@ -556,6 +574,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             policy: function (next) {
                 var enabledBefore = policy.enabled, nativeBefore = policy.nativeDisplay;
                 policy = {enabled: next && next.enabled === true,
+                    autoEnter: next && next.autoEnter === true,
                     background: next && /^#[0-9a-f]{6}$/i.test(next.background) ? next.background : '#303038',
                     foreground: next && /^#[0-9a-f]{6}$/i.test(next.foreground) ? next.foreground : '#FFFFFF',
                     reducedMotion: next && next.reducedMotion === true,

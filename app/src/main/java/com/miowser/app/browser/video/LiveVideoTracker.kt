@@ -117,7 +117,14 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     fun onPageCommitted() {
         if (!supported || retired || !installed) return
         accepting = true
-        webView.evaluateJavascript("window.__miowserLiveVideos && window.__miowserLiveVideos.connect();", null)
+        // Some renderer navigations begin before document-start injection becomes
+        // available. Recover the current document in place instead of requiring reload.
+        webView.evaluateJavascript("!!window.__miowserLiveVideos") { present ->
+            if (retired || !accepting) return@evaluateJavascript
+            if (present == "false") webView.evaluateJavascript(
+                VIDEO_ASSISTANT_BUTTON_SCRIPT + BROWSER_VIDEO_CONTROL_SCRIPT + LIVE_VIDEO_SESSION_SCRIPT, null)
+            else webView.evaluateJavascript("window.__miowserLiveVideos && window.__miowserLiveVideos.connect();", null)
+        }
     }
 
     private fun receive(text: String, mainFrame: Boolean, proxy: JavaScriptReplyProxy) {
@@ -290,6 +297,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     }
 
     private fun policyJson(channel: Channel) = JSONObject().put("enabled", buttonPolicy.enabled)
+        .put("autoEnter", buttonPolicy.autoEnter)
         .put("background", buttonPolicy.background).put("foreground", buttonPolicy.foreground)
         .put("reducedMotion", buttonPolicy.reducedMotion)
         .put("embedded", !channel.mainFrame)
@@ -342,18 +350,6 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
             lastCompanionVideo = null
             onPlayingVideoChanged(null)
         }
-    }
-    fun requestCompanionFullscreen(key: CompanionVideoKey): Boolean {
-        val session = registry.snapshot().firstOrNull {
-            it.id == key.id && it.state.sourceRevision == key.sourceRevision && it.state.playing
-        } ?: return false
-        val channel = channels.entries.firstOrNull { it.value.frameId == session.id.frameId &&
-            it.value.navigation == session.id.navigation && it.value.document == session.id.documentId } ?: return false
-        return runCatching {
-            channel.key.postMessage(boundMessage("companionEnter", channel.value)
-                .put("elementId", session.id.elementId).toString())
-            true
-        }.getOrDefault(false)
     }
     fun onNativeFullscreenHidden(reason: String? = null) {
         // Send the exact owner's release before detaching; never exit a later/unrelated element.

@@ -3597,16 +3597,12 @@ fun BrowserScreen(
     val companionTab = tabs.firstOrNull { it.id == companionTabId }
     val companionVideoKey = companionTab?.companionVideoKey
     LaunchedEffect(companionTabId, companionVideoKey, companionFromWeb) {
+        companionVideoHint = false
         val tab = companionTab ?: return@LaunchedEffect
         val key = companionVideoKey ?: return@LaunchedEffect
         if (!companionFromWeb) return@LaunchedEffect
-        delay(650)
-        if (tab.companionVideoKey != key || companionTabId != tab.id) return@LaunchedEffect
-        if (!tab.requestCompanionFullscreen(key)) {
-            companionVideoHint = true
-            return@LaunchedEffect
-        }
         delay(2_500)
+        if (tab.companionVideoKey != key || companionTabId != tab.id) return@LaunchedEffect
         if (companionTabId == tab.id && fullscreenVideo?.tabId != tab.id) companionVideoHint = true
     }
     LaunchedEffect(fullscreenVideo, playbackRequest, companionTabId, companionFromWeb) {
@@ -3776,7 +3772,9 @@ fun BrowserScreen(
         tabs.forEach { tab ->
             val enabled = (allowVideoButton && tab.id == activeTabId ||
                 tab.id == companionTabId) && !tab.isShowingHome && tab.pageError == null
-            tab.updateVideoAssistantButton(if (enabled) enabledVideoButtonAppearance else videoButtonAppearance)
+            tab.updateVideoAssistantButton(if (enabled) enabledVideoButtonAppearance.copy(
+                autoEnter = companionFromWeb && tab.id == companionTabId
+            ) else videoButtonAppearance)
         }
     }
     LaunchedEffect(startupReady, AppSettings.current.javaScriptEnabled, AppSettings.current.cookiesEnabled,
