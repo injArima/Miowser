@@ -368,19 +368,21 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             frame = null;
             if (disposed || !policy.enabled || !api.bound() || document.visibilityState === 'hidden' ||
                 !document.fullscreenEnabled || document.fullscreenElement || pending) { hide(); return; }
-            var view = viewport(), best = null, bestScore = -1, bestVisibleArea = 0,
+            var view = viewport(), best = null, bestScore = -1, bestVisibleArea = 0, bestArea = -1,
                 bestInteraction = -1;
             api.records().forEach(function (record) {
                 if (!eligible(record)) return;
                 var box = clip(record), width = box.right - box.left, height = box.bottom - box.top;
                 if (width * view.scale < 120 || height * view.scale < 80) return;
-                var interaction = record.lastInteraction || 0, score = width * height;
-                if (interaction > bestInteraction || (interaction === bestInteraction && score > bestScore)) {
-                    best = record; bestScore = score; bestInteraction = interaction;
-                    bestVisibleArea = Math.max(0, Math.min(box.right, view.left + view.width) -
-                        Math.max(box.left, view.left)) *
-                        Math.max(0, Math.min(box.bottom, view.top + view.height) -
-                        Math.max(box.top, view.top));
+                var interaction = record.lastInteraction || 0;
+                if (performance.now() - interaction > 5000) interaction = 0;
+                var area = width * height, visibleArea = Math.max(0, Math.min(box.right, view.left + view.width) -
+                    Math.max(box.left, view.left)) * Math.max(0, Math.min(box.bottom, view.top + view.height) -
+                    Math.max(box.top, view.top));
+                if (interaction > bestInteraction || interaction === bestInteraction &&
+                    (visibleArea > bestScore || visibleArea === bestScore && area > bestArea)) {
+                    best = record; bestScore = visibleArea; bestArea = area; bestInteraction = interaction;
+                    bestVisibleArea = visibleArea;
                 }
             });
             if (policy.embedded) {
@@ -406,9 +408,8 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             }
             external.forEach(function (candidate, id) {
                 if (!eligible(candidate)) { external.delete(id); return; }
-                if (!best || best.embedded && candidate.area > bestVisibleArea ||
-                    candidate.area > bestVisibleArea &&
-                    performance.now() - bestInteraction > 5000) {
+                if (!best || candidate.area > bestVisibleArea &&
+                    (best.embedded || bestInteraction <= 0)) {
                     best = candidate; bestVisibleArea = candidate.area;
                 }
             });
@@ -467,6 +468,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                     if (restore !== entry || document.fullscreenElement === entry.video) return;
                     api.fullscreen(entry.record, entry.attempt, false);
                     pending = false; restoreControls();
+                    schedule();
                 }, 2000);
             }
             schedule();

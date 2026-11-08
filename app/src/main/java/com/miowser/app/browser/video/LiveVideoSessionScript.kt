@@ -19,6 +19,8 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
     var frameRoutes = new Map(), shadowObservers = new Map(), shadowSweep = null,
         lastHeartbeatAt = 0, lastShadowScanAt = 0, lastHelloAt = -1000;
     var MAX_VIDEOS = 8, UPDATE_MS = 500;
+    var frameElements = new WeakMap();
+    var discoveryEvents = ['play', 'playing', 'loadedmetadata', 'loadeddata', 'durationchange', 'volumechange'];
 
     function send(message) {
         try {
@@ -45,13 +47,19 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             helloRetry = setTimeout(function () { helloRetry = null; if (!binding) hello(); }, 600);
     }
     function childFrame(source) {
+        var cached = frameElements.get(source);
+        if (cached && cached.isConnected && cached.contentWindow === source) return cached;
         var roots = [document];
         shadowObservers.forEach(function (_, root) { roots.push(root); });
-        var checked = 0;
-        for (var r = 0; r < roots.length && checked < 32; r++) {
+        // Cache successful lookups, but do not permanently exclude a real player
+        // because ad/preview frames appeared earlier in the document.
+        for (var r = 0; r < roots.length; r++) {
             var frames = roots[r].querySelectorAll('iframe,frame');
-            for (var i = 0; i < frames.length && checked < 32; i++, checked++) {
-                if (frames[i].contentWindow === source) return frames[i];
+            for (var i = 0; i < frames.length; i++) {
+                if (frames[i].contentWindow === source) {
+                    frameElements.set(source, frames[i]);
+                    return frames[i];
+                }
             }
         }
         return null;
@@ -85,6 +93,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             }
             return;
         }
+        if (data.miowserVideoPrepared !== true && data.miowserVideoFrame !== true) return;
         var frame = childFrame(event.source);
         if (!frame) return;
         if (data.miowserVideoPrepared === true) {
@@ -348,9 +357,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
                 var watcher = new MutationObserver(processMutations);
                 watcher.observe(shadow, {childList: true, subtree: true,
                     attributes: true, attributeFilter: ['src']});
-                shadow.addEventListener('play', onPlay, true);
-                shadow.addEventListener('loadedmetadata', onPlay, true);
-                shadow.addEventListener('volumechange', onPlay, true);
+                discoveryEvents.forEach(function (type) { shadow.addEventListener(type, onPlay, true); });
                 shadowObservers.set(shadow, {observer: watcher, host: node});
                 scan(shadow);
             }
@@ -364,7 +371,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         shadowObservers.forEach(function (entry, root) {
             if (entry.host.isConnected) return;
             entry.observer.disconnect();
-            ['play', 'loadedmetadata', 'volumechange'].forEach(function (type) {
+            discoveryEvents.forEach(function (type) {
                 root.removeEventListener(type, onPlay, true);
             });
             shadowObservers.delete(root);
@@ -475,9 +482,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         scan(document);
         listen(document, 'DOMContentLoaded', function () { scan(document); connect(); });
         // A late-starting player must not be permanently crowded out by eight idle previews.
-        listen(document, 'play', onPlay, true);
-        listen(document, 'loadedmetadata', onPlay, true);
-        listen(document, 'volumechange', onPlay, true);
+        discoveryEvents.forEach(function (type) { listen(document, type, onPlay, true); });
         listen(document, 'visibilitychange', visibility);
         listen(window, 'message', onFrameMessage);
         function scrollDisplay() { if (assistant) assistant.scroll(); schedule(); }
@@ -528,6 +533,8 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         try {
             var message = JSON.parse(event.data);
             if (message.type === 'reset' && message.documentId === documentId) {
+                if (!Number.isSafeInteger(message.navigation) || message.navigation < 0 ||
+                    binding && message.navigation < binding.navigation) return;
                 if (controls) controls.release();
                 if (assistant) assistant.fallback();
                 binding = null;

@@ -67,7 +67,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
                 channels.remove(proxy)
                 registry.closeFrame(channel.frameId)
                 runCatching { proxy.postMessage(JSONObject().put("type", "reset")
-                    .put("documentId", channel.document).toString()) }
+                    .put("documentId", channel.document).put("navigation", channel.navigation).toString()) }
             }
             registry.prune(now, protectedOwner())
             publish()
@@ -103,7 +103,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
         onNativeFullscreenHidden("The page changed. Return to the website to open its current video.")
         channels.forEach { (proxy, channel) ->
             runCatching { proxy.postMessage(JSONObject().put("type", "reset")
-                .put("documentId", channel.document).toString()) }
+                .put("documentId", channel.document).put("navigation", channel.navigation).toString()) }
         }
         channels.clear()
         registry.reset()
@@ -117,10 +117,11 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     fun onPageCommitted() {
         if (!supported || retired || !installed) return
         accepting = true
+        val navigation = registry.navigation
         // Some renderer navigations begin before document-start injection becomes
         // available. Recover the current document in place instead of requiring reload.
         webView.evaluateJavascript("!!window.__miowserLiveVideos") { present ->
-            if (retired || !accepting) return@evaluateJavascript
+            if (retired || !accepting || navigation != registry.navigation) return@evaluateJavascript
             if (present == "false") webView.evaluateJavascript(
                 VIDEO_ASSISTANT_BUTTON_SCRIPT + BROWSER_VIDEO_CONTROL_SCRIPT + LIVE_VIDEO_SESSION_SCRIPT, null)
             else webView.evaluateJavascript("window.__miowserLiveVideos && window.__miowserLiveVideos.connect();", null)

@@ -36,7 +36,7 @@ function tracks(items) { return Object.assign(items, new Events(), {
 class Element extends Events {
   constructor(tag) {
     super(); this.tagName = tag.toUpperCase(); this.children = []; this.attributes = {};
-    this.isConnected = false; this.parentElement = null; this.hidden = false;
+    this.isConnected = false; this.parentElement = null; this.hidden = false; this.nodeType = 1;
     this.style = style();
     this.animationCount = 0;
   }
@@ -60,7 +60,7 @@ class Element extends Events {
 function video(source = 'blob:https://site.test/video') {
   return Object.assign(new Events(), {
     tagName: 'VIDEO', nodeType: 1, isConnected: true, currentSrc: source, src: source, srcObject: null,
-    currentTime: 12, duration: 45, paused: false, ended: false, muted: false,
+    currentTime: 12, duration: 45, paused: false, ended: false, muted: false, volume: 1,
     playbackRate: 1, readyState: 4, videoWidth: 1280, videoHeight: 720, controls: false,
     seeking: false,
     style: style(), textTracks: tracks([]), audioTracks: tracks([]),
@@ -85,6 +85,12 @@ function fixture(initial = [video()]) {
     querySelectorAll: () => initial.filter(v => v.isConnected),
     createElement: tag => { const e = new Element(tag); elements.push(e); return e; },
     createElementNS: (_, tag) => { const e = new Element(tag); elements.push(e); return e; } });
+  document.createTreeWalker = node => {
+    const rows = [];
+    function walk(n) { if (n !== document) rows.push(n); (n === document ? [root, ...initial] : n.children || []).forEach(walk); }
+    walk(node); let index = -1;
+    return {currentNode: node, nextNode() { return rows[++index] || null; }};
+  };
   initial.forEach(v => {
     v.fullscreenRequests = 0;
     v.requestFullscreen = function () {
@@ -115,7 +121,7 @@ function fixture(initial = [video()]) {
     disconnect() {}
   }
   class ResizeObserver { observe() {} unobserve() {} disconnect() {} }
-  const context = vm.createContext({ window, document, MutationObserver, IntersectionObserver, ResizeObserver,
+  const context = vm.createContext({ window, document, MutationObserver, IntersectionObserver, ResizeObserver, NodeFilter: {SHOW_ELEMENT: 1},
     performance: { now: () => time }, setTimeout: (fn, delay = 0) => { timers.set(next, {fn, at: time + delay}); return next++; },
     clearTimeout: id => timers.delete(id), setInterval: fn => { intervals.set(next, fn); return next++; },
     clearInterval: id => intervals.delete(id) });
@@ -179,7 +185,12 @@ function fixture(initial = [video()]) {
     run, bind, flush, advance, mutate, state, button, policy, click, render, elements, animationFrames, control, lifecycle, time: () => time };
 }
 let checks = 0;
-function check(name, test) { test(); checks++; console.log('PASS ' + name); }
+let failures = 0;
+function check(name, test) {
+  checks++;
+  try { test(); console.log('PASS ' + name); }
+  catch (error) { failures++; console.error('FAIL ' + name + ': ' + error.message); }
+}
 
 check('reports current media properties without changing playback', () => {
   const f = fixture(); f.bind(); f.flush();
@@ -223,16 +234,16 @@ check('timeupdate bursts produce one bounded snapshot', () => {
   assert.equal(f.timers.size, 1); f.flush();
   assert.equal(f.messages.filter(m => m.type === 'state').length, 2);
 });
-check('video removal clears frame ownership and heartbeat', () => {
+check('video removal retires ownership but keeps one bounded discovery heartbeat', () => {
   const f = fixture(); f.bind(); f.flush();
   f.initial[0].isConnected = false; f.mutate(); f.flush();
   assert.equal(f.state().videos.length, 0);
   assert.equal(f.messages.at(-1).type, 'retire');
-  assert.equal(f.intervals.size, 0);
+  assert.equal(f.intervals.size, 1);
 });
 check('new dynamic elements get watched and capped', () => {
   const f = fixture([]);
-  assert.equal(f.messages.length, 0); assert.equal(f.intervals.size, 0);
+  assert.equal(f.messages.length, 0); assert.equal(f.intervals.size, 1);
   const added = Array.from({ length: 100 }, () => video());
   f.mutate(added); f.bind(); f.flush();
   assert.equal(f.state().videos.length, 8);
@@ -240,10 +251,10 @@ check('new dynamic elements get watched and capped', () => {
 });
 check('a playing dynamic video can replace an idle preview at capacity', () => {
   const previews = Array.from({ length: 8 }, () => { const v = video(); v.paused = true; return v; });
-  const f = fixture(previews); f.bind(); f.flush();
+  const f = fixture(previews);
   const chosen = video('https://site.test/chosen.mp4');
   chosen.videoHeight = 1080;
-  f.document.dispatch('play', { target: chosen }); f.flush();
+  f.document.dispatch('play', { target: chosen }); f.bind(); f.flush();
   assert.equal(f.state().videos.length, 8);
   assert(f.state().videos.some(v => v.height === 1080 && v.playing));
 });
@@ -314,21 +325,21 @@ check('trusted click opens the exact existing video without changing source/time
 });
 check('return restores website controls and keeps the live position', () => {
   const f = enabledFixture(); const v = f.initial[0]; f.click();
-  v.currentTime = 22; f.document.fullscreenElement = null; f.document.dispatch('fullscreenchange'); f.flush();
+  v.currentTime = 22; f.document.fullscreenElement = null; f.document.dispatch('fullscreenchange'); f.advance(2001);
   assert.equal(v.controls, false); assert.equal(v.currentTime, 22); assert.equal(v.paused, false);
   assert.equal(f.button().hidden, false);
 });
 check('already-enabled website controls remain enabled after return', () => {
   const v = video(); v.controls = true; const f = enabledFixture([v]); f.click();
-  f.document.fullscreenElement = null; f.document.dispatch('fullscreenchange');
+  f.document.fullscreenElement = null; f.document.dispatch('fullscreenchange'); f.advance(2001);
   assert.equal(v.controls, true);
 });
 check('programmatic clicks cannot trigger the action', () => {
   const f = enabledFixture(); f.click(false); assert.equal(f.initial[0].fullscreenRequests, 0);
 });
-check('a detected paused video can enter fullscreen without starting playback', () => {
+check('a paused inline video cannot be opened by a stale assistant tap', () => {
   const f = enabledFixture(); f.initial[0].paused = true; f.click();
-  assert.equal(f.initial[0].fullscreenRequests, 1);
+  assert.equal(f.initial[0].fullscreenRequests, 0);
   f.flush(); assert.equal(f.initial[0].paused, true);
 });
 check('a screen-anchored action still opens its detected video after scrolling it offscreen', () => {
@@ -410,7 +421,7 @@ check('main-frame navigation reset hides the old document action immediately', (
   const f = enabledFixture(), doc = f.messages.find(m => m.type === 'hello').documentId;
   // Simulate the app's navigation invalidation before the old document is detached.
   const bridge = f.window.MiowserLiveVideo;
-  bridge.onmessage({data: JSON.stringify({type: 'reset', documentId: doc})});
+  bridge.onmessage({data: JSON.stringify({type: 'reset', navigation: 3, documentId: doc})});
   assert.equal(f.button().hidden, true);
 });
 
@@ -424,7 +435,7 @@ check('browser controls are hidden from entry and an explicit fallback restores 
 });
 check('browser controls restore on exit after using the rich UI', () => {
   const f = playingFixture(); f.control('richUi', 1);
-  f.document.fullscreenElement = null; f.document.dispatch('fullscreenchange');
+  f.document.fullscreenElement = null; f.document.dispatch('fullscreenchange'); f.advance(2001);
   assert.equal(f.initial[0].controls, false); // Original website had custom inline controls.
   assert.equal(f.messages.filter(m => m.type === 'fullscreenEnded').length, 1);
 });
@@ -529,7 +540,7 @@ check('scaling applies to the owning video and exit restores the exact inline st
   assert.equal(ack(f, f.control('scale', 2)).videos[0].scale, 'fill');
   assert.equal(ack(f, f.control('scale', 0)).videos[0].scale, 'contain');
   assert.equal(ack(f, f.control('scale', 99)).ok, false);
-  f.document.fullscreenElement = null; f.document.dispatch('fullscreenchange');
+  f.document.fullscreenElement = null; f.document.dispatch('fullscreenchange'); f.advance(2001);
   assert.equal(v.style.getPropertyValue('object-fit'), 'scale-down'); assert.equal(v.style.getPropertyPriority('object-fit'), 'important');
 });
 check('scaling with no previous inline property removes it on pagehide', () => {
@@ -605,7 +616,7 @@ check('temporary speed restores the fresh DOM speed on release and only once', (
 check('fullscreen exit and page teardown restore held speed even after native ownership is gone', () => {
   for (const exit of ['fullscreen', 'pagehide']) {
     const f = playingFixture(), v = f.initial[0]; v.playbackRate = 0.75; f.control('holdRate');
-    if (exit === 'fullscreen') { f.document.fullscreenElement = null; f.document.dispatch('fullscreenchange'); }
+    if (exit === 'fullscreen') { f.document.fullscreenElement = null; f.document.dispatch('fullscreenchange'); f.advance(2001); }
     else f.window.dispatch('pagehide');
     assert.equal(v.playbackRate, 0.75);
   }
@@ -621,7 +632,7 @@ check('rich UI fallback and navigation invalidation release temporary speed', ()
   for (const exit of ['fallback', 'reset']) {
     const f = playingFixture(), v = f.initial[0]; v.playbackRate = 1.5; f.control('holdRate');
     if (exit === 'fallback') f.control('richUi', 0);
-    else f.window.MiowserLiveVideo.onmessage({data: JSON.stringify({type: 'reset', documentId: f.messages.find(m => m.type === 'hello').documentId})});
+    else f.window.MiowserLiveVideo.onmessage({data: JSON.stringify({type: 'reset', navigation: 3, documentId: f.messages.find(m => m.type === 'hello').documentId})});
     assert.equal(v.playbackRate, 1.5);
   }
 });
@@ -683,7 +694,7 @@ check('native fallback and channel reset make website controls available', () =>
   const f = playingFixture(), v = f.initial[0]; f.control('richUi', 1); f.lifecycle('fallbackFullscreen');
   assert.equal(v.controls, true); assert.equal(f.document.fullscreenElement, v);
   f.control('richUi', 1);
-  f.window.MiowserLiveVideo.onmessage({data: JSON.stringify({type: 'reset', documentId: f.messages.find(m => m.type === 'hello').documentId})});
+  f.window.MiowserLiveVideo.onmessage({data: JSON.stringify({type: 'reset', navigation: 3, documentId: f.messages.find(m => m.type === 'hello').documentId})});
   assert.equal(v.controls, true); assert.equal(v.paused, false);
 });
 check('a hanging fullscreen request times out and can be tried again', () => {
@@ -843,15 +854,15 @@ check('YouTube-shaped viewport overflow does not clip a visible video to a zero-
   assert.equal(f.button().hidden, false); assert.equal(f.button().style.top, '1790px');
   assert.equal(f.button().style.left, '1010px'); f.click(); assert.equal(f.document.fullscreenElement, v);
 });
-check('embedded-frame fallback still respects the actual nested player clipping', () => {
+check('main-frame screen anchor is independent of ancestor clipping', () => {
   const {f, player} = youtubeBodyFixture();
   player.getBoundingClientRect = () => ({left: 0, top: 56, right: 490, bottom: 95, width: 490, height: 39});
-  f.bind(); f.policy(true, {frameConstrained: true}); f.flush(); assert.notEqual(f.button()?.hidden, false);
+  f.bind(); f.policy(true); f.flush(); assert.equal(f.button()?.hidden, false);
 });
-check('body overflow remains a local clip when the root or containment prevents propagation', () => {
+check('main-frame screen anchor does not inherit the body clipping rectangle', () => {
   for (const options of [['auto', 'none'], ['visible', 'paint']]) {
-    const {f} = youtubeBodyFixture(...options); f.bind(); f.policy(true, {frameConstrained: true}); f.flush();
-    assert.notEqual(f.button()?.hidden, false);
+    const {f} = youtubeBodyFixture(...options); f.bind(); f.policy(true); f.flush();
+    assert.equal(f.button()?.hidden, false);
   }
 });
 check('a body that is itself the document scroller uses viewport bounds', () => {
@@ -1040,9 +1051,9 @@ check('main-frame button keeps its bottom reserved slot in a shorter viewport', 
   const f = fixture(); f.window.visualViewport.height = 400;
   f.bind(); f.policy(true); f.flush(); assert.equal(f.button().style.top, '270px');
 });
-check('embedded frames retain their reachable existing target without a toolbar route', () => {
-  const f = fixture(); f.bind(); f.policy(true, {frameConstrained: true}); f.flush();
-  assert.equal(f.button().style.left, '572px'); assert.equal(f.button().style.top, '18px');
+check('ordinary pages use the screen anchor without a toolbar route', () => {
+  const f = fixture(); f.bind(); f.policy(true); f.flush();
+  assert.equal(f.button().style.left, '1010px'); assert.equal(f.button().style.top, '1790px');
   assert.equal(f.messages.some(m => m.type === 'assistantDisplay'), false);
   f.click(); assert.equal(f.initial[0].fullscreenRequests, 1);
 });
@@ -1063,6 +1074,7 @@ function entryReloadFixture(native = false) {
     return enter.call(this);
   };
   if (native) { f.press(); f.input(); } else f.click();
+  v.playCalls = 0; // Count recovery separately from the explicit trusted-tap play call.
   f.render();
   f.mediaReady = () => { v.readyState = 4; v.dispatch('loadeddata'); f.render(); };
   return f;
@@ -1118,6 +1130,81 @@ check('only a load-aborted play may retry on a later media readiness event', () 
 check('healthy entry finishes observing without any extra play call', () => {
   const f = enabledFixture(), v = f.initial[0], play = v.play; v.playCalls = 0;
   v.play = function () { this.playCalls++; return play.call(this); };
-  f.click(); f.render(); f.advance(351); v.pause(); f.render(); assert.equal(v.playCalls, 0);
+  f.click(); f.render(); f.advance(351); v.pause(); f.render(); assert.equal(v.playCalls, 1);
 });
-console.log(checks + ' live-video script checks passed; no device tests were run.');
+check('a delayed reset cannot disconnect a newer document binding', () => {
+  const f = fixture(); f.bind({navigation: 4}); f.policy(true, {}, {navigation: 4}); f.flush();
+  const documentId = f.messages.find(m => m.type === 'hello').documentId;
+  f.window.MiowserLiveVideo.onmessage({data: JSON.stringify({type: 'reset', documentId, navigation: 3})});
+  f.flush(); assert.equal(f.button().hidden, false);
+  assert.equal(f.state().navigation, 4); assert.equal(f.initial[0].fullscreenRequests, 0);
+  f.window.MiowserLiveVideo.onmessage({data: JSON.stringify({type: 'reset', documentId, navigation: 4})});
+  f.render(); assert.equal(f.button().hidden, true);
+  f.bind({navigation: 5}); f.policy(true, {}, {navigation: 5}); f.flush();
+  assert.equal(f.button().hidden, false); assert.equal(f.state().navigation, 5);
+});
+for (const event of ['playing', 'loadeddata', 'durationchange']) {
+  check(event + ' discovers a late long video after idle previews fill the table', () => {
+    const previews = Array.from({length: 8}, () => Object.assign(video(), {paused: true, muted: true}));
+    const active = Object.assign(video('blob:https://site.test/episode'), {muted: true, duration: NaN});
+    const f = fixture([...previews, active]);
+    active.duration = 1200; f.document.dispatch(event, {target: active}); f.bind(); f.flush();
+    assert(f.state().videos.some(v => v.duration === 1200));
+    assert.equal(f.state().videos.length, 8); assert.equal(active.fullscreenRequests, 0);
+  });
+}
+check('the visible playing video wins over a larger offscreen player', () => {
+  const offscreen = video(), visible = video();
+  offscreen.getBoundingClientRect = () => ({left: 0, top: 3000, width: 1920, height: 1080});
+  visible.getBoundingClientRect = () => ({left: 0, top: 100, width: 640, height: 360});
+  const f = enabledFixture([offscreen, visible]); f.click();
+  assert.equal(visible.fullscreenRequests, 1); assert.equal(offscreen.fullscreenRequests, 0);
+});
+check('a recently touched playing video keeps priority over a larger visible player', () => {
+  const large = video(), touched = video();
+  large.getBoundingClientRect = () => ({left: 0, top: 100, width: 1000, height: 600});
+  touched.getBoundingClientRect = () => ({left: 0, top: 800, width: 320, height: 180});
+  const f = enabledFixture([large, touched]);
+  touched.dispatch('pointerdown', {isTrusted: true, target: touched}); f.flush(); f.click();
+  assert.equal(touched.fullscreenRequests, 1); assert.equal(large.fullscreenRequests, 0);
+});
+check('a live iframe after forty unrelated frames can reach the native button', () => {
+  const f = fixture([]), child = {postMessage() {}};
+  f.window.top = f.window; f.window.parent = f.window;
+  const frame = Object.assign(new Element('iframe'), {isConnected: true, contentWindow: child,
+    getBoundingClientRect: () => ({left: 0, top: 100, right: 640, bottom: 460, width: 640, height: 360})});
+  const frames = [...Array.from({length: 40}, () => ({contentWindow: {}})), frame];
+  const query = f.document.querySelectorAll;
+  let scans = 0;
+  f.document.querySelectorAll = selector => selector === 'iframe,frame' ? (scans++, frames) : query(selector);
+  const announce = () => f.window.dispatch('message', {source: child, data: {
+    miowserVideoFrame: true, documentId: 'late-frame', elementId: 'v1', active: true,
+    x: 320, y: 180, width: 640, height: 360, area: 640 * 360}});
+  f.window.dispatch('message', {source: child, data: {documentId: 'unrelated-site-message'}});
+  assert.equal(scans, 0, 'unrelated page messages must not scan iframe elements');
+  announce(); f.bind(); f.policy(true, {nativeDisplay: true}); announce(); f.flush();
+  assert(f.messages.some(m => m.type === 'assistantDisplay' && m.visible));
+  assert.equal(scans, 1, 'repeat child messages should use the verified frame cache');
+  frame.isConnected = false; frames.pop(); announce(); f.flush();
+  assert.equal(scans, 2, 'a detached frame must invalidate its cached lookup');
+  assert.equal(f.messages.filter(m => m.type === 'fullscreenActive').length, 0);
+});
+check('a larger embedded player can win immediately without a fictitious recent interaction', () => {
+  const small = video(); small.getBoundingClientRect = () => ({left: 0, top: 0, width: 320, height: 180});
+  const f = fixture([small]), child = {postMessage() {}};
+  f.window.top = f.window; f.window.parent = f.window;
+  const frame = Object.assign(new Element('iframe'), {isConnected: true, contentWindow: child,
+    getBoundingClientRect: () => ({left: 0, top: 300, right: 640, bottom: 660, width: 640, height: 360})});
+  const query = f.document.querySelectorAll;
+  f.document.querySelectorAll = selector => selector === 'iframe,frame' ? [frame] : query(selector);
+  f.bind(); f.policy(true, {nativeDisplay: true});
+  f.window.dispatch('message', {source: child, data: {
+    miowserVideoFrame: true, documentId: 'episode-frame', elementId: 'v1', active: true,
+    x: 320, y: 180, width: 640, height: 360, area: 640 * 360}});
+  f.flush();
+  const display = f.messages.filter(m => m.type === 'assistantDisplay' && m.visible).at(-1);
+  assert(Number.isFinite(display.pressX), 'the embedded player should be the native button target');
+  assert.equal(small.fullscreenRequests, 0);
+});
+console.log((checks - failures) + '/' + checks + ' live-video script checks passed; no device tests were run.');
+if (failures) process.exitCode = 1;
