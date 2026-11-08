@@ -19,6 +19,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
     initialButtonPolicy: VideoAssistantButtonPolicy = VideoAssistantButtonPolicy(),
     private val playback: BrowserVideoController = BrowserVideoController(),
     private val onPlayingVideoChanged: (CompanionVideoKey?) -> Unit = {},
+    private val onCompanionSurfaceReady: () -> Unit = {},
     private val onFullscreenFailure: () -> Unit = {}) {
     private data class Channel(val frameId: Long, val document: String, val token: String,
         val navigation: Long, val connectedAt: Long, val mainFrame: Boolean, var lastUpdate: Long = -1,
@@ -88,7 +89,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
                 receive(text, mainFrame, proxy)
             }
             script = WebViewCompat.addDocumentStartJavaScript(webView,
-                VIDEO_ASSISTANT_BUTTON_SCRIPT + BROWSER_VIDEO_CONTROL_SCRIPT + LIVE_VIDEO_SESSION_SCRIPT, setOf("*"))
+                BROWSER_VIDEO_STAGE_SCRIPT + VIDEO_ASSISTANT_BUTTON_SCRIPT + BROWSER_VIDEO_CONTROL_SCRIPT + LIVE_VIDEO_SESSION_SCRIPT, setOf("*"))
         } catch (_: RuntimeException) {
             // An optional feature/provider mismatch must not stop a tab from opening.
             retire()
@@ -122,7 +123,7 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
         webView.evaluateJavascript("!!window.__miowserLiveVideos") { present ->
             if (retired || !accepting) return@evaluateJavascript
             if (present == "false") webView.evaluateJavascript(
-                VIDEO_ASSISTANT_BUTTON_SCRIPT + BROWSER_VIDEO_CONTROL_SCRIPT + LIVE_VIDEO_SESSION_SCRIPT, null)
+                BROWSER_VIDEO_STAGE_SCRIPT + VIDEO_ASSISTANT_BUTTON_SCRIPT + BROWSER_VIDEO_CONTROL_SCRIPT + LIVE_VIDEO_SESSION_SCRIPT, null)
             else webView.evaluateJavascript("window.__miowserLiveVideos && window.__miowserLiveVideos.connect();", null)
         }
     }
@@ -221,6 +222,12 @@ internal class LiveVideoTracker(tabId: Long, private val webView: WebView,
                             clearOwner(if (nativeFullscreen) "The website ended fullscreen. Return to the page." else null)
                         }
                         publish()
+                        if (type == "fullscreenActive" && json.optBoolean("staged") &&
+                            companionTrackingEnabled && buttonPolicy.autoEnter && owner?.id?.elementId == element &&
+                            states.firstOrNull { it.elementId == element }?.let {
+                                it.videoWidth >= 240 && it.videoHeight >= 135 && it.readyState >= 2
+                            } == true)
+                            onCompanionSurfaceReady()
                         if (type == "fullscreenResumed") {
                             cancelRecovery()
                             if (json.optBoolean("ok") && playback.state.value.session?.id == owner?.id) playback.recovered()

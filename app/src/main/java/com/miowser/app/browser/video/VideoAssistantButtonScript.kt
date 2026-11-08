@@ -107,7 +107,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                     if (recovery.settle !== null) clearTimeout(recovery.settle);
                     recovery.settle = null;
                 }
-                if (document.fullscreenElement !== video || video.readyState < 2 || video.seeking || recovery.inFlight) return;
+                if ((!entry.staged && document.fullscreenElement !== video) || video.readyState < 2 || video.seeking || recovery.inFlight) return;
                 if (!video.paused) {
                     // Healthy playback needs no play() call. Stop observing as soon as
                     // the entry has stayed playable for a brief surface-settling window.
@@ -181,7 +181,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             // short muted autoplay previews stay out of the assistant.
             if (!video.isConnected || !(video.currentSrc || video.src || video.srcObject) ||
                 !(video.videoWidth > 0) || !(video.videoHeight > 0) || video.paused || video.ended ||
-                typeof video.requestFullscreen !== 'function') return false;
+                (!policy.autoEnter && typeof video.requestFullscreen !== 'function')) return false;
             // A long, known-duration video may autoplay muted. Short muted previews
             // remain ineligible, but a chosen episode can enter with sound.
             if ((video.muted || !(video.volume > 0)) &&
@@ -259,6 +259,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             cancelEntryPlayback();
             cancelEntryTimeout();
             clearControlGuard(restore);
+            if (restore.stageCleanup) { restore.stageCleanup(); if (api.stage) api.stage(false); }
             restore.video.controls = restore.controls;
             if (restore.video.style && restore.objectFit !== undefined) {
                 if (restore.objectFit) restore.video.style.setProperty('object-fit', restore.objectFit, restore.fitPriority);
@@ -270,10 +271,10 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             if (disposed || restore !== entry) return;
             pending = false;
             restoreControls();
-            if (!entry.automatic) api.failed();
+            api.failed();
             schedule();
         }
-        function beginEntry(record, automatic) {
+        function beginEntry(record) {
             if (disposed || pending || !policy.enabled || !api.bound() ||
                 document.fullscreenElement || !record || record.embedded || !eligible(record)) return false;
             var view = viewport(), currentBox = clip(record, view);
@@ -288,11 +289,10 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 objectFit: video.style ? video.style.getPropertyValue('object-fit') : undefined,
                 fitPriority: video.style ? video.style.getPropertyPriority('object-fit') : ''};
             var entry = restore;
-            entry.automatic = automatic === true;
             if (!video.paused && !video.ended) prepareEntryPlayback(entry);
             entryTimeout = setTimeout(function () {
                 if (restore === entry && document.fullscreenElement !== entry.video) failed(entry);
-            }, entry.automatic ? 2000 : 8000);
+            }, 8000);
             hide();
             try {
                 // Hide from the first fullscreen frame, before the native overlay attaches.
@@ -310,11 +310,24 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         }
         function autoEnter(record) {
             if (!policy.autoEnter || !policy.enabled || !api.bound() || disposed || !record ||
-                record.embedded || pending || document.fullscreenElement ||
-                !Number.isFinite(record.video.duration) || record.video.duration < 60 || !eligible(record)) return false;
+                record.embedded || pending || restore || document.fullscreenElement ||
+                record.video.readyState < 2 || record.video.videoWidth < 240 || record.video.videoHeight < 135 ||
+                Number.isFinite(record.video.duration) && record.video.duration < 60 || !eligible(record)) return false;
             var key = record.id + ':' + (record.video.currentSrc || record.video.src || record.sourceRevision);
             if (autoAttempted.has(key)) return false;
-            if (!beginEntry(record, true)) return false;
+            if (!window.__miowserStageVideo) return false;
+            var video = record.video;
+            restore = {video: video, record: record, attempt: api.entering(record), controls: video.controls,
+                source: video.currentSrc || video.src || '', object: video.srcObject || null,
+                objectFit: video.style.getPropertyValue('object-fit'),
+                fitPriority: video.style.getPropertyPriority('object-fit'), staged: true};
+            restore.stageCleanup = window.__miowserStageVideo(video);
+            hideBrowserControls(restore);
+            video.muted = false;
+            if (!(video.volume > 0)) video.volume = 1;
+            prepareEntryPlayback(restore);
+            if (api.stage) api.stage(true);
+            hide();
             autoAttempted.add(key);
             return true;
         }
@@ -374,7 +387,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         function update() {
             frame = null;
             if (disposed || !policy.enabled || !api.bound() || document.visibilityState === 'hidden' ||
-                !document.fullscreenEnabled || document.fullscreenElement || pending) { hide(); return; }
+                (!policy.autoEnter && !document.fullscreenEnabled) || document.fullscreenElement || pending || restore && restore.staged) { hide(); return; }
             var view = viewport(), best = null, bestScore = -1, bestVisibleArea = 0,
                 bestInteraction = -1;
             api.records().forEach(function (record) {
@@ -459,6 +472,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             });
         }
         function fullscreenChanged() {
+            if (restore && restore.staged) return;
             if (restore && document.fullscreenElement === restore.video) {
                 // An explicit player handoff should retain normal audio even when the
                 // source page used muted autoplay to begin the episode.
@@ -593,12 +607,16 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 schedule();
             },
             schedule: schedule,
+            canStage: function () { return policy.autoEnter && policy.enabled && api.bound(); },
+            stageReady: function () {
+                if (restore && restore.staged) api.fullscreen(restore.record, restore.attempt, true, true);
+            },
             owner: function () {
-                return restore && document.fullscreenElement === restore.video ? restore : null;
+                return restore && (restore.staged || document.fullscreenElement === restore.video) ? restore : null;
             },
             rich: function (elementId, attempt, attached) {
                 if (!restore || restore.record.id !== elementId || restore.attempt !== attempt ||
-                    document.fullscreenElement !== restore.video || !restore.video.isConnected) return false;
+                    (!restore.staged && document.fullscreenElement !== restore.video) || !restore.video.isConnected) return false;
                 if (!attached) cancelEntryPlayback();
                 if (attached) hideBrowserControls(restore);
                 else { clearControlGuard(restore); restore.video.controls = true; }

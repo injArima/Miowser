@@ -42,7 +42,7 @@ import com.miowser.app.ui.theme.UiSpacing
 /** A second normal tab stays interactive while the player behind this pane is paused. */
 @Composable
 internal fun CompanionBrowserPane(tab: Tab, onNavigate: (String) -> Unit, onClose: () -> Unit,
-    showVideoHint: Boolean, modifier: Modifier = Modifier) {
+    modifier: Modifier = Modifier) {
     BackHandler(onBack = onClose)
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val paneShape = if (landscape) RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp)
@@ -79,12 +79,6 @@ internal fun CompanionBrowserPane(tab: Tab, onNavigate: (String) -> Unit, onClos
                 IconButton(onClick = onClose) {
                     Icon(Icons.Rounded.Close, contentDescription = "Close source page")
                 }
-            }
-            if (showVideoHint) {
-                Text("Tap the video button on the page to open it in Miowser",
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.m, vertical = UiSpacing.xs),
-                    color = MaterialTheme.colorScheme.primary,
-                    style = MaterialTheme.typography.bodySmall)
             }
             key(tab.id) { AndroidView(modifier = Modifier.fillMaxWidth().weight(1f),
                 factory = { context ->

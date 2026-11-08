@@ -20,7 +20,7 @@ internal const val BROWSER_VIDEO_CONTROL_SCRIPT = """
             if (disposed || !Number.isSafeInteger(command.commandId) || command.commandId <= lastCommand) return;
             var owner = api.owner();
             if (!owner || owner.record.id !== command.elementId || owner.attempt !== command.attempt ||
-                !owner.record.video.isConnected || document.fullscreenElement !== owner.record.video) return;
+                !owner.record.video.isConnected || (!owner.staged && document.fullscreenElement !== owner.record.video)) return;
             api.refreshSource(owner.record);
             var video = owner.record.video, finished = false;
             function ack(ok) {
