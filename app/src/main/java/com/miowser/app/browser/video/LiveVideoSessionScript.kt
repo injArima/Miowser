@@ -13,8 +13,6 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
     var helloRetry = null, helloAttempts = 0;
     var intersection = null, resize = null, running = false, lastSent = -1000;
     var assistant = null;
-    var frameStage = null;
-    var pendingFrameStage = null;
     var controls = null, fullscreenSerial = 0, lifecycleSerial = -1;
     var trackIds = new WeakMap(), nextTrackId = 0;
     var listeners = [];
@@ -40,7 +38,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         });
         // Idle/muted previews must not occupy the bounded frame table ahead of the
         // actual player. A parent with a live child route still needs a channel.
-        if (!active && frameRoutes.size === 0 && !pendingFrameStage) return;
+        if (!active && frameRoutes.size === 0) return;
         lastHelloAt = performance.now();
         send({type: 'hello', documentId: documentId});
         if (helloRetry === null && helloAttempts++ < 5)
@@ -71,11 +69,6 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         if (!running || !data || typeof data !== 'object' ||
             typeof data.documentId !== 'string' || data.documentId.length < 1 || data.documentId.length > 80) return;
         if (event.source === window.parent && window !== window.top) {
-            if (data.miowserVideoStageReady === true) {
-                if (data.documentId === documentId) { if (assistant) assistant.stageReady(); }
-                else if (frameStage) frameStage.source.postMessage(data, '*');
-                return;
-            }
             if (data.miowserVideoPrepare === true || data.miowserVideoCancel === true) {
                 if (!Number.isSafeInteger(data.request) || data.request < 1 ||
                     !Number.isSafeInteger(data.version) || data.version < 1) return;
@@ -94,22 +87,6 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         }
         var frame = childFrame(event.source);
         if (!frame) return;
-        if (data.miowserVideoStage === true && data.active === true && assistant && !assistant.canStage()) {
-            pendingFrameStage = {source: event.source, data: data};
-            hello();
-            return;
-        }
-        if (data.miowserVideoStage === true && assistant &&
-            (assistant.canStage() || data.active === false && frameStage && frameStage.source === event.source)) {
-            if (frameStage && frameStage.source !== event.source) return;
-            if (frameStage) { frameStage.cleanup(); frameStage = null; }
-            if (data.active === true && window.__miowserStageVideo)
-                frameStage = {source: event.source, cleanup: window.__miowserStageVideo(frame)};
-            if (window !== window.top) window.parent.postMessage(data, '*');
-            else if (data.active === true) event.source.postMessage({miowserVideoStageReady: true,
-                documentId: data.documentId}, '*');
-            return;
-        }
         if (data.miowserVideoPrepared === true) {
             var pending = frameRoutes.get(data.documentId);
             if (!pending || pending.source !== event.source) return;
@@ -314,14 +291,8 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         ['loadedmetadata', 'durationchange', 'loadstart', 'emptied', 'resize', 'play', 'pause',
             'playing', 'waiting', 'seeking', 'seeked', 'timeupdate', 'ratechange', 'volumechange', 'ended', 'progress', 'error']
             .forEach(function (type) {
-                var changed = function () {
-                    if (assistant && (type === 'play' || type === 'playing' ||
-                        type === 'loadedmetadata' || type === 'durationchange'))
-                        assistant.maybeAutoEnter(record);
-                    schedule();
-                };
-                video.addEventListener(type, changed);
-                record.cleanups.push(function () { video.removeEventListener(type, changed); });
+                video.addEventListener(type, schedule);
+                record.cleanups.push(function () { video.removeEventListener(type, schedule); });
             });
         [video.textTracks, video.audioTracks].forEach(function (tracks) {
             if (!tracks || !tracks.addEventListener) return;
@@ -387,11 +358,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
         }
         if (root === document) shadowSweep = node ? walker : null;
     }
-    function onPlay(event) {
-        watch(event.target);
-        var record = videos.get(ids.get(event.target));
-        if (record && assistant) assistant.maybeAutoEnter(record);
-    }
+    function onPlay(event) { watch(event.target); }
     function processMutations(mutations) {
         videos.forEach(function (record) { if (!record.video.isConnected) unwatch(record); });
         shadowObservers.forEach(function (entry, root) {
@@ -470,14 +437,9 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
                     navigation: binding.navigation, token: binding.token, version: version});
             },
             entering: function () { return ++fullscreenSerial; },
-            stage: function (active) {
-                if (window !== window.top) window.parent.postMessage({miowserVideoStage: true,
-                    documentId: documentId, active: active}, '*');
-                else if (active && assistant) assistant.stageReady();
-            },
-            fullscreen: function (record, attempt, active, staged) {
+            fullscreen: function (record, attempt, active) {
                 if (!active && controls) controls.release();
-                packet(active ? 'fullscreenActive' : 'fullscreenEnded', {elementId: record.id, attempt: attempt, staged: !!staged});
+                packet(active ? 'fullscreenActive' : 'fullscreenEnded', {elementId: record.id, attempt: attempt});
             },
             failed: function () {
                 if (running && binding) send({type: 'fullscreenError', documentId: documentId,
@@ -531,8 +493,6 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
     }
     function stop() {
         if (!running) return;
-        if (frameStage) { frameStage.cleanup(); frameStage = null; }
-        pendingFrameStage = null;
         if (binding) send({type: 'retire', documentId: documentId,
             navigation: binding.navigation, token: binding.token});
         running = false;
@@ -582,18 +542,12 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
                 if (helloRetry !== null) clearTimeout(helloRetry);
                 helloRetry = null; helloAttempts = 0;
                 if (assistant) assistant.policy(message.button);
-                if (pendingFrameStage) {
-                    var stage = pendingFrameStage; pendingFrameStage = null; onFrameMessage(stage);
-                }
                 schedule(); return;
             }
             if (!binding || message.documentId !== documentId || message.navigation !== binding.navigation ||
                 message.token !== binding.token) return;
             if (message.type === 'buttonPolicy') {
                 if (assistant) assistant.policy(message.button);
-                if (pendingFrameStage && assistant && assistant.canStage()) {
-                    var pendingStage = pendingFrameStage; pendingFrameStage = null; onFrameMessage(pendingStage);
-                }
                 return;
             }
             if (message.type === 'control') {

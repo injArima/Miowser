@@ -5,6 +5,5 @@ internal data class VideoAssistantButtonPolicy(
     val enabled: Boolean = false,
     val background: String = "#303038",
     val foreground: String = "#FFFFFF",
-    val reducedMotion: Boolean = false,
-    val autoEnter: Boolean = false
+    val reducedMotion: Boolean = false
 )

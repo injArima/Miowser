@@ -10,7 +10,6 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         var restore = null, entryTimeout = null, fullscreenExitTimer = null;
         var displayVersion = 0, displayKey = '', nativeReady = false, focused = false;
         var pressGuard = null, pressTimer = null;
-        var autoAttempted = new Set();
         var external = new Map(), frameCandidateVisible = false, lastFrameCandidateAt = 0,
             lastFrameCandidateId = null;
         var pendingExternal = null;
@@ -107,7 +106,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                     if (recovery.settle !== null) clearTimeout(recovery.settle);
                     recovery.settle = null;
                 }
-                if ((!entry.staged && document.fullscreenElement !== video) || video.readyState < 2 || video.seeking || recovery.inFlight) return;
+                if (document.fullscreenElement !== video || video.readyState < 2 || video.seeking || recovery.inFlight) return;
                 if (!video.paused) {
                     // Healthy playback needs no play() call. Stop observing as soon as
                     // the entry has stayed playable for a brief surface-settling window.
@@ -181,7 +180,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             // short muted autoplay previews stay out of the assistant.
             if (!video.isConnected || !(video.currentSrc || video.src || video.srcObject) ||
                 !(video.videoWidth > 0) || !(video.videoHeight > 0) || video.paused || video.ended ||
-                (!policy.autoEnter && typeof video.requestFullscreen !== 'function')) return false;
+                typeof video.requestFullscreen !== 'function') return false;
             // A long, known-duration video may autoplay muted. Short muted previews
             // remain ineligible, but a chosen episode can enter with sound.
             if ((video.muted || !(video.volume > 0)) &&
@@ -259,7 +258,6 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             cancelEntryPlayback();
             cancelEntryTimeout();
             clearControlGuard(restore);
-            if (restore.stageCleanup) { restore.stageCleanup(); if (api.stage) api.stage(false); }
             restore.video.controls = restore.controls;
             if (restore.video.style && restore.objectFit !== undefined) {
                 if (restore.objectFit) restore.video.style.setProperty('object-fit', restore.objectFit, restore.fitPriority);
@@ -274,13 +272,24 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             api.failed();
             schedule();
         }
-        function beginEntry(record) {
-            if (disposed || pending || !policy.enabled || !api.bound() ||
-                document.fullscreenElement || !record || record.embedded || !eligible(record)) return false;
-            var view = viewport(), currentBox = clip(record, view);
+        function click(event, expected) {
+            // Page scripts cannot programmatically activate this action.
+            if (!event.isTrusted || disposed || pending || !policy.enabled || !api.bound() ||
+                document.fullscreenElement || !selected || selected.embedded ||
+                (expected && selected !== expected) || !eligible(selected)) return;
+            var view = viewport(), currentBox = clip(selected, view);
             if ((currentBox.right - currentBox.left) * view.scale < 120 ||
-                (currentBox.bottom - currentBox.top) * view.scale < 80) { hide(); return false; }
-            var video = record.video;
+                (currentBox.bottom - currentBox.top) * view.scale < 80) { hide(); return; }
+            event.preventDefault(); event.stopPropagation();
+            var record = selected, video = record.video;
+            // Request audible playback inside the user's trusted tap. Unmuting only
+            // after fullscreen can revoke a site's muted-autoplay permission.
+            video.muted = false;
+            if (!(video.volume > 0)) video.volume = 1;
+            try {
+                var playing = video.play();
+                if (playing && playing.catch) playing.catch(function () {});
+            } catch (ignored) {}
             record.lastInteraction = performance.now();
             api.changed();
             pending = true;
@@ -301,35 +310,6 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 var result = video.requestFullscreen();
                 if (result && typeof result.catch === 'function') result.catch(function () { failed(entry); });
             } catch (ignored) { failed(entry); }
-            return true;
-        }
-        function click(event, expected) {
-            // Page scripts cannot programmatically activate this action.
-            if (!event.isTrusted || !selected || (expected && selected !== expected)) return;
-            if (beginEntry(selected)) { event.preventDefault(); event.stopPropagation(); }
-        }
-        function autoEnter(record) {
-            if (!policy.autoEnter || !policy.enabled || !api.bound() || disposed || !record ||
-                record.embedded || pending || restore || document.fullscreenElement ||
-                record.video.readyState < 2 || record.video.videoWidth < 240 || record.video.videoHeight < 135 ||
-                Number.isFinite(record.video.duration) && record.video.duration < 60 || !eligible(record)) return false;
-            var key = record.id + ':' + (record.video.currentSrc || record.video.src || record.sourceRevision);
-            if (autoAttempted.has(key)) return false;
-            if (!window.__miowserStageVideo) return false;
-            var video = record.video;
-            restore = {video: video, record: record, attempt: api.entering(record), controls: video.controls,
-                source: video.currentSrc || video.src || '', object: video.srcObject || null,
-                objectFit: video.style.getPropertyValue('object-fit'),
-                fitPriority: video.style.getPropertyPriority('object-fit'), staged: true};
-            restore.stageCleanup = window.__miowserStageVideo(video);
-            hideBrowserControls(restore);
-            video.muted = false;
-            if (!(video.volume > 0)) video.volume = 1;
-            prepareEntryPlayback(restore);
-            if (api.stage) api.stage(true);
-            hide();
-            autoAttempted.add(key);
-            return true;
         }
         function makeButton() {
             if (host) return;
@@ -387,7 +367,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
         function update() {
             frame = null;
             if (disposed || !policy.enabled || !api.bound() || document.visibilityState === 'hidden' ||
-                (!policy.autoEnter && !document.fullscreenEnabled) || document.fullscreenElement || pending || restore && restore.staged) { hide(); return; }
+                !document.fullscreenEnabled || document.fullscreenElement || pending) { hide(); return; }
             var view = viewport(), best = null, bestScore = -1, bestVisibleArea = 0,
                 bestInteraction = -1;
             api.records().forEach(function (record) {
@@ -403,7 +383,6 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                         Math.max(box.top, view.top));
                 }
             });
-            if (best && autoEnter(best)) return;
             if (policy.embedded) {
                 selected = best;
                 if (!best) { hide(); return; }
@@ -472,12 +451,7 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             });
         }
         function fullscreenChanged() {
-            if (restore && restore.staged) return;
             if (restore && document.fullscreenElement === restore.video) {
-                // An explicit player handoff should retain normal audio even when the
-                // source page used muted autoplay to begin the episode.
-                if (restore.video.muted) restore.video.muted = false;
-                if (!(restore.video.volume > 0)) restore.video.volume = 1;
                 cancelFullscreenExit();
                 cancelEntryTimeout();
                 api.fullscreen(restore.record, restore.attempt, true);
@@ -542,7 +516,6 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 }
                 if (pressGuard && pressGuard.request === request) cancelPress();
             },
-            maybeAutoEnter: autoEnter,
             externalCandidate: function (candidate) {
                 if (candidate.active) external.set(candidate.documentId, candidate);
                 else external.delete(candidate.documentId);
@@ -588,7 +561,6 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
             policy: function (next) {
                 var enabledBefore = policy.enabled, nativeBefore = policy.nativeDisplay;
                 policy = {enabled: next && next.enabled === true,
-                    autoEnter: next && next.autoEnter === true,
                     background: next && /^#[0-9a-f]{6}$/i.test(next.background) ? next.background : '#303038',
                     foreground: next && /^#[0-9a-f]{6}$/i.test(next.foreground) ? next.foreground : '#FFFFFF',
                     reducedMotion: next && next.reducedMotion === true,
@@ -607,16 +579,12 @@ internal const val VIDEO_ASSISTANT_BUTTON_SCRIPT = """
                 schedule();
             },
             schedule: schedule,
-            canStage: function () { return policy.autoEnter && policy.enabled && api.bound(); },
-            stageReady: function () {
-                if (restore && restore.staged) api.fullscreen(restore.record, restore.attempt, true, true);
-            },
             owner: function () {
-                return restore && (restore.staged || document.fullscreenElement === restore.video) ? restore : null;
+                return restore && document.fullscreenElement === restore.video ? restore : null;
             },
             rich: function (elementId, attempt, attached) {
                 if (!restore || restore.record.id !== elementId || restore.attempt !== attempt ||
-                    (!restore.staged && document.fullscreenElement !== restore.video) || !restore.video.isConnected) return false;
+                    document.fullscreenElement !== restore.video || !restore.video.isConnected) return false;
                 if (!attached) cancelEntryPlayback();
                 if (attached) hideBrowserControls(restore);
                 else { clearControlGuard(restore); restore.video.controls = true; }

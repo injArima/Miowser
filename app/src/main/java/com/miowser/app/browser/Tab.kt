@@ -218,15 +218,9 @@ class Tab(
     internal val browserVideoPlayer = BrowserVideoController()
     internal var companionVideoKey by mutableStateOf<com.miowser.app.browser.video.CompanionVideoKey?>(null)
         private set
-    internal var companionSurfaceReady by mutableStateOf(false)
-    private var companionAutoplayOriginal: Boolean? = null
     internal fun setCompanionTracking(enabled: Boolean) { liveVideoTracker?.setCompanionTracking(enabled) }
     internal fun startBrowserVideoFullscreen() { liveVideoTracker?.onNativeFullscreenShown() }
-    internal fun finishBrowserVideoFullscreen() {
-        liveVideoTracker?.onNativeFullscreenHidden()
-        companionAutoplayOriginal?.let { liveWebView?.settings?.mediaPlaybackRequiresUserGesture = it }
-        companionAutoplayOriginal = null
-    }
+    internal fun finishBrowserVideoFullscreen() { liveVideoTracker?.onNativeFullscreenHidden() }
     internal fun pauseBrowserVideoHost(pip: Boolean) { liveVideoTracker?.onHostPaused(pip) }
     internal fun resumeBrowserVideoHost() { liveVideoTracker?.onHostResumed() }
     internal fun attachVideoAssistantDisplay(engine: WebView, display: com.miowser.app.browser.video.NativeVideoAssistantDisplay) {
@@ -237,10 +231,6 @@ class Tab(
     }
     private var videoButtonPolicy = VideoAssistantButtonPolicy()
     internal fun updateVideoAssistantButton(policy: VideoAssistantButtonPolicy) {
-        if (policy.autoEnter && companionAutoplayOriginal == null) liveWebView?.settings?.let { settings ->
-            companionAutoplayOriginal = settings.mediaPlaybackRequiresUserGesture
-            settings.mediaPlaybackRequiresUserGesture = false
-        }
         if (videoButtonPolicy == policy) return
         videoButtonPolicy = policy
         liveVideoTracker?.updateButtonPolicy(policy)
@@ -386,7 +376,6 @@ class Tab(
         detectionGeneration.incrementAndGet()
         grabberBridge?.reset()
         liveVideoTracker?.onNavigationStarted()
-        companionSurfaceReady = false
         hasPlayingMedia = false
         probeHandles.toList().forEach { it.cancel() }
         probeHandles.clear()
@@ -840,7 +829,6 @@ class Tab(
             // Add-on telemetry only; the existing grabber and playback entry points stay intact.
             liveVideoTracker = LiveVideoTracker(this@Tab.id, this, videoButtonPolicy, browserVideoPlayer,
                 onPlayingVideoChanged = { companionVideoKey = it },
-                onCompanionSurfaceReady = { companionSurfaceReady = true },
                 onFullscreenFailure = {
                     if (alive.get() && videoButtonPolicy.enabled) android.widget.Toast.makeText(tabContext,
                         "This page couldn't open video fullscreen. Its original player is still available.",

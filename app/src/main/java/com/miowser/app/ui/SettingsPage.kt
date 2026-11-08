@@ -230,7 +230,7 @@ fun SettingsPage(
             SettingsSection("Media") {
                 SettingRow(
                     "Browse source while playing",
-                    "Pause the player to browse the source page, then open the next video in Miowser.",
+                    "Keep the player open and paused while you browse its source page.",
                     settings.companionBrowsingEnabled
                 ) {
                     onUpdate(settings.copy(companionBrowsingEnabled = it))

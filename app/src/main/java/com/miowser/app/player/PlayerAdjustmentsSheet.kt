@@ -53,7 +53,7 @@ internal fun PlayerAdjustmentsSheet(activity: Activity?, onDismiss: () -> Unit,
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(UiSpacing.m)) {
                 Column(Modifier.weight(1f)) {
                     Text("Browse source while playing", style = MaterialTheme.typography.titleSmall)
-                    Text("Pause this player while you choose the next video from its page.",
+                    Text("Keep the player open and paused while you browse its source page.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

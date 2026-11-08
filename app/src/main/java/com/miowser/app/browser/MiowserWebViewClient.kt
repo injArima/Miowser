@@ -60,12 +60,16 @@ class MiowserWebViewClient(
 
     @Volatile private var currentPageUrl: String = "about:blank"
     @Volatile private var retired = false
+    private var mainFrameLoading = false
     @Volatile private var blockedMainFrame: BlockedPageInfo? = null
 
     fun retire() { retired = true }
 
     override fun onPageCommitVisible(view: WebView, url: String?) {
-        if (!retired) onPageCommitted()
+        if (!retired) {
+            mainFrameLoading = false
+            onPageCommitted()
+        }
     }
 
     override fun onScaleChanged(view: WebView, oldScale: Float, newScale: Float) {
@@ -83,6 +87,7 @@ class MiowserWebViewClient(
     override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
         if (retired) return
         if (url != null) {
+            mainFrameLoading = true
             currentPageUrl = url
             onUrlChanged(url)
             onNewPageStarted()
@@ -93,6 +98,7 @@ class MiowserWebViewClient(
 
     override fun onPageFinished(view: WebView, url: String?) {
         if (retired) return
+        mainFrameLoading = false
         // Covers redirects: the URL at load-finish can differ from the one onPageStarted saw.
         if (url != null) {
             currentPageUrl = url
@@ -223,6 +229,9 @@ class MiowserWebViewClient(
             currentPageUrl = url
             onUrlChanged(url)
             onNewPageStarted()
+            // pushState episode switches keep the same document and never deliver
+            // another commit/finish callback. Rebind detection after its reset.
+            if (!mainFrameLoading && !isReload) onPageCommitted()
         }
         refreshNavigationState(view)
     }

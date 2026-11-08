@@ -851,7 +851,7 @@ fun BrowserScreen(
         companionOldWasPlaying = if (fromWeb) sourceTab?.browserVideoPlayer?.intendedPlaying == true else false
         if (fromWeb) sourceTab?.browserVideoPlayer?.pause()
         companionDetectorOpen = false
-        companion.setCompanionTracking(true)
+        companion.setCompanionTracking(!fromWeb)
         companionTemporaryTabIds = setOf(companion.id)
         companionTabId = companion.id
     }
@@ -1005,7 +1005,7 @@ fun BrowserScreen(
         resultMsg.sendToTarget()
         if (openerTabId == companionTabId) {
             opener.setCompanionTracking(false)
-            child.setCompanionTracking(true)
+            child.setCompanionTracking(!companionFromWeb)
             companionTemporaryTabIds = companionTemporaryTabIds + child.id
             companionTabId = child.id
         }
@@ -2100,7 +2100,6 @@ fun BrowserScreen(
                 tabs.forEach { tab ->
                     if (tab.id == companionTabId) return@forEach
                     val engine = tab.liveWebView ?: return@forEach
-                    if (fullscreenVideo?.view === engine) return@forEach
                     key(tab.id, engine) {
                         // Pull feedback is separate from ordinary navigation, which has its own
                         // loading indicator in the address bar.
@@ -3592,12 +3591,6 @@ fun BrowserScreen(
 
     val companionTab = tabs.firstOrNull { it.id == companionTabId }
     val companionVideoKey = companionTab?.companionVideoKey
-    LaunchedEffect(companionTabId, companionTab?.companionSurfaceReady, companionFromWeb) {
-        val tab = companionTab ?: return@LaunchedEffect
-        if (!companionFromWeb || !tab.companionSurfaceReady) return@LaunchedEffect
-        tab.companionSurfaceReady = false
-        showWebFullscreen(tab.id, tab.ensureWebView(), WebChromeClient.CustomViewCallback {})
-    }
     LaunchedEffect(fullscreenVideo, playbackRequest, companionTabId, companionFromWeb) {
         if (companionTabId != null &&
             (companionFromWeb && fullscreenVideo == null || !companionFromWeb && playbackRequest == null)) {
@@ -3765,9 +3758,7 @@ fun BrowserScreen(
         tabs.forEach { tab ->
             val enabled = (allowVideoButton && tab.id == activeTabId ||
                 tab.id == companionTabId) && !tab.isShowingHome && tab.pageError == null
-            tab.updateVideoAssistantButton(if (enabled) enabledVideoButtonAppearance.copy(
-                autoEnter = companionFromWeb && tab.id == companionTabId
-            ) else videoButtonAppearance)
+            tab.updateVideoAssistantButton(if (enabled) enabledVideoButtonAppearance else videoButtonAppearance)
         }
     }
     LaunchedEffect(startupReady, AppSettings.current.javaScriptEnabled, AppSettings.current.cookiesEnabled,
