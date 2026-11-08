@@ -3518,7 +3518,7 @@ fun BrowserScreen(
                 Box(Modifier.fillMaxSize().zIndex(2f)) {
                     BrowserVideoSurface(fullscreen.view, tabs.firstOrNull { it.id == fullscreen.tabId }?.browserVideoPlayer)
                     tabs.firstOrNull { it.id == fullscreen.tabId }?.let { owner ->
-                        BrowserVideoPlayerOverlay(owner.browserVideoPlayer, owner.title, ::exitWebFullscreen,
+                        BrowserVideoPlayerOverlay(owner.browserVideoPlayer, owner.videoPageTitle, ::exitWebFullscreen,
                             sourceLabel = SiteProtection.host(owner.url).orEmpty(),
                             onBrowseSource = if (AppSettings.current.companionBrowsingEnabled) ({
                                 openCompanionBrowser(owner.url, fromWeb = true)

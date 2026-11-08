@@ -130,6 +130,7 @@ class Tab(
         if (isBrowserHomeUrl(initialUrl)) "Home" else initialTitle.ifBlank { "New Tab" }
     )
     var url by mutableStateOf(initialUrl)
+    internal val videoPageTitle: String get() = browserVideoPageTitle(url, title)
     var isShowingHome by mutableStateOf(isBrowserHomeUrl(initialUrl))
         private set
     var isDesktopMode by mutableStateOf(initialDesktopMode)
@@ -642,7 +643,7 @@ class Tab(
                 val observed = detectedMedia.firstOrNull { it.url == candidateUrl }
                 addOrReplaceDetection(result.copy(
                     pageUrl = this@Tab.url,
-                    pageTitle = this@Tab.title,
+                    pageTitle = this@Tab.videoPageTitle,
                     requestReferer = observed?.requestReferer ?: requestReferer,
                     requestOrigin = observed?.requestOrigin ?: requestOrigin
                 ))
@@ -808,7 +809,7 @@ class Tab(
                                 // unlike the manifest-derived resolution on the network-probe path.
                                 resolution = if (width > 0 && height > 0) "${width}x${height}" else null,
                                 isEncrypted = false,
-                                pageTitle = this@Tab.title,
+                                pageTitle = this@Tab.videoPageTitle,
                                 requestReferer = frameReferer.takeIf { rendererKind != null },
                                 posterUrl = posterUrl.takeIf {
                                     it.startsWith("https://", ignoreCase = true) ||
@@ -885,7 +886,7 @@ class Tab(
                                 variantCount = null,
                                 resolution = null,
                                 isEncrypted = false,
-                                pageTitle = this@Tab.title
+                                pageTitle = this@Tab.videoPageTitle
                             )
                         )
                         if (guessedType != null && rendererKind == null) {
@@ -908,7 +909,7 @@ class Tab(
                             originatingTabId = this@Tab.id,
                             url = downloadUrl,
                             pageUrl = this@Tab.url,
-                            pageTitle = this@Tab.title,
+                            pageTitle = this@Tab.videoPageTitle,
                             userAgent = downloadUserAgent?.takeIf(String::isNotBlank) ?: cachedUserAgent.get(),
                             contentDisposition = contentDisposition,
                             mimeType = mimeType,
@@ -1027,7 +1028,7 @@ class Tab(
                             originatingTabId = this@Tab.id,
                             url = downloadUrl,
                             pageUrl = this@Tab.url,
-                            pageTitle = this@Tab.title,
+                            pageTitle = this@Tab.videoPageTitle,
                             userAgent = cachedUserAgent.get(),
                             contentDisposition = null,
                             mimeType = null,
