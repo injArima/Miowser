@@ -35,10 +35,13 @@ These named contracts are in `ComponentTokens.kt`. When changing a component's d
 
 Component tokens should reference the primitive spacing, size, and shape scales where the values match. Material theme roles remain the source for colors, type, and default component shapes. Player UI is outside the component-token scope of this pass.
 
-The shared player speed editor added in 0.1.48 uses `PlayerSpeedControlTokens`:
-0.25×–3× range, 0.05× increments, 54 intermediate slider steps, preset rates,
-320dp menu width, and a 5-second acknowledgement fallback matching the WebView
-command timeout. Its spacing and button targets use the shared primitive tokens.
+The shared player speed editor uses `PlayerSpeedControlTokens`: 0.25×–3× range,
+0.01× increments, 274 intermediate slider steps, 320dp menu width, 150dp exact-value
+field, and a 5-second acknowledgement fallback matching the WebView command timeout.
+Held-button repeat intervals accelerate from 160ms to 100ms after 8 repeats, then
+60ms after 24 repeats. Initial long-press timing follows Android's configuration.
+Preset rates have been removed. Spacing, button targets and state colors use the
+shared primitive tokens and Material 3 defaults.
 
 ## Existing token sources
 

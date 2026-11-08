@@ -128,9 +128,15 @@ object LoadingIndicatorTokens {
 object PlayerSpeedControlTokens {
     const val minimum = 0.25f
     const val maximum = 3f
-    const val increment = 0.05f
-    const val sliderSteps = 54
+    const val increment = 0.01f
+    const val sliderSteps = 274
+    const val acknowledgementTolerance = increment / 2f
     const val feedbackTimeoutMs = 5_000L
-    val presets = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f, 3f)
+    const val slowRepeatMs = 160L
+    const val mediumRepeatMs = 100L
+    const val fastRepeatMs = 60L
+    const val mediumRepeatAfter = 8
+    const val fastRepeatAfter = 24
     val menuWidth = 320.dp
+    val fieldWidth = 150.dp
 }

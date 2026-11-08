@@ -2,8 +2,6 @@ package com.miowser.app.player
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -39,11 +37,7 @@ import com.miowser.app.ui.MiowserDropdownMenu
 import com.miowser.app.ui.MiowserMenuItem
 import com.miowser.app.ui.icons.HeadphonesRoundedOutline
 import kotlin.math.roundToLong
-import kotlin.math.roundToInt
-import kotlin.math.abs
-import kotlinx.coroutines.delay
 import com.miowser.app.ui.theme.PlayerUiColors
-import com.miowser.app.ui.theme.PlayerSpeedControlTokens
 import com.miowser.app.ui.theme.UiControlSize
 import com.miowser.app.ui.theme.UiCorners
 import com.miowser.app.ui.theme.UiSpacing
@@ -451,63 +445,6 @@ private fun PlayerOptionButton(
 
 private fun formatSpeed(speed: Float): String =
     if (speed == speed.toInt().toFloat()) "${speed.toInt()}x" else "${speed}x"
-
-/** One shared speed editor for both engines; stream updates happen on release, not every drag pixel. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun PlayerSpeedControls(speed: Float, onSpeedSelected: (Float) -> Unit) {
-    fun precise(value: Float) = ((value / PlayerSpeedControlTokens.increment).roundToInt() *
-        PlayerSpeedControlTokens.increment * 100).roundToInt().div(100f)
-        .coerceIn(PlayerSpeedControlTokens.minimum, PlayerSpeedControlTokens.maximum)
-    val slider = rememberSliderState(value = precise(speed), steps = PlayerSpeedControlTokens.sliderSteps,
-        trackRange = PlayerSpeedControlTokens.minimum..PlayerSpeedControlTokens.maximum)
-    val interactionSource = remember { MutableInteractionSource() }
-    val dragging by interactionSource.collectIsDraggedAsState()
-    var pendingSpeed by remember { mutableStateOf<Float?>(null) }
-    // WebView confirms commands asynchronously. Keep the latest requested value visible
-    // through intermediate acknowledgements, then reconcile a rejected/unsupported rate.
-    LaunchedEffect(speed, pendingSpeed, dragging) {
-        if (!dragging) {
-            val pending = pendingSpeed
-            if (pending != null && abs(speed - pending) >= 0.01f)
-                delay(PlayerSpeedControlTokens.feedbackTimeoutMs)
-            slider.value = precise(speed)
-            pendingSpeed = null
-        }
-    }
-    fun select(value: Float) {
-        val rate = precise(value)
-        slider.value = rate
-        pendingSpeed = rate
-        onSpeedSelected(rate)
-    }
-    Column(Modifier.width(PlayerSpeedControlTokens.menuWidth).padding(horizontal = UiSpacing.m),
-        verticalArrangement = Arrangement.spacedBy(UiSpacing.xs)) {
-        Text("Playback speed · ${formatSpeed(precise(slider.value))}",
-            style = MaterialTheme.typography.titleSmall)
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { select(slider.value - PlayerSpeedControlTokens.increment) },
-                enabled = slider.value > PlayerSpeedControlTokens.minimum) {
-                Icon(Icons.Rounded.Remove, "Decrease speed by 0.05x")
-            }
-            Slider(state = slider, modifier = Modifier.weight(1f),
-                interactionSource = interactionSource,
-                onValueChange = { slider.value = precise(it) },
-                onValueChangeFinished = { select(slider.value) })
-            IconButton(onClick = { select(slider.value + PlayerSpeedControlTokens.increment) },
-                enabled = slider.value < PlayerSpeedControlTokens.maximum) {
-                Icon(Icons.Rounded.Add, "Increase speed by 0.05x")
-            }
-        }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
-            PlayerSpeedControlTokens.presets.forEach { rate ->
-                FilterChip(selected = abs(slider.value - rate) < 0.01f,
-                    onClick = { select(rate) }, label = { Text(formatSpeed(rate)) })
-            }
-        }
-    }
-}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
