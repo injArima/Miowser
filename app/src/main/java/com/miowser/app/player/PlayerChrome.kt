@@ -2,11 +2,15 @@ package com.miowser.app.player
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -35,7 +39,11 @@ import com.miowser.app.ui.MiowserDropdownMenu
 import com.miowser.app.ui.MiowserMenuItem
 import com.miowser.app.ui.icons.HeadphonesRoundedOutline
 import kotlin.math.roundToLong
+import kotlin.math.roundToInt
+import kotlin.math.abs
+import kotlinx.coroutines.delay
 import com.miowser.app.ui.theme.PlayerUiColors
+import com.miowser.app.ui.theme.PlayerSpeedControlTokens
 import com.miowser.app.ui.theme.UiControlSize
 import com.miowser.app.ui.theme.UiCorners
 import com.miowser.app.ui.theme.UiSpacing
@@ -92,6 +100,8 @@ internal fun PlayerTopBar(
     playlistSize: Int,
     onLock: () -> Unit,
     onDismiss: () -> Unit,
+    muted: Boolean = false,
+    onToggleMute: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     BoxWithConstraints(
@@ -105,8 +115,8 @@ internal fun PlayerTopBar(
     ) {
         val compact = maxWidth < 340.dp
         val gap = if (compact) 0.dp else 4.dp
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Spacer(Modifier.weight(1f))
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState(), reverseScrolling = true),
+            horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
             if (onDownload != null) {
                 RoundPlayerButton(Icons.Rounded.Download, "Download video", onDownload)
                 Spacer(Modifier.width(gap))
@@ -126,6 +136,13 @@ internal fun PlayerTopBar(
             }
             if (onPip != null) {
                 RoundPlayerButton(Icons.Rounded.PictureInPictureAlt, "Picture in picture", onPip)
+                Spacer(Modifier.width(gap))
+            }
+            if (onToggleMute != null) {
+                RoundPlayerButton(
+                    if (muted) Icons.AutoMirrored.Rounded.VolumeOff else Icons.AutoMirrored.Rounded.VolumeUp,
+                    if (muted) "Unmute" else "Mute", onToggleMute, selected = muted
+                )
                 Spacer(Modifier.width(gap))
             }
             RoundPlayerButton(
@@ -435,6 +452,63 @@ private fun PlayerOptionButton(
 private fun formatSpeed(speed: Float): String =
     if (speed == speed.toInt().toFloat()) "${speed.toInt()}x" else "${speed}x"
 
+/** One shared speed editor for both engines; stream updates happen on release, not every drag pixel. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PlayerSpeedControls(speed: Float, onSpeedSelected: (Float) -> Unit) {
+    fun precise(value: Float) = ((value / PlayerSpeedControlTokens.increment).roundToInt() *
+        PlayerSpeedControlTokens.increment * 100).roundToInt().div(100f)
+        .coerceIn(PlayerSpeedControlTokens.minimum, PlayerSpeedControlTokens.maximum)
+    val slider = rememberSliderState(value = precise(speed), steps = PlayerSpeedControlTokens.sliderSteps,
+        trackRange = PlayerSpeedControlTokens.minimum..PlayerSpeedControlTokens.maximum)
+    val interactionSource = remember { MutableInteractionSource() }
+    val dragging by interactionSource.collectIsDraggedAsState()
+    var pendingSpeed by remember { mutableStateOf<Float?>(null) }
+    // WebView confirms commands asynchronously. Keep the latest requested value visible
+    // through intermediate acknowledgements, then reconcile a rejected/unsupported rate.
+    LaunchedEffect(speed, pendingSpeed, dragging) {
+        if (!dragging) {
+            val pending = pendingSpeed
+            if (pending != null && abs(speed - pending) >= 0.01f)
+                delay(PlayerSpeedControlTokens.feedbackTimeoutMs)
+            slider.value = precise(speed)
+            pendingSpeed = null
+        }
+    }
+    fun select(value: Float) {
+        val rate = precise(value)
+        slider.value = rate
+        pendingSpeed = rate
+        onSpeedSelected(rate)
+    }
+    Column(Modifier.width(PlayerSpeedControlTokens.menuWidth).padding(horizontal = UiSpacing.m),
+        verticalArrangement = Arrangement.spacedBy(UiSpacing.xs)) {
+        Text("Playback speed · ${formatSpeed(precise(slider.value))}",
+            style = MaterialTheme.typography.titleSmall)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { select(slider.value - PlayerSpeedControlTokens.increment) },
+                enabled = slider.value > PlayerSpeedControlTokens.minimum) {
+                Icon(Icons.Rounded.Remove, "Decrease speed by 0.05x")
+            }
+            Slider(state = slider, modifier = Modifier.weight(1f),
+                interactionSource = interactionSource,
+                onValueChange = { slider.value = precise(it) },
+                onValueChangeFinished = { select(slider.value) })
+            IconButton(onClick = { select(slider.value + PlayerSpeedControlTokens.increment) },
+                enabled = slider.value < PlayerSpeedControlTokens.maximum) {
+                Icon(Icons.Rounded.Add, "Increase speed by 0.05x")
+            }
+        }
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
+            PlayerSpeedControlTokens.presets.forEach { rate ->
+                FilterChip(selected = abs(slider.value - rate) < 0.01f,
+                    onClick = { select(rate) }, label = { Text(formatSpeed(rate)) })
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun PlayerBottomChrome(
@@ -449,7 +523,6 @@ internal fun PlayerBottomChrome(
     timelineContent: @Composable () -> Unit,
     timerContent: @Composable (Modifier) -> Unit,
     modifier: Modifier = Modifier,
-    extraSpeedOptions: @Composable ColumnScope.() -> Unit = {},
     message: String? = null
 ) {
     var timerWidthPx by remember(layoutKey) { mutableIntStateOf(0) }
@@ -523,15 +596,7 @@ internal fun PlayerBottomChrome(
                         expanded = speedMenuExpanded,
                         onDismissRequest = { onSpeedMenuChange(false) }
                     ) {
-                        extraSpeedOptions()
-                        listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { speed ->
-                            MiowserMenuItem(
-                                text = { Text(formatSpeed(speed)) },
-                                selected = speed == playbackSpeed,
-                                leadingIcon = { Icon(Icons.Rounded.Speed, contentDescription = null) },
-                                onClick = { onSpeedSelected(speed) }
-                            )
-                        }
+                        PlayerSpeedControls(playbackSpeed, onSpeedSelected)
                     }
                 }
                 Box {

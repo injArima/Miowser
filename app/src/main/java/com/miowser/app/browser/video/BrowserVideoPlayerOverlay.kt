@@ -23,8 +23,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.VolumeOff
-import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Icon
@@ -50,7 +48,6 @@ import com.miowser.app.MainActivity
 import com.miowser.app.browser.loadSubtitleForPlayback
 import com.miowser.app.grabber.DetectedMedia
 import com.miowser.app.player.*
-import com.miowser.app.ui.MiowserMenuItem
 import com.miowser.app.ui.sheetVerticalEdgeFade
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -364,6 +361,8 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                                         act { controller.setAudioOnly(!state.audioOnly) }
                                     },
                                     onOpenPlaylist = null, playlistFocus = playlistFocus, playlistPosition = 0, playlistSize = 0,
+                                    muted = video.muted,
+                                    onToggleMute = { closeMenus(); act { controller.setMuted(!video.muted) } },
                                     onLock = { locked = true; closeMenus() }, onDismiss = onExit, modifier = Modifier.align(Alignment.TopCenter))
                                 if (visible) PlayerCenterControls(state.pendingPlaying ?: video.playing,
                                     video.buffering, false, null, null,
@@ -377,18 +376,14 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                                         PlayerDisplayPreferenceStore.saveScaleMode(context, mode.name)
                                         act { controller.setScale(BrowserVideoScale.valueOf(mode.name)) }
                                     },
-                                    speedMenu, { speedMenu = it; interaction++ }, { rate -> speedMenu = false; act { controller.setSpeed(rate.toDouble()) } },
+                                    speedMenu, { speedMenu = it; interaction++ }, { rate -> act { controller.setSpeed(rate.toDouble()) } },
                                     subtitleFocus, "Subtitles", true, if (subtitleAvailable) ({ closeMenus(); overlays.open(PlayerOverlay.SUBTITLES); interaction++ }) else null,
                                     "Audio tracks", true, if (video.audioTracks.size > 1) ({ closeMenus(); audioPanel = true; interaction++ }) else null,
                                     "Quality", false, null,
                                     onAdjustmentsRequested = { closeMenus(); adjustments = true; interaction++ },
                                     timelineContent = { BrowserVideoTimeline(controller, timeline) { if (scrubbing != it) { scrubbing = it; interaction++ } } },
                                     timerContent = { BrowserVideoTimer(controller, timeline, it) }, modifier = Modifier.align(Alignment.BottomCenter),
-                                    extraSpeedOptions = {
-                                        MiowserMenuItem(text = { Text(if (video.muted) "Unmute" else "Mute") },
-                                            leadingIcon = { Icon(if (video.muted) Icons.AutoMirrored.Rounded.VolumeOff else Icons.AutoMirrored.Rounded.VolumeUp, null) },
-                                            onClick = { speedMenu = false; act { controller.setMuted(!video.muted) } })
-                                    }, message = state.message)
+                                    message = state.message)
                             }
                         }
                     }

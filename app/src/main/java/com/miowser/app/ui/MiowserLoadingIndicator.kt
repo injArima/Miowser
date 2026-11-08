@@ -21,14 +21,15 @@ import androidx.compose.ui.unit.Dp
 import com.miowser.app.ui.theme.LoadingIndicatorTokens
 import com.miowser.app.ui.theme.LocalMotionPolicy
 
-/** Indeterminate work only. Keep percentage and byte progress on determinate progress bars. */
+/** Expressive loading and pull-gesture feedback. Byte/percentage tasks keep their progress bars. */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MiowserLoadingIndicator(
     modifier: Modifier = Modifier,
     size: Dp? = null,
     contained: Boolean = false,
-    description: String = "Loading"
+    description: String = "Loading",
+    progress: (() -> Float)? = null
 ) {
     val indicatorModifier = (if (size == null) modifier else modifier.size(size))
         .semantics { contentDescription = description }
@@ -53,7 +54,8 @@ fun MiowserLoadingIndicator(
             )
         }
     } else if (contained) {
-        ContainedLoadingIndicator(modifier = indicatorModifier)
+        if (progress != null) ContainedLoadingIndicator(progress = progress, modifier = indicatorModifier)
+        else ContainedLoadingIndicator(modifier = indicatorModifier)
     } else {
         LoadingIndicator(modifier = indicatorModifier)
     }

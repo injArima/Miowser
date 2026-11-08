@@ -31,8 +31,14 @@ These named contracts are in `ComponentTokens.kt`. When changing a component's d
 | Hub library | Grid minimum cell 168 dp, inset 12 dp, bottom clearance 80 dp; folder rail height 56 dp | Library and download grids, folder rail |
 | Hub video card | List artwork 136 × 84 dp; center artwork 76 dp; badge inset 6 × 3 dp; top corners 24 dp; artwork overlay alpha 0.18 | Library grid and list cards |
 | Action buttons | Shape radius 24 dp; minimum target height 48 dp | Shared Material 3 primary, tonal, outlined, text, and caution actions |
+| Loading feedback (`LoadingIndicatorTokens`) | Address 28 dp, compact 24 dp, pull-to-refresh 40 dp | Address progress, compact loading, and contained pull feedback |
 
 Component tokens should reference the primitive spacing, size, and shape scales where the values match. Material theme roles remain the source for colors, type, and default component shapes. Player UI is outside the component-token scope of this pass.
+
+The shared player speed editor added in 0.1.48 uses `PlayerSpeedControlTokens`:
+0.25×–3× range, 0.05× increments, 54 intermediate slider steps, preset rates,
+320dp menu width, and a 5-second acknowledgement fallback matching the WebView
+command timeout. Its spacing and button targets use the shared primitive tokens.
 
 ## Existing token sources
 

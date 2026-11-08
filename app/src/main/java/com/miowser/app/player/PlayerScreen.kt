@@ -378,6 +378,8 @@ private fun PlayerContent(
     var playbackEnded by remember(request) { mutableStateOf(false) }
     var isScrubbing by remember(request) { mutableStateOf(false) }
     var playbackSpeed by remember(request) { mutableFloatStateOf(1f) }
+    var playerVolume by remember(request) { mutableFloatStateOf(1f) }
+    var volumeBeforeMute by remember(request) { mutableFloatStateOf(1f) }
     var audioOnly by remember(request) { mutableStateOf(false) }
     val backgroundPlaybackEnabled = com.miowser.app.settings.AppSettings.current.backgroundPlaybackEnabled
     var holdToSpeedActive by remember(request) { mutableStateOf(false) }
@@ -673,6 +675,10 @@ private fun PlayerContent(
                 playbackSpeed = parameters.speed
             }
 
+            override fun onVolumeChanged(volume: Float) {
+                playerVolume = volume
+            }
+
             override fun onVideoSizeChanged(videoSize: VideoSize) {
                 val height = videoQualityHeight(videoSize.width, videoSize.height) ?: return
                 playingQualityHeight = height
@@ -697,6 +703,8 @@ private fun PlayerContent(
         com.miowser.app.diagnostics.DevResourceDiagnostics.listenerAdded()
         trackSnapshot = buildPlayerTrackSnapshot(exoPlayer.currentTracks)
         playbackSpeed = exoPlayer.playbackParameters.speed
+        playerVolume = exoPlayer.volume
+        if (playerVolume > 0f) volumeBeforeMute = playerVolume
         playingQualityHeight = videoQualityHeight(exoPlayer.videoSize.width, exoPlayer.videoSize.height)
         if (exoPlayer.playbackState == Player.STATE_READY) recordReadyMedia()
         onDispose {
@@ -1082,7 +1090,8 @@ private fun PlayerContent(
                 gestureFeedback = feedback
                 gestureFeedbackActivity++
             },
-            onBrightnessCommitted = { PlayerDisplayPreferenceStore.saveBrightness(context, it) }
+            onBrightnessCommitted = { PlayerDisplayPreferenceStore.saveBrightness(context, it) },
+            onVolumeInteraction = { if (exoPlayer.volume == 0f) exoPlayer.volume = volumeBeforeMute }
         )
 
         AnimatedVisibility(
@@ -1132,6 +1141,15 @@ private fun PlayerContent(
                             )) pipTransitionActive.value = false
                         }) else null,
                         audioOnly = audioOnly,
+                        muted = playerVolume == 0f,
+                        onToggleMute = {
+                            if (exoPlayer.volume > 0f) {
+                                volumeBeforeMute = exoPlayer.volume
+                                exoPlayer.volume = 0f
+                            } else exoPlayer.volume = volumeBeforeMute
+                            controlsVisible = true
+                            controlsActivity++
+                        },
                         onToggleAudioOnly = {
                             audioOnly = !audioOnly
                             controlsVisible = true
@@ -1216,7 +1234,6 @@ private fun PlayerContent(
                         speedMenuExpanded = speedMenuExpanded,
                         onSpeedSelected = { speed ->
                             exoPlayer.setPlaybackSpeed(speed)
-                            speedMenuExpanded = false
                             controlsVisible = true
                             controlsActivity++
                         },
@@ -1489,12 +1506,13 @@ private fun PlayerGestureLayer(
     onStopHoldToSpeed: () -> Unit,
     onSeekTo: (Long) -> Unit,
     onFeedback: (PlayerGestureFeedback) -> Unit,
-    onBrightnessCommitted: (Float) -> Unit
+    onBrightnessCommitted: (Float) -> Unit,
+    onVolumeInteraction: () -> Unit
 ) {
     PlayerGestureSurface(controlsLocked, controlsVisible, isLandscape,
         positionMs = { player.currentPosition }, durationMs = { player.knownDurationMs() },
         onSingleTap, onTogglePlayPause, onStartHoldToSpeed, onStopHoldToSpeed,
-        onSeekTo, onFeedback, onBrightnessCommitted)
+        onSeekTo, onFeedback, onBrightnessCommitted, onVolumeInteraction = onVolumeInteraction)
 }
 
 @OptIn(ExperimentalLayoutApi::class)

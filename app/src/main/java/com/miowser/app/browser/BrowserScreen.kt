@@ -16,7 +16,6 @@ import android.os.Message
 import android.provider.Settings
 import android.view.View
 import android.view.ViewGroup
-import android.view.ViewTreeObserver
 import android.widget.Toast
 import android.widget.FrameLayout
 import android.webkit.CookieManager
@@ -99,7 +98,6 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
-import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.repeatOnLifecycle
@@ -183,6 +181,7 @@ import kotlinx.coroutines.flow.first
 import com.miowser.app.ui.theme.LocalMotionPolicy
 import com.miowser.app.ui.theme.MiowserPlayerTheme
 import com.miowser.app.ui.theme.MotionTokens
+import com.miowser.app.ui.theme.LoadingIndicatorTokens
 import com.miowser.app.ui.theme.UiIconSize
 import com.miowser.app.ui.theme.UiSpacing
 
@@ -2104,12 +2103,13 @@ fun BrowserScreen(
                         // Pull feedback is separate from ordinary navigation, which has its own
                         // loading indicator in the address bar.
                         var isRefreshing by remember { mutableStateOf(false) }
-                        var isPulling by remember { mutableStateOf(false) }
-                        val pullObserver = remember { arrayOfNulls<ViewTreeObserver.OnPreDrawListener>(1) }
+                        var pullFeedback by remember { mutableStateOf<BrowserPullFeedback?>(null) }
+                        val pullHost = remember { arrayOfNulls<BrowserPullToRefreshLayout>(1) }
                         LaunchedEffect(tab.isLoading) {
-                            if (!tab.isLoading) {
+                            if (!tab.isLoading && isRefreshing) {
                                 isRefreshing = false
-                                isPulling = false
+                                pullFeedback = null
+                                pullHost[0]?.finishRefresh()
                             }
                         }
                         Box(Modifier.fillMaxSize()) {
@@ -2119,19 +2119,10 @@ fun BrowserScreen(
                                     // WebView does not participate in Compose's nested scroll. Keep
                                     // SwipeRefreshLayout for top-of-page drag detection.
                                     val content = FrameLayout(ctx)
-                                    val swipeRefresh = SwipeRefreshLayout(ctx)
+                                    val swipeRefresh = BrowserPullToRefreshLayout(ctx)
                                     swipeRefresh.apply {
-                                        // The first child is SwipeRefreshLayout's own indicator.
-                                        // Hide its drawing without changing its touch or refresh logic.
-                                        val nativeSpinner = getChildAt(0)
-                                        nativeSpinner.alpha = 0f
-                                        val observer = ViewTreeObserver.OnPreDrawListener {
-                                            val pulling = nativeSpinner.visibility == View.VISIBLE
-                                            if (isPulling != pulling) isPulling = pulling
-                                            true
-                                        }
-                                        viewTreeObserver.addOnPreDrawListener(observer)
-                                        pullObserver[0] = observer
+                                        pullHost[0] = this
+                                        onFeedbackChanged = { pullFeedback = it }
                                         val display = NativeVideoAssistantDisplay(ctx)
                                         content.addView(engine, FrameLayout.LayoutParams(-1, -1))
                                         content.addView(display, FrameLayout.LayoutParams(-1, -1))
@@ -2153,21 +2144,22 @@ fun BrowserScreen(
                                     swipeRefresh.visibility = if (
                                         tab.id == activeTabId && !tab.isShowingHome
                                     ) View.VISIBLE else View.INVISIBLE
-                                    swipeRefresh.isRefreshing = isRefreshing
+                                    if (swipeRefresh.visibility != View.VISIBLE) swipeRefresh.cancelPull()
                                 },
                                 onRelease = { host ->
-                                    pullObserver[0]?.let { observer ->
-                                        host.viewTreeObserver.takeIf { it.isAlive }
-                                            ?.removeOnPreDrawListener(observer)
-                                    }
-                                    pullObserver[0] = null
+                                    host.onFeedbackChanged = {}
+                                    host.finishRefresh()
+                                    pullHost[0] = null
                                     releaseVideoAssistantHost(host, tab::detachVideoAssistantDisplay)
                                 }
                             )
-                            if ((isPulling || isRefreshing) && tab.id == activeTabId && !tab.isShowingHome) {
+                            if ((pullFeedback != null || isRefreshing) && tab.id == activeTabId && !tab.isShowingHome) {
                                 MiowserLoadingIndicator(
                                     modifier = Modifier.align(Alignment.TopCenter).padding(top = UiSpacing.m),
                                     contained = true,
+                                    size = LoadingIndicatorTokens.pullRefresh,
+                                    progress = if (!isRefreshing && pullFeedback?.refreshing == false)
+                                        ({ pullFeedback?.progress ?: 0f }) else null,
                                     description = "Refreshing page"
                                 )
                             }

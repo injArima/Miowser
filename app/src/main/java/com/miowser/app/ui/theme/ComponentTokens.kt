@@ -3,7 +3,7 @@ package com.miowser.app.ui.theme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 
-/** Non-player component contracts. Keep layout values here when they belong to a component. */
+/** Shared component contracts. Keep layout values here when they belong to a component. */
 object AddressBarTokens {
     val fieldHeight = UiControlSize.touchTarget
     val accentWidth = UiControlSize.touchTarget
@@ -122,4 +122,15 @@ object ActionButtonTokens {
 object LoadingIndicatorTokens {
     val address = UiIconSize.featured
     val compact = UiIconSize.standard
+    val pullRefresh = UiControlSize.compact
+}
+
+object PlayerSpeedControlTokens {
+    const val minimum = 0.25f
+    const val maximum = 3f
+    const val increment = 0.05f
+    const val sliderSteps = 54
+    const val feedbackTimeoutMs = 5_000L
+    val presets = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f, 3f)
+    val menuWidth = 320.dp
 }
