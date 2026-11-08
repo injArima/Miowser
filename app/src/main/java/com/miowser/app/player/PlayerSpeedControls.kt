@@ -12,6 +12,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -20,12 +21,25 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.LayoutDirection
 import com.miowser.app.ui.theme.PlayerSpeedControlTokens
 import com.miowser.app.ui.theme.UiControlSize
 import com.miowser.app.ui.theme.UiSpacing
@@ -38,50 +52,64 @@ import kotlinx.coroutines.delay
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun PlayerSpeedControls(speed: Float, onSpeedSelected: (Float) -> Unit) {
+    val normal = PlayerSpeedControlTokens.normal
+    val range = PlayerSpeedControlTokens.minimum..PlayerSpeedControlTokens.maximum
+    val slowerSpan = normal - range.start
+    val fasterSpan = range.endInclusive - normal
     fun precise(value: Float) = ((value / PlayerSpeedControlTokens.increment).roundToInt() /
         (1f / PlayerSpeedControlTokens.increment))
-        .coerceIn(PlayerSpeedControlTokens.minimum, PlayerSpeedControlTokens.maximum)
+        .coerceIn(range)
     fun number(value: Float) = String.format(Locale.ROOT, "%.2f", precise(value))
-    val slider = rememberSliderState(value = precise(speed), steps = PlayerSpeedControlTokens.sliderSteps,
-        trackRange = PlayerSpeedControlTokens.minimum..PlayerSpeedControlTokens.maximum)
+    // Each half spans a different range so the physical midpoint represents normal speed.
+    fun positionFor(rate: Float): Float {
+        val offset = precise(rate) - normal
+        val span = if (offset < 0f) slowerSpan else fasterSpan
+        return offset / span
+    }
+    fun rateAt(position: Float): Float {
+        val span = if (position < 0f) slowerSpan else fasterSpan
+        return precise(normal + position * span)
+    }
+    val slider = rememberSliderState(value = positionFor(speed), trackRange = -1f..1f)
+    val selectedRate = rateAt(slider.value)
     val interactionSource = remember { MutableInteractionSource() }
     val dragging by interactionSource.collectIsDraggedAsState()
     var pendingSpeed by remember { mutableStateOf<Float?>(null) }
     var inputFocused by remember { mutableStateOf(false) }
     var speedText by remember { mutableStateOf(number(speed)) }
     fun parseRate(text: String) = text.trim().replace(',', '.').toFloatOrNull()?.takeIf {
-        it.isFinite() && it in PlayerSpeedControlTokens.minimum..PlayerSpeedControlTokens.maximum
+        it.isFinite() && it in range
     }
     val typedRate = parseRate(speedText)
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    val arrowDirection = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -1f else 1f
     // Keep newer edits visible through intermediate asynchronous WebView acknowledgements.
     LaunchedEffect(speed, pendingSpeed, dragging) {
         if (!dragging) {
             val pending = pendingSpeed
             if (pending != null && abs(speed - pending) >= PlayerSpeedControlTokens.acknowledgementTolerance)
                 delay(PlayerSpeedControlTokens.feedbackTimeoutMs)
-            slider.value = precise(speed)
+            slider.value = positionFor(speed)
             pendingSpeed = null
         }
     }
-    LaunchedEffect(slider.value, inputFocused) {
-        if (!inputFocused) speedText = number(slider.value)
+    LaunchedEffect(selectedRate, inputFocused) {
+        if (!inputFocused) speedText = number(selectedRate)
     }
     fun select(value: Float) {
         val rate = precise(value)
-        slider.value = rate
+        slider.value = positionFor(rate)
         speedText = number(rate)
         pendingSpeed = rate
         onSpeedSelected(rate)
     }
-    fun applyTypedRate() {
-        parseRate(speedText)?.let {
-            select(it)
-            focus.clearFocus()
-            keyboard?.hide()
-        }
+    fun applyFieldRate(rate: Float) {
+        select(rate)
+        focus.clearFocus()
+        keyboard?.hide()
     }
+    fun applyTypedRate() = parseRate(speedText)?.let(::applyFieldRate)
     Column(Modifier.width(PlayerSpeedControlTokens.menuWidth).padding(horizontal = UiSpacing.m),
         verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
@@ -91,7 +119,7 @@ internal fun PlayerSpeedControls(speed: Float, onSpeedSelected: (Float) -> Unit)
                 value = speedText, onValueChange = { speedText = it },
                 modifier = Modifier.width(PlayerSpeedControlTokens.fieldWidth)
                     .onFocusChanged { inputFocused = it.isFocused },
-                label = { Text("Speed") }, suffix = { Text("×") }, singleLine = true,
+                label = { Text("Speed (×)") }, singleLine = true,
                 isError = speedText.isNotBlank() && typedRate == null,
                 supportingText = if (speedText.isNotBlank() && typedRate == null) ({
                     Text("${number(PlayerSpeedControlTokens.minimum)}–${number(PlayerSpeedControlTokens.maximum)}")
@@ -99,27 +127,52 @@ internal fun PlayerSpeedControls(speed: Float, onSpeedSelected: (Float) -> Unit)
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { applyTypedRate() }),
                 trailingIcon = {
-                    IconButton(onClick = { applyTypedRate() }, enabled = typedRate != null) {
-                        Icon(Icons.Rounded.Check, "Apply playback speed")
+                    Row {
+                        IconButton(onClick = { applyFieldRate(normal) }) {
+                            Icon(Icons.Rounded.Close, "Reset playback speed to 1×")
+                        }
+                        IconButton(onClick = { applyTypedRate() }, enabled = typedRate != null) {
+                            Icon(Icons.Rounded.Check, "Apply playback speed")
+                        }
                     }
                 }
             )
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             SpeedAdjustmentButton(Icons.Rounded.Remove, "Decrease speed by ${PlayerSpeedControlTokens.increment}x",
-                enabled = slider.value > PlayerSpeedControlTokens.minimum) {
-                select(slider.value - PlayerSpeedControlTokens.increment)
+                enabled = selectedRate > range.start) {
+                select(rateAt(slider.value) - PlayerSpeedControlTokens.increment)
             }
-            Slider(state = slider, modifier = Modifier.weight(1f),
+            Slider(state = slider, modifier = Modifier.weight(1f)
+                .semantics {
+                    contentDescription = "Playback speed"
+                    stateDescription = "${number(selectedRate)}×"
+                    progressBarRangeInfo = ProgressBarRangeInfo(selectedRate, range, PlayerSpeedControlTokens.sliderSteps)
+                    setProgress { rate ->
+                        if (!rate.isFinite()) return@setProgress false
+                        select(rate)
+                        true
+                    }
+                }
+                .onPreviewKeyEvent { event ->
+                    val direction = when (event.key) {
+                        Key.DirectionLeft, Key.NumPadDirectionLeft -> -arrowDirection
+                        Key.DirectionRight, Key.NumPadDirectionRight -> arrowDirection
+                        else -> return@onPreviewKeyEvent false
+                    }
+                    if (event.type == KeyEventType.KeyDown)
+                        select(rateAt(slider.value) + direction * PlayerSpeedControlTokens.increment)
+                    true
+                },
                 interactionSource = interactionSource,
-                onValueChange = { slider.value = precise(it) },
-                onValueChangeFinished = { select(slider.value) },
+                onValueChange = { slider.value = it },
+                onValueChangeFinished = { select(rateAt(slider.value)) },
                 track = { state -> SliderDefaults.CenteredTrack(
                     sliderState = state, drawStopIndicator = null, drawTick = { _, _ -> }
                 ) })
             SpeedAdjustmentButton(Icons.Rounded.Add, "Increase speed by ${PlayerSpeedControlTokens.increment}x",
-                enabled = slider.value < PlayerSpeedControlTokens.maximum) {
-                select(slider.value + PlayerSpeedControlTokens.increment)
+                enabled = selectedRate < range.endInclusive) {
+                select(rateAt(slider.value) + PlayerSpeedControlTokens.increment)
             }
         }
     }
