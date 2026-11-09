@@ -52,6 +52,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SecondaryTabRow
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Surface
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -82,6 +84,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -146,6 +149,10 @@ import com.miowser.app.library.LibraryCardId
 import com.miowser.app.library.LibraryRepository
 import com.miowser.app.library.FailedVideoLog
 import com.miowser.app.library.LibrarySourceKind
+import com.miowser.app.library.LocalInspectionCache
+import com.miowser.app.library.device.DeviceDownload
+import com.miowser.app.library.device.DeviceVideo
+import com.miowser.app.library.isImportableVideo
 import com.miowser.app.player.PlaybackRequest
 import com.miowser.app.player.LibraryPlaybackQueue
 import com.miowser.app.player.PlayerScreen
@@ -334,6 +341,8 @@ fun BrowserScreen(
     // A launcher browser action must enter the browser on the first rendered frame.
     // The shortcut's tab operation can still wait for saved tabs to restore below.
     var showingHub by rememberSaveable { mutableStateOf(shortcutRequest == null) }
+    var deviceVideosSelected by rememberSaveable { mutableStateOf(true) }
+    val hubDestinations = rememberSaveableStateHolder()
     val libraryEnabled = AppSettings.current.libraryBehavior.isAvailable
     var hubSection by rememberSaveable {
         mutableStateOf(if (libraryEnabled) HubSection.LIBRARY else HubSection.DOWNLOADS)
@@ -1067,9 +1076,10 @@ fun BrowserScreen(
             remindRefreshWhenFiltersReady = true
     }
     // Only after a rendered, settled Library; stop issuing stages when it is hidden/busy.
-    LaunchedEffect(libraryIdle, recordsReady, showingHub, hubSection, playbackRequest,
+    LaunchedEffect(libraryIdle, recordsReady, showingHub, hubSection, deviceVideosSelected, playbackRequest,
         activeScreen, showBackupRestore, browserRequested, lifecycleOwner) {
-        if (!libraryEnabled || !libraryIdle || !recordsReady || !showingHub || hubSection != HubSection.LIBRARY ||
+        if (!libraryIdle || !recordsReady || !showingHub ||
+            (!deviceVideosSelected && (!libraryEnabled || hubSection != HubSection.LIBRARY)) ||
             playbackRequest != null || activeScreen != null || showBackupRestore || browserRequested) return@LaunchedEffect
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             delay(1_500)
@@ -1723,6 +1733,36 @@ fun BrowserScreen(
 
     fun findLibraryEntry(identityKey: String) = MediaLibrary.entryForCard(LibraryCardId(identityKey))
 
+    fun playDeviceVideo(video: DeviceVideo) {
+        val requestId = ++libraryPlayRequestId
+        coroutineScope.launch {
+            val locators = listOf(video.canonicalUri, video.uri).distinct()
+            val saved = locators.firstNotNullOfOrNull { findLibraryEntry("LOCAL_FILE:$it") }
+            val uri = withContext(Dispatchers.IO) {
+                (listOfNotNull(saved?.mediaUri) + locators).distinct().firstOrNull {
+                    LocalInspectionCache.available(context.applicationContext, it, force = true)
+                }
+            }
+            if (requestId != libraryPlayRequestId || !showingHub || !deviceVideosSelected) return@launch
+            if (uri == null) {
+                showActionSnackbar("This video is unavailable. Refresh or check access.")
+                return@launch
+            }
+            libraryPlaybackQueue = null
+            val entry = findLibraryEntry("LOCAL_FILE:$uri") ?: saved?.let {
+                if (libraryEnabled && it.mediaUri != uri) MediaLibrary.relinkLocal(context, it.mediaUri, uri)
+                it.copy(mediaUri = uri)
+            }
+            playbackFromLibrary = entry != null
+            playbackRequest = if (entry != null) {
+                entry.copy(title = video.title).toPlaybackRequest(null, "Miowser")
+            } else {
+                PlaybackRequest.Local(Uri.parse(uri), video.title, video.folder.ifBlank { "Device video" },
+                    videoName = video.title)
+            }
+        }
+    }
+
     fun playLibraryEntry(entry: LibraryEntry, query: LibraryBrowseQuery? = null) {
         val requestId = ++libraryPlayRequestId
         coroutineScope.launch {
@@ -1890,7 +1930,7 @@ fun BrowserScreen(
         internalPageOpen = activeScreen != null,
         webViewCanGoBack = activeTab?.canGoBack == true,
         activeTabHasOpener = activeTab?.openerTabId != null,
-        hubOnLibrary = hubSection == HubSection.LIBRARY
+        hubOnLibrary = deviceVideosSelected
     )
     BackHandler(enabled = backAction != BrowserBackAction.EXIT_APP) {
         when (backAction) {
@@ -1913,8 +1953,10 @@ fun BrowserScreen(
             BrowserBackAction.WEB_HISTORY -> goBack()
             BrowserBackAction.CLOSE_CHILD_TAB -> activeTab?.let { closeTab(it.id) }
             BrowserBackAction.SHOW_HUB -> showingHub = true
-            BrowserBackAction.SHOW_HUB_LIBRARY ->
-                hubSection = if (libraryEnabled) HubSection.LIBRARY else HubSection.DOWNLOADS
+            BrowserBackAction.SHOW_HUB_LIBRARY -> {
+                if (libraryEnabled && hubSection != HubSection.LIBRARY) hubSection = HubSection.LIBRARY
+                else deviceVideosSelected = true
+            }
             BrowserBackAction.EXIT_APP -> Unit
         }
     }
@@ -2637,7 +2679,33 @@ fun BrowserScreen(
             )
         }
 
-        if (showingHub) {
+        if (showingHub && playbackRequest == null && activeScreen == null && !showBackupRestore) {
+            Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding()) {
+                SecondaryTabRow(selectedTabIndex = if (deviceVideosSelected) 0 else 1) {
+                    Tab(selected = deviceVideosSelected, onClick = { deviceVideosSelected = true },
+                        modifier = Modifier.testTag("hub_destination_device"), text = { Text("Device Videos") })
+                    Tab(selected = !deviceVideosSelected, onClick = { deviceVideosSelected = false },
+                        modifier = Modifier.testTag("hub_destination_saved"), text = { Text("Miowser Hub") })
+                }
+                Box(Modifier.weight(1f)) {
+                    hubDestinations.SaveableStateProvider(if (deviceVideosSelected) "device" else "saved") {
+                        if (deviceVideosSelected) {
+                            val imported by remember { derivedStateOf {
+                                MediaLibrary.entries.asSequence().filter { it.sourceKind == LibrarySourceKind.LOCAL_FILE }
+                                    .map { it.mediaUri }.filter { "/tree/" in it }.distinct().toList()
+                            } }
+                            val deviceDownloads by remember { derivedStateOf {
+                                DownloadQueue.downloads.mapNotNull { download ->
+                                    if (download.status != DownloadStatus.COMPLETED || download.id in pendingDownloadDeletes ||
+                                        !isImportableVideo(download.displayName, "")) null
+                                    else download.savedUri?.let { DeviceDownload(it, download.displayName) }
+                                }.distinctBy { it.uri }
+                            } }
+                            SideEffect { hubBottomBarHeightPx = 0 }
+                            DeviceVideosPage(imported, deviceDownloads, onBrowse = { showingHub = false },
+                                onPlay = ::playDeviceVideo, onMessage = { showActionSnackbar(it) },
+                                onIdleChanged = { libraryIdle = it })
+                        } else {
             HubHomePage(
                 onBottomBarHeightChanged = { hubBottomBarHeightPx = it },
                 onLibraryIdleChanged = { libraryIdle = it },
@@ -2786,6 +2854,10 @@ fun BrowserScreen(
                     }
                 }
             )
+                        }
+                    }
+                }
+            }
         }
 
         if (showOverflowMenu) {
@@ -2846,6 +2918,7 @@ fun BrowserScreen(
                         activeScreen = null
                         showBrowserDownloads = true
                     } else if (screen == Screen.HUB) {
+                        deviceVideosSelected = false
                         hubSection = if (libraryEnabled) HubSection.LIBRARY else HubSection.DOWNLOADS
                         activeScreen = null
                         showingHub = true
@@ -2915,6 +2988,7 @@ fun BrowserScreen(
                 },
                 onOpenHubDownloads = {
                     showBrowserDownloads = false
+                    deviceVideosSelected = false
                     hubSection = HubSection.DOWNLOADS
                     hubDownloadSection = HubDownloadSection.DOWNLOADING
                     activeScreen = null

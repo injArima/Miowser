@@ -14,6 +14,7 @@ class LibraryPagingUiTest {
         val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         seed(libraryBaseline = true)
         device.executeShellCommand("am start -W -n $PACKAGE/com.miowser.app.MainActivity")
+        device.requireNode(By.res("hub_destination_saved")).click()
         device.requireNode(By.text("Fixture video 000"))
         device.requireNode(By.desc("Search Library")).click()
         val search = device.requireNode(By.res("library_search"))

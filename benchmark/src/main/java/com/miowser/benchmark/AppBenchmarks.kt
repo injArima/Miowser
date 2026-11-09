@@ -52,6 +52,7 @@ internal fun seed(libraryBaseline: Boolean = false, resetLibraryOnly: Boolean = 
 
 internal fun MacrobenchmarkScope.openHub() {
     startActivityAndWait(Intent().setClassName(PACKAGE, "com.miowser.app.MainActivity"))
+    device.requireNode(By.res("hub_destination_saved")).click()
     device.requireNode(By.res("library_grid"))
     device.requireNode(By.text("Fixture video 000"))
 }

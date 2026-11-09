@@ -95,7 +95,8 @@ fun HubVideoCard(
     currentFolderId: String? = null,
     tertiaryMenuActionLabel: String? = null,
     onTertiaryMenuAction: (() -> Unit)? = null,
-    deferArtwork: () -> Boolean = { false }
+    deferArtwork: () -> Boolean = { false },
+    devicePreview: android.graphics.Bitmap? = null
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     var folderMenuOpen by remember { mutableStateOf(false) }
@@ -108,6 +109,7 @@ fun HubVideoCard(
     val progress = mediaWatchProgress(positionMs, durationMs)
     val context = LocalContext.current
     var thumbnail by remember(thumbnailUrl) { mutableStateOf(LibraryThumbnailStore.peek(thumbnailUrl)) }
+    val renderedThumbnail = devicePreview ?: thumbnail
     val scrolling = deferArtwork()
     LaunchedEffect(thumbnailUrl, scrolling) {
         val uri = thumbnailUrl
@@ -228,10 +230,10 @@ fun HubVideoCard(
                     .then(if (listMode) Modifier.width(HubVideoCardTokens.listArtworkWidth)
                         .height(HubVideoCardTokens.listArtworkHeight) else Modifier.fillMaxWidth().aspectRatio(16f / 9f))
                     .clip(if (listMode) UiCorners.r14 else HubVideoCardTokens.artworkTopShape)
-                    .then(if (thumbnail == null) Modifier.background(placeholderBrush) else Modifier),
+                    .then(if (renderedThumbnail == null) Modifier.background(placeholderBrush) else Modifier),
                 contentAlignment = Alignment.Center
             ) {
-                thumbnail?.let { bitmap ->
+                renderedThumbnail?.let { bitmap ->
                     Image(
                         bitmap = bitmap.asImageBitmap(),
                         contentDescription = null,
@@ -265,7 +267,7 @@ fun HubVideoCard(
                     Icon(
                         actionIcon,
                         contentDescription = actionContentDescription,
-                        tint = if (thumbnail != null) {
+                        tint = if (renderedThumbnail != null) {
                             androidx.compose.ui.graphics.Color.White
                         } else {
                             MaterialTheme.colorScheme.onPrimaryContainer
@@ -381,7 +383,7 @@ fun HubVideoCard(
         }
     }
 
-    val cardModifier = if (thumbnail != null) modifier.testTag("video_card_artwork") else modifier
+    val cardModifier = if (renderedThumbnail != null) modifier.testTag("video_card_artwork") else modifier
     if (menuOnLongPress) {
         Card(
             modifier = cardModifier

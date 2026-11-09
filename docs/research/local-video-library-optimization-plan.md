@@ -15,6 +15,8 @@ P0 measures the current saved Library. P1 and P2 can migrate and page that data 
 
 The P0 emulator run verified the benchmark harness. The physical-device measurements were waived before P1. P1 migrated the saved Library to Room and kept the existing backup format. P2 added indexed browsing, a bounded page window, and playlists that span pages. [P1 release notes](G:/Projects/Miowser/docs/RELEASE_NOTES_0.1.53.md) · [P2 release notes](G:/Projects/Miowser/docs/RELEASE_NOTES_0.1.54.md)
 
+P3 adds Device Videos as the primary tab and keeps Miowser Hub as the second tab. Its separate Room catalog reconciles mounted MediaStore volumes, linked folders, and completed downloads. [P3 release notes](G:/Projects/Miowser/docs/RELEASE_NOTES_0.1.55.md)
+
 ## Evidence and scope
 
 I inspected the supplied packages with REA/JADX, matched Next Player’s obfuscated classes to DEX instructions and database declarations, and inspected symbols and selected ARM64 instructions in VLC’s native media library. I used the two matching release tags to clarify the control flow and UI. The native VideoLAN source endpoint returned a challenge page, so the findings about the shipped native scanner below come from the binary. These are static findings. Launch time, frame pacing, native memory peaks, and actual cache hit rates require device measurements.

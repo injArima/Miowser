@@ -1712,7 +1712,7 @@ private fun HubLibraryContent(
 }
 
 @Composable
-private fun observeLibraryCard(id: LibraryCardId): LibraryEntry? {
+internal fun observeLibraryCard(id: LibraryCardId): LibraryEntry? {
     var entry by remember(id) { mutableStateOf<LibraryEntry?>(null) }
     DisposableEffect(id) {
         val stop = MediaLibrary.observeCard(id) { entry = it }
@@ -1722,7 +1722,7 @@ private fun observeLibraryCard(id: LibraryCardId): LibraryEntry? {
 }
 
 @Composable
-private fun LibraryCardPlaceholder(listMode: Boolean) {
+internal fun LibraryCardPlaceholder(listMode: Boolean) {
     val color = MaterialTheme.colorScheme.surfaceContainer
     if (listMode) {
         Spacer(Modifier.fillMaxWidth().height(HubVideoCardTokens.listArtworkHeight + UiSpacing.s * 2)

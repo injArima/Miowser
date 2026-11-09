@@ -142,6 +142,7 @@ class LibraryBaselineBenchmarks {
 
     private fun MacrobenchmarkScope.launchAndAwaitRows() {
         device.executeShellCommand("am start -n $PACKAGE/com.miowser.app.MainActivity")
+        device.requireNode(By.res("hub_destination_saved")).click()
         device.requireNode(By.text("Fixture video 000"))
     }
 

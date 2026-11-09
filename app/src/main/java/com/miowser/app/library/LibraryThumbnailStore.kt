@@ -74,6 +74,19 @@ object LibraryThumbnailStore {
 
     fun peek(thumbnailUri: String?): Bitmap? = thumbnailUri?.let(memoryCache::get)
 
+    suspend fun loadDeviceFrame(context: Context, uri: Uri, revision: String, durationMs: Long): Bitmap? {
+        val key = "device:$uri:$revision"
+        peek(key)?.let { return it }
+        return kotlinx.coroutines.withContext(artworkDispatcher) {
+            synchronized(decodeLocks[(key.hashCode() and Int.MAX_VALUE) % decodeLocks.size]) {
+                peek(key) ?: extractFrame(context, uri, null, durationMs.takeIf { it > 0 }, key)?.also {
+                    it.prepareToDraw()
+                    memoryCache.put(key, it)
+                }
+            }
+        }
+    }
+
     fun isMiddleFrame(thumbnailUri: String?): Boolean =
         thumbnailKind(thumbnailUri) == LibraryThumbnailKind.MIDDLE
 
@@ -359,9 +372,9 @@ object LibraryThumbnailStore {
         context: Context,
         mediaUri: Uri,
         headers: Map<String, String>?,
-        durationMs: Long?
+        durationMs: Long?,
+        key: String = mediaUri.toString()
     ): Bitmap? {
-        val key = mediaUri.toString()
         if ((failedFrames[key] ?: 0) > System.currentTimeMillis()) return null
         return runCatching {
         val retriever = MediaMetadataRetriever()

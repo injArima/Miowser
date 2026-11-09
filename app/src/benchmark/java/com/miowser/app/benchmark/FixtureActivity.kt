@@ -1,6 +1,10 @@
 package com.miowser.app.benchmark
 
+import android.content.ContentValues
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
@@ -19,6 +23,13 @@ class FixtureActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         check(packageName == "com.miowser.app.benchmark")
+        intent.getStringExtra("device_catalog")?.let { action ->
+            lifecycleScope.launch {
+                withContext(Dispatchers.IO) { updateDeviceCatalogFixture(action, intent.getStringExtra("fixture_name")) }
+                setContentView(TextView(this@FixtureActivity).apply { text = "Device fixture: $action" })
+            }
+            return
+        }
         if (intent.getBooleanExtra("library_migration", false)) {
             LibraryMigrationProbeActivity.seed(this)
             setContentView(TextView(this).apply { text = "Legacy Library fixture ready" })
@@ -117,6 +128,41 @@ class FixtureActivity : ComponentActivity() {
         }))
         LibraryRepository.requestLegacyImport(this)
         showReady(librarySize, downloads, tabs)
+    }
+
+    private fun updateDeviceCatalogFixture(action: String, name: String?) {
+        check(Build.VERSION.SDK_INT >= 29)
+        val store = getSharedPreferences("device_catalog_fixture", MODE_PRIVATE)
+        val previous = store.getString("uri", null)?.let(Uri::parse)
+        when (action) {
+            "create" -> {
+                previous?.let { contentResolver.delete(it, null, null) }
+                val uri = checkNotNull(contentResolver.insert(
+                    MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY),
+                    ContentValues().apply {
+                        put(MediaStore.MediaColumns.DISPLAY_NAME, checkNotNull(name))
+                        put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, "Movies/MiowserBenchmark")
+                        put(MediaStore.MediaColumns.IS_PENDING, 1)
+                    }
+                ))
+                check(store.edit().putString("uri", uri.toString()).commit())
+                assets.open("fixture.mp4").use { input ->
+                    checkNotNull(contentResolver.openOutputStream(uri)).use { input.copyTo(it) }
+                }
+                check(contentResolver.update(uri, ContentValues().apply {
+                    put(MediaStore.MediaColumns.IS_PENDING, 0)
+                }, null, null) == 1)
+            }
+            "rename" -> check(contentResolver.update(checkNotNull(previous), ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, checkNotNull(name))
+            }, null, null) == 1)
+            "delete" -> {
+                previous?.let { contentResolver.delete(it, null, null) }
+                check(store.edit().remove("uri").commit())
+            }
+            else -> error("Unknown fixture action")
+        }
     }
 
     private fun showReady(librarySize: Int, downloads: Int, tabs: Int) {
