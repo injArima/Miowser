@@ -105,11 +105,12 @@ internal fun PlayerTopBar(
                 WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top)
             )
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-            .padding(horizontal = UiSpacing.m, vertical = UiSpacing.s)
+            .padding(horizontal = UiSpacing.m, vertical = UiSpacing.s),
+        contentAlignment = Alignment.CenterEnd
     ) {
         val compact = maxWidth < 340.dp
         val gap = if (compact) 0.dp else 4.dp
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState(), reverseScrolling = true),
+        Row(Modifier.horizontalScroll(rememberScrollState(), reverseScrolling = true),
             horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
             if (onDownload != null) {
                 RoundPlayerButton(Icons.Rounded.Download, "Download video", onDownload)
@@ -498,7 +499,6 @@ internal fun PlayerBottomChrome(
             Row(
                 modifier = Modifier
                     .align(Alignment.CenterStart)
-                    .fillMaxWidth()
                     .padding(end = timerWidth + UiSpacing.s)
                     .horizontalScroll(rememberScrollState()),
                 verticalAlignment = Alignment.CenterVertically,
@@ -533,7 +533,7 @@ internal fun PlayerBottomChrome(
                         expanded = speedMenuExpanded,
                         onDismissRequest = { onSpeedMenuChange(false) }
                     ) {
-                        PlayerSpeedControls(playbackSpeed, onSpeedSelected)
+                        PlayerSpeedControls(playbackSpeed, onSpeedSelected) { onSpeedMenuChange(false) }
                     }
                 }
                 Box {

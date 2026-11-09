@@ -1583,17 +1583,12 @@ internal fun PlayerGestureSurface(
                         }
                     },
                     onTap = { offset ->
-                        val protectedBottom = if (isLandscape) {
-                            navigationBottomPx
-                        } else {
-                            maxOf(navigationBottomPx, size.height * 0.20f)
-                        }
                         if (
                             playerGesturePointAllowed(
                                 offset.y,
                                 size.height.toFloat(),
                                 protectedTopPx,
-                                protectedBottom
+                                navigationBottomPx
                             )
                         ) {
                             currentSingleTapHandler()

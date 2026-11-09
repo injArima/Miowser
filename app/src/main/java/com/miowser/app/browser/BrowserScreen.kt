@@ -113,6 +113,8 @@ import com.miowser.app.browser.video.VideoAssistantButtonPolicy
 import com.miowser.app.browser.video.NativeVideoAssistantDisplay
 import com.miowser.app.browser.video.releaseVideoAssistantHost
 import com.miowser.app.browser.video.BrowserVideoPlayerOverlay
+import com.miowser.app.browser.video.BrowserVideoFullscreenOrientation
+import com.miowser.app.browser.video.BrowserVideoSessionPreferences
 import com.miowser.app.browser.video.BrowserVideoSurface
 import com.miowser.app.browser.video.keepBrowserRendererForAudioOnly
 import com.miowser.app.browser.video.keepBrowserRendererForPip
@@ -192,7 +194,8 @@ private val UNSAFE_FILENAME_CHARS = Regex("[\\\\/:*?\"<>|]")
 private data class WebFullscreenVideo(
     val tabId: Long,
     val view: View,
-    val callback: WebChromeClient.CustomViewCallback
+    val callback: WebChromeClient.CustomViewCallback,
+    val preferences: BrowserVideoSessionPreferences
 )
 
 /**
@@ -566,6 +569,7 @@ fun BrowserScreen(
         val fromCompanion = companionFromWeb && companionTabId == ownerId
         if ((ownerId == activeTabId || fromCompanion) && !showingHub &&
             activeScreen == null && playbackRequest == null) {
+            val preferences = if (fromCompanion) fullscreenVideo?.preferences else null
             exitWebFullscreen()
             if (fromCompanion) {
                 tabs.firstOrNull { it.id == ownerId }?.setCompanionTracking(false)
@@ -580,7 +584,8 @@ fun BrowserScreen(
                 companionOldWasPlaying = false
                 companionDetectorOpen = false
             }
-            fullscreenVideo = WebFullscreenVideo(ownerId, view, callback)
+            fullscreenVideo = WebFullscreenVideo(ownerId, view, callback,
+                preferences ?: BrowserVideoSessionPreferences())
             tabController.tabs.firstOrNull { it.id == ownerId }?.startBrowserVideoFullscreen()
         } else {
             runCatching { callback.onCustomViewHidden() }
@@ -3506,11 +3511,13 @@ fun BrowserScreen(
         fullscreenVideo?.takeIf { fullscreen ->
             fullscreen.tabId == activeTabId && !showingHub && activeScreen == null && playbackRequest == null
         }?.let { fullscreen ->
+            BrowserVideoFullscreenOrientation(fullscreen.preferences)
             key(fullscreen.view) {
                 Box(Modifier.fillMaxSize().zIndex(2f)) {
                     BrowserVideoSurface(fullscreen.view, tabs.firstOrNull { it.id == fullscreen.tabId }?.browserVideoPlayer)
                     tabs.firstOrNull { it.id == fullscreen.tabId }?.let { owner ->
                         BrowserVideoPlayerOverlay(owner.browserVideoPlayer, owner.videoPageTitle, ::exitWebFullscreen,
+                            preferences = fullscreen.preferences,
                             sourceLabel = SiteProtection.host(owner.url).orEmpty(),
                             onBrowseSource = if (AppSettings.current.companionBrowsingEnabled) ({
                                 openCompanionBrowser(owner.url, fromWeb = true)

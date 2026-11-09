@@ -51,7 +51,7 @@ import kotlinx.coroutines.delay
 /** Shared by both engines. A drag commits on release; discrete edits commit explicitly. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-internal fun PlayerSpeedControls(speed: Float, onSpeedSelected: (Float) -> Unit) {
+internal fun PlayerSpeedControls(speed: Float, onSpeedSelected: (Float) -> Unit, onConfirmed: () -> Unit) {
     val normal = PlayerSpeedControlTokens.normal
     val range = PlayerSpeedControlTokens.minimum..PlayerSpeedControlTokens.maximum
     val slowerSpan = normal - range.start
@@ -109,7 +109,11 @@ internal fun PlayerSpeedControls(speed: Float, onSpeedSelected: (Float) -> Unit)
         focus.clearFocus()
         keyboard?.hide()
     }
-    fun applyTypedRate() = parseRate(speedText)?.let(::applyFieldRate)
+    fun applyTypedRate() {
+        val rate = parseRate(speedText) ?: return
+        applyFieldRate(rate)
+        onConfirmed()
+    }
     Column(Modifier.width(PlayerSpeedControlTokens.menuWidth).padding(horizontal = UiSpacing.m),
         verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,

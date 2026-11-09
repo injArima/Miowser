@@ -31,7 +31,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -63,10 +62,42 @@ import com.miowser.app.ui.theme.UiElevation
 import com.miowser.app.ui.theme.UiIconSize
 import com.miowser.app.ui.theme.UiSpacing
 
-/** Original player UI backed by the retained HTML video. This route never creates ExoPlayer. */
+/** User selections carried only between videos in the same fullscreen browsing session. */
+internal class BrowserVideoSessionPreferences {
+    var orientation by mutableStateOf<PlayerOrientationMode?>(null)
+    var scale: BrowserVideoScale? = null
+    var speed: Double? = null
+}
+
+/** Own the activity orientation outside the replaceable fullscreen video view. */
+@Composable
+internal fun BrowserVideoFullscreenOrientation(preferences: BrowserVideoSessionPreferences) {
+    val orientation = preferences.orientation ?: return
+    val activity = LocalContext.current.videoActivity() ?: return
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(activity, lifecycle, preferences) {
+        val original = activity.requestedOrientation
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                preferences.orientation?.let { activity.requestedOrientation = it.requestedOrientation }
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose {
+            lifecycle.removeObserver(observer)
+            activity.requestedOrientation = original
+        }
+    }
+    LaunchedEffect(activity, preferences, orientation) {
+        activity.requestedOrientation = orientation.requestedOrientation
+    }
+}
+
+/** Player UI backed by the retained HTML video. */
 @Composable
 internal fun BrowserVideoPlayerOverlay(controller: BrowserPlaybackControls, title: String,
-    onExit: () -> Unit, sourceLabel: String = "", backgroundPlaybackEnabled: Boolean = true,
+    onExit: () -> Unit, preferences: BrowserVideoSessionPreferences,
+    sourceLabel: String = "", backgroundPlaybackEnabled: Boolean = true,
     onBrowseSource: (() -> Unit)? = null,
     detectedSubtitles: List<DetectedMedia> = emptyList(), userAgent: String = "Miowser",
     onAudioOnlyChanged: (Boolean) -> Unit = {}) {
@@ -80,7 +111,7 @@ internal fun BrowserVideoPlayerOverlay(controller: BrowserPlaybackControls, titl
         } else state.owner?.let { owner ->
             key(owner) {
                 BrowserVideoControlsContent(controller, state, title, sourceLabel, onExit,
-                    backgroundPlaybackEnabled, onBrowseSource, detectedSubtitles, userAgent, onAudioOnlyChanged)
+                    preferences, backgroundPlaybackEnabled, onBrowseSource, detectedSubtitles, userAgent, onAudioOnlyChanged)
             }
         }
     }
@@ -89,7 +120,8 @@ internal fun BrowserVideoPlayerOverlay(controller: BrowserPlaybackControls, titl
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
 private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, state: BrowserVideoPresentation,
-    title: String, sourceLabel: String, onExit: () -> Unit, backgroundPlaybackEnabled: Boolean,
+    title: String, sourceLabel: String, onExit: () -> Unit, preferences: BrowserVideoSessionPreferences,
+    backgroundPlaybackEnabled: Boolean,
     onBrowseSource: (() -> Unit)?,
     detectedSubtitles: List<DetectedMedia>, userAgent: String,
     onAudioOnlyChanged: (Boolean) -> Unit) {
@@ -121,7 +153,10 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
     val timeline = remember { BrowserVideoTimelineInteraction() }
     var scrubbing by remember { mutableStateOf(false) }
     var interaction by remember { mutableIntStateOf(0) }
-    var orientationMode by rememberSaveable { mutableStateOf(PlayerOrientationMode.AUTOMATIC) }
+    val orientationMode = preferences.orientation ?: PlayerOrientationMode.AUTOMATIC
+    SideEffect {
+        if (preferences.orientation == null) preferences.orientation = orientationMode
+    }
     val modal = overlays.isPresent || adjustments || audioPanel || guidanceVisible
     val latestAudioOnly by rememberUpdatedState(state.audioOnly)
     var selectedSubtitleUrl by remember { mutableStateOf<String?>(null) }
@@ -221,9 +256,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
     }
 
     DisposableEffect(controller, activity) {
-        val original = activity?.requestedOrientation
         val originalBrightness = activity?.window?.attributes?.screenBrightness
-        activity?.requestedOrientation = orientationMode.requestedOrientation
         PlayerDisplayPreferenceStore.brightness(context)?.let { saved ->
             activity?.window?.let { window ->
                 window.attributes = window.attributes.apply { screenBrightness = saved }
@@ -235,26 +268,15 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
             if (latestAudioOnly) controller.setAudioOnly(false)
             onAudioOnlyChanged(false)
             controller.setRichUi(false)
-            if (activity != null && original != null) activity.requestedOrientation = original
             if (originalBrightness != null) activity.window.attributes = activity.window.attributes.apply { screenBrightness = originalBrightness }
         }
-    }
-    LaunchedEffect(activity, orientationMode) {
-        activity?.requestedOrientation = orientationMode.requestedOrientation
-    }
-    DisposableEffect(activity, lifecycleOwner, orientationMode) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                activity?.requestedOrientation = orientationMode.requestedOrientation
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     LaunchedEffect(controller, owner, state.controlsEnabled, video.sourceRevision) {
         if (state.controlsEnabled) {
             val saved = PlayerDisplayPreferenceStore.scaleMode(context)
-            BrowserVideoScale.entries.firstOrNull { it.name == saved }?.let(controller::setScale)
+            val scale = preferences.scale ?: BrowserVideoScale.entries.firstOrNull { it.name == saved }
+            scale?.let(controller::setScale)
+            preferences.speed?.takeIf { it != video.speed }?.let(controller::setSpeed)
         }
     }
     BackHandler(enabled = locked && !inPip && state.controlsEnabled && !modal) { locked = false; visible = true }
@@ -276,10 +298,12 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
             guidanceVisible = false
         }
     }
-    LaunchedEffect(visible, video.playing, video.buffering, speedMenu, scaleMenu, modal, scrubbing,
+    val playing = state.pendingPlaying ?: video.playing
+    LaunchedEffect(playing) { if (!locked && !playing) visible = true }
+    LaunchedEffect(state.message) { if (!locked && state.message != null) visible = true }
+    LaunchedEffect(visible, playing, video.buffering, speedMenu, scaleMenu, modal, scrubbing,
         state.seeking, state.message, interaction, state.phase) {
-        if (!locked && (!video.playing || state.message != null)) visible = true
-        if (visible && video.playing && !video.buffering && !speedMenu && !scaleMenu && !modal &&
+        if (visible && playing && !video.buffering && !speedMenu && !scaleMenu && !modal &&
             !scrubbing && !state.seeking && state.message == null && state.controlsEnabled) {
             delay(4_000); visible = false
         }
@@ -337,10 +361,10 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.End)).padding(UiSpacing.xl))
                             else {
                                 PlayerTopBar(landscape, orientationMode, video.speed.toFloat(),
-                                    onOrientationSelected = { interaction++; orientationMode = it },
+                                    onOrientationSelected = { interaction++; preferences.orientation = it },
                                     onToggleRotationLock = {
                                         interaction++
-                                        orientationMode = if (orientationMode.locked) PlayerOrientationMode.AUTOMATIC
+                                        preferences.orientation = if (orientationMode.locked) PlayerOrientationMode.AUTOMATIC
                                             else PlayerOrientationMode.lockCurrent(activity)
                                     }, onDownload = null,
                                     onBrowseSource = onBrowseSource,
@@ -364,7 +388,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                                     muted = video.muted,
                                     onToggleMute = { closeMenus(); act { controller.setMuted(!video.muted) } },
                                     onLock = { locked = true; closeMenus() }, onDismiss = onExit, modifier = Modifier.align(Alignment.TopCenter))
-                                if (visible) PlayerCenterControls(state.pendingPlaying ?: video.playing,
+                                if (visible) PlayerCenterControls(playing,
                                     video.buffering, false, null, null,
                                     onReplay = { skip(-10_000) }, onPlayPause = { act(controller::playPause) },
                                     onForward = { skip(10_000) }, modifier = Modifier.align(Alignment.Center), seekEnabled = state.canSeek,
@@ -374,9 +398,15 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                                     scaleMenu, { scaleMenu = it; interaction++ }, { mode ->
                                         scaleMenu = false
                                         PlayerDisplayPreferenceStore.saveScaleMode(context, mode.name)
-                                        act { controller.setScale(BrowserVideoScale.valueOf(mode.name)) }
+                                        val scale = BrowserVideoScale.valueOf(mode.name)
+                                        preferences.scale = scale
+                                        act { controller.setScale(scale) }
                                     },
-                                    speedMenu, { speedMenu = it; interaction++ }, { rate -> act { controller.setSpeed(rate.toDouble()) } },
+                                    speedMenu, { speedMenu = it; interaction++ }, { rate ->
+                                        val speed = rate.toDouble()
+                                        preferences.speed = speed
+                                        act { controller.setSpeed(speed) }
+                                    },
                                     subtitleFocus, "Subtitles", true, if (subtitleAvailable) ({ closeMenus(); overlays.open(PlayerOverlay.SUBTITLES); interaction++ }) else null,
                                     "Audio tracks", true, if (video.audioTracks.size > 1) ({ closeMenus(); audioPanel = true; interaction++ }) else null,
                                     "Quality", false, null,
