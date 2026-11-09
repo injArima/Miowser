@@ -14,6 +14,8 @@ import com.miowser.app.downloader.*
 import com.miowser.app.history.HistoryCodec
 import com.miowser.app.history.HistoryEntry
 import com.miowser.app.library.*
+import com.miowser.app.library.device.canonicalVideoUri
+import com.miowser.app.library.device.localArtworkRevision
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -157,6 +159,14 @@ class FixtureActivity : ComponentActivity() {
             "rename" -> check(contentResolver.update(checkNotNull(previous), ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, checkNotNull(name))
             }, null, null) == 1)
+            "artwork" -> {
+                val uri = checkNotNull(previous)
+                val canonical = canonicalVideoUri(this, uri)
+                val revision = checkNotNull(localArtworkRevision(this, uri, Uri.parse(canonical)))
+                val name = thumbnailCacheFileName(localArtworkKey(canonical, revision))
+                val preview = java.io.File(cacheDir, "$LOCAL_ARTWORK_DIRECTORY/$name")
+                check(preview.isFile && preview.length() > 0) { "Missing cached video artwork" }
+            }
             "delete" -> {
                 previous?.let { contentResolver.delete(it, null, null) }
                 check(store.edit().remove("uri").commit())

@@ -96,7 +96,7 @@ fun HubVideoCard(
     tertiaryMenuActionLabel: String? = null,
     onTertiaryMenuAction: (() -> Unit)? = null,
     deferArtwork: () -> Boolean = { false },
-    devicePreview: android.graphics.Bitmap? = null
+    localPreview: android.graphics.Bitmap? = null
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     var folderMenuOpen by remember { mutableStateOf(false) }
@@ -109,7 +109,7 @@ fun HubVideoCard(
     val progress = mediaWatchProgress(positionMs, durationMs)
     val context = LocalContext.current
     var thumbnail by remember(thumbnailUrl) { mutableStateOf(LibraryThumbnailStore.peek(thumbnailUrl)) }
-    val renderedThumbnail = devicePreview ?: thumbnail
+    val renderedThumbnail = localPreview ?: thumbnail
     val scrolling = deferArtwork()
     LaunchedEffect(thumbnailUrl, scrolling) {
         val uri = thumbnailUrl

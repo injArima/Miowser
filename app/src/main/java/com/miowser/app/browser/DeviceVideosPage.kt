@@ -230,6 +230,18 @@ private fun DeviceVideoGrid(
         }
     }
     val current = window
+    LaunchedEffect(current, grid) {
+        snapshotFlow {
+            if (grid.isScrollInProgress) null else grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index
+        }.collectLatest { lastVisible ->
+            if (lastVisible == null || current == null) return@collectLatest
+            delay(250)
+            for (index in lastVisible + 1..lastVisible + 4) {
+                val video = current[index] ?: break
+                LibraryThumbnailStore.loadDeviceFrame(app, video, visible = false)
+            }
+        }
+    }
     if (current == null || current.count == 0) {
         Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             if (status.scanning) MiowserLoadingIndicator(description = "Checking device videos")
@@ -258,7 +270,7 @@ private fun DeviceVideoGrid(
                 LaunchedEffect(video.uri, video.revision, scrolling) {
                     if (!scrolling) {
                         delay(140)
-                        preview = LibraryThumbnailStore.loadDeviceFrame(app, Uri.parse(video.uri), video.revision, video.durationMs)
+                        preview = LibraryThumbnailStore.loadDeviceFrame(app, video)
                     }
                 }
                 val canonical = observeLibraryCard(LibraryCardId("LOCAL_FILE:${video.canonicalUri}"))
@@ -269,7 +281,7 @@ private fun DeviceVideoGrid(
                     status.sources.firstOrNull { it.id == video.sourceId }?.label ?: "Device video"
                 }, positionMs = saved?.positionMs ?: 0, durationMs = video.durationMs.takeIf { it > 0 }
                     ?: saved?.durationMs ?: 0, listMode = listMode,
-                    qualityLabel = videoQualityLabel(video.height), onClick = { onPlay(video) }, devicePreview = preview)
+                    qualityLabel = videoQualityLabel(video.height), onClick = { onPlay(video) }, localPreview = preview)
             }
         }
     }

@@ -1313,7 +1313,6 @@ private fun HubDownloadedGrid(
             downloads.asSequence().drop(lastVisible + 1).take(6).mapNotNull { download ->
                 val uri = download.savedUri?.toString() ?: return@mapNotNull null
                 libraryByMediaUri[uri]?.thumbnailUrl
-                    ?: LocalInspectionCache.peek("download-preview", uri)?.ifBlank { null }
             }.distinct().forEach { LibraryThumbnailStore.prefetch(context.applicationContext, it) }
         }
     }
@@ -1386,25 +1385,13 @@ private fun HubDownloadedGrid(
                         }
                     } else null
                 }
-                val localThumbnail by produceState<String?>(
-                    initialValue = libraryEntry?.thumbnailUrl ?: savedUri?.let {
-                        LocalInspectionCache.peek("download-preview", it)?.ifBlank { null }
-                    },
-                    savedUri,
-                    fileType,
-                    libraryEntry?.thumbnailUrl,
-                    fileAvailable,
-                    gridState.isScrollInProgress
-                ) {
-                    if (gridState.isScrollInProgress || fileAvailable != true) return@produceState
+                val savedThumbnail = libraryEntry?.thumbnailUrl
+                var localPreview by remember(savedUri, savedThumbnail) { mutableStateOf<android.graphics.Bitmap?>(null) }
+                LaunchedEffect(savedUri, savedThumbnail, fileType, fileAvailable, scrolling) {
+                    if (scrolling || fileAvailable != true || savedThumbnail != null ||
+                        fileType != DownloadedFileType.MEDIA || localPreview != null) return@LaunchedEffect
                     delay(200)
-                    value = libraryEntry?.thumbnailUrl ?: if (fileType == DownloadedFileType.MEDIA) {
-                        download.savedUri?.let { uri ->
-                            withContext(LibraryThumbnailStore.artworkDispatcher) {
-                                LibraryThumbnailStore.ensureDownloadedThumbnail(context.applicationContext, uri)
-                            }
-                        }
-                    } else null
+                    localPreview = download.savedUri?.let { LibraryThumbnailStore.loadLocalFrame(context.applicationContext, it) }
                 }
                 val apkIcon by produceState<android.graphics.Bitmap?>(
                     initialValue = ApkIconLoader.peek(savedUri),
@@ -1416,9 +1403,7 @@ private fun HubDownloadedGrid(
                     if (gridState.isScrollInProgress || fileAvailable != true) return@produceState
                     delay(200)
                     value = if (fileType == DownloadedFileType.APK && download.savedUri != null) {
-                        withContext(LibraryThumbnailStore.artworkDispatcher) {
-                            ApkIconLoader.load(context.applicationContext, download.savedUri!!)
-                        }
+                        LibraryThumbnailStore.loadApkIcon(context.applicationContext, download.savedUri!!)
                     } else {
                         null
                     }
@@ -1428,7 +1413,8 @@ private fun HubDownloadedGrid(
                     sourceLabel = downloadSourceLabel(download),
                     positionMs = libraryEntry?.positionMs ?: 0L,
                     durationMs = libraryEntry?.durationMs ?: 0L,
-                    thumbnailUrl = localThumbnail,
+                    thumbnailUrl = savedThumbnail,
+                    localPreview = localPreview.takeIf { fileAvailable == true },
                     deferArtwork = { gridState.isScrollInProgress },
                     centerArtwork = apkIcon?.asImageBitmap(),
                     actionIcon = when {
@@ -1791,7 +1777,7 @@ private fun ManagedLibraryCard(
         val checked = LocalInspectionCache.peek("library-preview", source)
         if (checked == thumbnail || checked == "missing:$thumbnail") return@LaunchedEffect
         val ticket = LocalInspectionCache.ticket()
-        val hasMiddleFrame = withContext(LibraryThumbnailStore.artworkDispatcher) {
+        val hasMiddleFrame = withContext(Dispatchers.IO) {
             LibraryThumbnailStore.isMiddleFrame(entry.thumbnailUrl)
         }
         if (hasMiddleFrame) {

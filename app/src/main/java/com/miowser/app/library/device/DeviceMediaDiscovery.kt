@@ -70,8 +70,8 @@ internal fun scanMediaVolume(
             val uri = ContentUris.withAppendedId(collection, it.getLong(0)).toString()
             val title = it.getString(1)?.takeIf(String::isNotBlank) ?: "Untitled video"
             val modified = it.getLong(4)
-            val revision = if (Build.VERSION.SDK_INT >= 30) "${stamp?.version}:${it.getLong(7)}"
-                else "$modified:${it.getLong(5)}"
+            val revision = if (Build.VERSION.SDK_INT >= 30) "media:${stamp?.version}:${it.getLong(7)}"
+                else "${modified * 1_000}:${it.getLong(5)}"
             emit(DeviceVideo(source, generation, uri, uri, DEVICE_MEDIA, title,
                 it.getString(6).orEmpty().trimEnd('/'), it.getLong(2).coerceAtLeast(0),
                 it.getInt(3).takeIf { height -> height > 0 }, modified * 1_000, revision))
@@ -104,6 +104,31 @@ internal fun canonicalVideoUri(context: Context, uri: Uri): String {
 }
 
 internal data class DeviceDownload(val uri: Uri, val title: String)
+
+internal fun mediaArtworkRevision(context: Context, canonical: Uri): String? {
+    if (Build.VERSION.SDK_INT < 30 || canonical.authority != "media") return null
+    val volume = canonical.pathSegments.firstOrNull() ?: return null
+    return runCatching {
+        context.contentResolver.query(canonical, arrayOf("generation_modified"), null, null, null)?.use {
+            if (it.moveToFirst()) "media:${MediaStore.getVersion(context, volume)}:${it.getLong(0)}" else null
+        }
+    }.getOrNull()
+}
+
+internal fun localArtworkRevision(context: Context, uri: Uri, canonical: Uri): String? =
+    mediaArtworkRevision(context, canonical) ?: when (uri.scheme) {
+        "file" -> uri.path?.let(::File)?.takeIf(File::isFile)?.let { "${it.lastModified()}:${it.length()}" }
+        "content" -> runCatching {
+            val columns = if (uri.authority == "media") arrayOf("date_modified", "_size")
+                else arrayOf(DocumentsContract.Document.COLUMN_LAST_MODIFIED, DocumentsContract.Document.COLUMN_SIZE)
+            context.contentResolver.query(uri, columns, null, null, null)?.use {
+                if (!it.moveToFirst() || it.columnCount < 2) return@use null
+                val modified = it.getLong(0) * if (uri.authority == "media") 1_000 else 1
+                "$modified:${it.getLong(1)}"
+            }
+        }.getOrNull()
+        else -> null
+    }
 
 internal fun readDeviceDownload(context: Context, download: DeviceDownload, generation: String): DeviceVideo? {
     val uri = download.uri

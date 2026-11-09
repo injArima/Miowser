@@ -39,12 +39,22 @@ class DeviceCatalogUiTest {
         try {
             fixture("create", title)
             openDeviceVideos()
-            device.requireNode(By.res("device_video_grid"))
             val oldTitle = By.text(title)
-            device.requireNode(oldTitle).click()
+            fun awaitFixtureArtwork() {
+                device.requireNode(By.res("device_video_search")).text = title
+                device.requireNode(By.res("device_video_grid").hasDescendant(By.res("video_card_artwork")))
+            }
+            awaitFixtureArtwork()
+            fixture("artwork")
+            device.executeShellCommand("am force-stop $PACKAGE")
+            openDeviceVideos()
+            awaitFixtureArtwork()
+            val results = device.requireNode(By.res("device_video_grid").hasDescendant(oldTitle))
+            checkNotNull(results.findObject(oldTitle)).click()
             device.requireNode(By.res("player_first_frame"))
             device.pressBack()
-            device.requireNode(oldTitle)
+            device.requireNode(By.res("device_video_grid").hasDescendant(oldTitle))
+            device.requireNode(By.res("device_video_search")).text = ""
 
             fixture("rename", renamedTitle)
             openDeviceVideos()
