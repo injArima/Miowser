@@ -1,20 +1,29 @@
 package com.miowser.app.benchmark
 
-import android.app.Activity
 import android.os.Bundle
 import android.widget.TextView
+import androidx.activity.ComponentActivity
+import androidx.lifecycle.lifecycleScope
 import com.miowser.app.browser.SavedTab
 import com.miowser.app.browser.TabSessionCodec
 import com.miowser.app.downloader.*
 import com.miowser.app.history.HistoryCodec
 import com.miowser.app.history.HistoryEntry
 import com.miowser.app.library.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Runs in its own process; tests kill the main process before replacing persisted fixtures. */
-class FixtureActivity : Activity() {
+class FixtureActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         check(packageName == "com.miowser.app.benchmark")
+        if (intent.getBooleanExtra("library_migration", false)) {
+            LibraryMigrationProbeActivity.seed(this)
+            setContentView(TextView(this).apply { text = "Legacy Library fixture ready" })
+            return
+        }
         val tabs = intent.getIntExtra("tabs", 10).also { require(it in listOf(1, 10, 30)) }
         val downloads = intent.getIntExtra("downloads", 200).also { require(it in listOf(200, 1000)) }
         val librarySize = intent.getIntExtra("library", 500).also { require(it in listOf(500, 1000, 5000)) }
@@ -26,6 +35,7 @@ class FixtureActivity : Activity() {
             check(libraryBaseline)
             check(getSharedPreferences("media_library", MODE_PRIVATE).edit()
                 .putString("entries", baselineSnapshot.readText()).commit())
+            LibraryRepository.requestLegacyImport(this)
             showReady(librarySize, downloads, tabs)
             return
         }
@@ -105,12 +115,17 @@ class FixtureActivity : Activity() {
             SavedTab("data:text/html;base64," + android.util.Base64.encodeToString(html.toByteArray(), android.util.Base64.NO_WRAP),
                 -1, title = "Fixture tab $i", lastActiveAt = epoch)
         }))
+        LibraryRepository.requestLegacyImport(this)
         showReady(librarySize, downloads, tabs)
     }
 
     private fun showReady(librarySize: Int, downloads: Int, tabs: Int) {
-        setContentView(TextView(this).apply {
-            text = "Fixture ready: library=$librarySize history=2000 downloads=$downloads tabs=$tabs"
-        })
+        val label = TextView(this).apply { text = "Preparing Library fixture…" }
+        setContentView(label)
+        lifecycleScope.launch {
+            // Keep the one-time legacy import out of steady-state startup measurements.
+            withContext(Dispatchers.IO) { LibraryRepository.readFolders(this@FixtureActivity) }
+            label.text = "Fixture ready: library=$librarySize history=2000 downloads=$downloads tabs=$tabs"
+        }
     }
 }

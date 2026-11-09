@@ -1,14 +1,9 @@
 package com.miowser.app.library
 
-import android.content.Context
-import com.miowser.app.performance.traceSection
-import com.miowser.app.persistence.Persistence
 import com.miowser.app.grabber.MediaType
 import com.miowser.app.grabber.HlsRendition
 import java.util.Base64
 
-private const val PREFS_NAME = "media_library"
-private const val KEY_ENTRIES = "entries"
 private const val FIELD_DELIMITER = '\t'
 private const val RECORD_DELIMITER = '\n'
 private const val LEGACY_FIELD_COUNT = 11
@@ -152,7 +147,7 @@ object LibraryCodec {
     private fun sanitize(value: String): String =
         value.replace(FIELD_DELIMITER, ' ').replace(RECORD_DELIMITER, ' ')
 
-    private fun encodeHlsRenditions(renditions: List<HlsRendition>): String = renditions
+    internal fun encodeHlsRenditions(renditions: List<HlsRendition>): String = renditions
         .distinctBy(HlsRendition::url)
         .joinToString(",") { rendition ->
             val value = listOf(
@@ -163,7 +158,7 @@ object LibraryCodec {
             Base64.getUrlEncoder().withoutPadding().encodeToString(value.toByteArray(Charsets.UTF_8))
         }
 
-    private fun decodeHlsRenditions(encoded: String): List<HlsRendition> = encoded
+    internal fun decodeHlsRenditions(encoded: String): List<HlsRendition> = encoded
         .split(',')
         .mapNotNull { record ->
             if (record.isBlank()) return@mapNotNull null
@@ -177,36 +172,4 @@ object LibraryCodec {
                 )
             }.getOrNull()
         }
-}
-
-object LibraryStore {
-    fun unsupportedRows(context: Context): List<String> = LibraryCodec.unsupportedRows(
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_ENTRIES, null).orEmpty())
-
-    fun save(context: Context, entries: List<LibraryEntry>, discardUnsupported: Boolean = false,
-             restoreUnsupported: List<String>? = null): java.util.concurrent.CompletableFuture<Boolean> {
-        Persistence.requireOwner()
-        val appContext = context.applicationContext
-        val snapshot = entries.toList()
-        return Persistence.submitSnapshot("library") {
-            traceSection("LibrarySnapshotCommit") {
-                val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                val encoded = when {
-                    discardUnsupported -> LibraryCodec.encode(snapshot)
-                    restoreUnsupported != null -> LibraryCodec.encodeWithUnsupported(snapshot, restoreUnsupported)
-                    else -> LibraryCodec.encodePreservingUnsupported(snapshot,
-                        prefs.getString(KEY_ENTRIES, null).orEmpty())
-                }
-                Persistence.recordEncoded(encoded)
-                prefs.edit().putString(KEY_ENTRIES, encoded).commit()
-            }
-        }
-    }
-
-    fun load(context: Context): List<LibraryEntry> {
-        val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_ENTRIES, null) ?: return emptyList()
-        return LibraryCodec.decode(raw)
-    }
 }

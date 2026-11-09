@@ -148,6 +148,7 @@ import com.miowser.app.library.LibraryFolders
 import com.miowser.app.library.LibraryThumbnailStore
 import com.miowser.app.library.MediaLibrary
 import com.miowser.app.library.scanImportedVideoFolder
+import com.miowser.app.library.LibraryRepository
 import com.miowser.app.performance.traceSection
 import com.miowser.app.library.LibrarySourceKind
 import com.miowser.app.library.isLibraryEntryAvailable
@@ -297,23 +298,25 @@ fun HubHomePage(
                         if (needed > MediaLibrary.remainingSavedCapacity()) {
                             "Library can hold 5,000 saved videos. Remove some before importing this folder."
                         } else {
-                            val folders = LibraryFolders.ensureImportedTree(context, targetParent,
-                                scanned.name, scanned.folderPaths)
-                            val rootId = requireNotNull(folders[emptyList()])
-                            val records = scanned.files.map { file ->
-                                LibraryEntry(
-                                    mediaUri = file.uri.toString(), pageUrl = null,
-                                    title = file.name.substringBeforeLast('.', file.name),
-                                    sourceLabel = scanned.name,
-                                    sourceKind = LibrarySourceKind.LOCAL_FILE,
-                                    mediaType = null, userAgent = null, thumbnailUrl = null,
-                                    lastPlayedAt = 0L, positionMs = 0L, durationMs = 0L,
-                                    videoName = file.name,
-                                    folderId = folders[file.relativeFolder] ?: rootId,
-                                    manualFolder = true
-                                )
+                            val (rootId, added) = LibraryRepository.batchStructure(context) {
+                                val folders = LibraryFolders.ensureImportedTree(context, targetParent,
+                                    scanned.name, scanned.folderPaths)
+                                val rootId = requireNotNull(folders[emptyList()])
+                                val records = scanned.files.map { file ->
+                                    LibraryEntry(
+                                        mediaUri = file.uri.toString(), pageUrl = null,
+                                        title = file.name.substringBeforeLast('.', file.name),
+                                        sourceLabel = scanned.name,
+                                        sourceKind = LibrarySourceKind.LOCAL_FILE,
+                                        mediaType = null, userAgent = null, thumbnailUrl = null,
+                                        lastPlayedAt = 0L, positionMs = 0L, durationMs = 0L,
+                                        videoName = file.name,
+                                        folderId = folders[file.relativeFolder] ?: rootId,
+                                        manualFolder = true
+                                    )
+                                }
+                                rootId to MediaLibrary.importLocalBatch(context, records)
                             }
-                            val added = MediaLibrary.importLocalBatch(context, records)
                             if (activeFolderId != rootId) {
                                 folderHistory = (folderHistory + activeFolderId).takeLast(32)
                                 selectedFolderId = rootId
@@ -579,12 +582,14 @@ fun HubHomePage(
                                 val originalEntries = libraryEntries.filter { entry ->
                                     entry.folderId == folder.id || (withVideos && entry.folderId in affectedIds)
                                 }
-                                if (withVideos) {
-                                    MediaLibrary.removeAll(context, originalEntries)
-                                    LibraryFolders.removeTree(context, folder.id)
-                                } else {
-                                    MediaLibrary.relocateFolder(context, folder.id, folder.parentId)
-                                    LibraryFolders.remove(context, folder.id)
+                                LibraryRepository.batchStructure(context) {
+                                    if (withVideos) {
+                                        MediaLibrary.removeAll(context, originalEntries)
+                                        LibraryFolders.removeTree(context, folder.id)
+                                    } else {
+                                        MediaLibrary.relocateFolder(context, folder.id, folder.parentId)
+                                        LibraryFolders.remove(context, folder.id)
+                                    }
                                 }
                                 if (activeFolderId == folder.id || (withVideos && activeFolderId in affectedIds)) {
                                     selectedFolderId = folder.parentId ?: UNFILED_FOLDER_ID
@@ -595,8 +600,10 @@ fun HubHomePage(
                                         if (withVideos) "Folder and Library entries removed" else "Folder dissolved",
                                         actionLabel = "Undo", duration = SnackbarDuration.Long)
                                     if (result == SnackbarResult.ActionPerformed) {
-                                        LibraryFolders.restoreDeletion(context, beforeFolders, affectedIds, previousDefault)
-                                        MediaLibrary.restoreFolderEntries(context, originalEntries)
+                                        LibraryRepository.batchStructure(context) {
+                                            LibraryFolders.restoreDeletion(context, beforeFolders, affectedIds, previousDefault)
+                                            MediaLibrary.restoreFolderEntries(context, originalEntries)
+                                        }
                                     }
                                 }
                             },

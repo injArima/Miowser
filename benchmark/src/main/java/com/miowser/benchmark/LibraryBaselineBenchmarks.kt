@@ -106,14 +106,14 @@ class LibraryBaselineBenchmarks {
         repeat(10) { grid.fling(Direction.UP) }
     }
 
-    @Test fun scanBatchCommit() = measureWrite("import", "LibraryImportBatch")
+    @Test fun scanBatchCommit() = measureWrite("import", "LibraryImportBatch", "LibrarySnapshotCommit")
 
-    @Test fun progressCommit() = measureWrite("progress", "LibraryProgressUpdate")
+    @Test fun progressCommit() = measureWrite("progress", "LibraryProgressUpdate", "LibraryProgressCommit")
 
-    private fun measureWrite(operation: String, mutationSection: String) = rule.measureRepeated(
+    private fun measureWrite(operation: String, mutationSection: String, commitSection: String) = rule.measureRepeated(
         packageName = PACKAGE,
         metrics = listOf(observed("P0WriteCommitted"), appTrace(mutationSection),
-            appTrace("LibrarySnapshotCommit")),
+            appTrace(commitSection)),
         compilationMode = benchmarkCompilation,
         iterations = benchmarkIterations,
         setupBlock = {

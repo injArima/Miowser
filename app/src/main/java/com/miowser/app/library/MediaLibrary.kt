@@ -13,6 +13,8 @@ import com.miowser.app.performance.traceSection
 object MediaLibrary {
     private val mutableRecords = mutableStateListOf<LibraryEntry>()
     val entries: List<LibraryEntry> get() = mutableRecords
+    internal var opaqueRecords: List<String> = emptyList()
+        private set
 
     @Volatile private var revision = 0L
     val contentRevision: Long get() = revision
@@ -26,20 +28,12 @@ object MediaLibrary {
     suspend fun restoreAsync(context: Context) {
         Persistence.requireOwner()
         if (restored) return
-        val records = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { LibraryStore.load(context).sortedByDescending { it.lastPlayedAt } }
+        val snapshot = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            LibraryRepository.readMedia(context)
+        }
         if (restored) return
-        mutableRecords.addAll(records)
-        layoutVersion.longValue++
-        progressVersion.longValue++
-        restored = true
-        LibraryThumbnailStore.pruneAsync(context, mutableRecords.mapNotNull { it.thumbnailUrl })
-        LibrarySubtitleStore.pruneAsync(context, mutableRecords)
-    }
-
-    fun restore(context: Context) {
-        Persistence.requireOwner()
-        if (restored) return
-        mutableRecords.addAll(LibraryStore.load(context).sortedByDescending { it.lastPlayedAt })
+        mutableRecords.addAll(snapshot.entries)
+        opaqueRecords = snapshot.opaqueRecords
         layoutVersion.longValue++
         progressVersion.longValue++
         restored = true
@@ -58,17 +52,16 @@ object MediaLibrary {
         val placement = if (existing == null && incoming.sourceKind == LibrarySourceKind.REMOTE_STREAM) {
             FailedVideoLog.claimReplacement(context, incoming)
         } else null
-        if (placement != null) LibraryFolders.restore(context)
         val (placedIncoming, preservedPlacement) = if (placement == null) incoming to false else {
             applyFailedVideoPlacement(incoming, placement, LibraryFolders.entries.map { it.id }.toSet())
         }
         val merged = mergeOpened(existing, placedIncoming).let { entry ->
             if (existing == null && entry.folderId == null && !preservedPlacement) {
-                entry.copy(folderId = LibraryFolders.routeNewVideo(context, entry))
+                entry.copy(folderId = LibraryFolders.routeNewVideo(entry))
             } else if (existing != null && !existing.manualFolder &&
                 (existing.videoName != entry.videoName || existing.pageTitle != entry.pageTitle ||
                     existing.title != entry.title || existing.pageUrl != entry.pageUrl)) {
-                entry.copy(folderId = LibraryFolders.routeAfterTitleChange(context, entry))
+                entry.copy(folderId = LibraryFolders.routeAfterTitleChange(entry))
             } else entry
         }
         if (existingIndex >= 0) mutableRecords.removeAt(existingIndex)
@@ -95,7 +88,7 @@ object MediaLibrary {
             )
             if (refreshed != existing) {
                 if (!existing.manualFolder) {
-                    refreshed = refreshed.copy(folderId = LibraryFolders.routeAfterTitleChange(context, refreshed))
+                    refreshed = refreshed.copy(folderId = LibraryFolders.routeAfterTitleChange(refreshed))
                 }
                 mutableRecords[existingIndex] = refreshed
                 persist(context)
@@ -105,7 +98,7 @@ object MediaLibrary {
         requireSaveCapacity()
         mutableRecords.add(0, entry.copy(
             explicitlySaved = true,
-            folderId = entry.folderId ?: LibraryFolders.routeNewVideo(context, entry)
+            folderId = entry.folderId ?: LibraryFolders.routeNewVideo(entry)
         ))
         trimRecent(context)
         persist(context)
@@ -126,7 +119,7 @@ object MediaLibrary {
     /** Imported content URIs retain their original files and manual folder placement. */
     fun importLocalBatch(context: Context, entries: List<LibraryEntry>): Int = traceSection("LibraryImportBatch") {
         Persistence.requireOwner()
-        restore(context)
+        check(restored)
         val incoming = entries.filter { it.sourceKind == LibrarySourceKind.LOCAL_FILE }
             .distinctBy(LibraryEntry::identityKey)
         requireSaveCapacity(savedSlotsNeededForImport(incoming.map(LibraryEntry::mediaUri)))
@@ -168,7 +161,9 @@ object MediaLibrary {
         if (updated == current) return
         traceSection("LibraryProgressUpdate") {
             mutableRecords[index] = updated
-            persist(context, ProjectionChange.PROGRESS)
+            revision++
+            progressVersion.longValue++
+            LibraryRepository.saveWatch(context, updated)
         }
     }
 
@@ -355,7 +350,7 @@ object MediaLibrary {
             val recordsRevision = revision
             val foldersRevision = LibraryFolders.revision
             val folder = LibraryFolders.entries.firstOrNull { it.id == folderId } ?: return 0
-            val sourceId = LibraryFolders.sourceForRule(context, folderId)
+            val sourceId = LibraryFolders.sourceForRule(folderId)
             val router = LibraryFolders.router()
             val records = mutableRecords.toList()
             val destinations = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
@@ -445,24 +440,26 @@ object MediaLibrary {
             }
         }
     }
-    private enum class ProjectionChange { STRUCTURE, PROGRESS, DETAIL }
+    private enum class ProjectionChange { STRUCTURE, DETAIL }
 
     private fun persist(
         context: Context,
         change: ProjectionChange = ProjectionChange.STRUCTURE,
         discardUnsupported: Boolean = false,
         restoreUnsupported: List<String>? = null
-    ): java.util.concurrent.CompletableFuture<Boolean> {
+    ) {
+        check(restored)
+        if (discardUnsupported) opaqueRecords = emptyList()
+        if (restoreUnsupported != null) opaqueRecords = restoreUnsupported
         revision++
         when (change) {
             ProjectionChange.STRUCTURE -> {
                 layoutVersion.longValue++
                 progressVersion.longValue++
             }
-            ProjectionChange.PROGRESS -> progressVersion.longValue++
             ProjectionChange.DETAIL -> Unit
         }
-        return LibraryStore.save(context, mutableRecords, discardUnsupported, restoreUnsupported)
+        LibraryRepository.saveMedia(context, LibraryMediaSnapshot(mutableRecords.toList(), opaqueRecords))
     }
 }
 

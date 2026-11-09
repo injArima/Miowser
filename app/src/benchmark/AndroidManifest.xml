@@ -11,6 +11,8 @@
             android:exported="true" />
         <activity android:name="com.miowser.app.benchmark.LibraryWriteProbeActivity"
             android:exported="true" />
+        <activity android:name="com.miowser.app.benchmark.LibraryMigrationProbeActivity"
+            android:exported="true" />
         <activity android:name="com.miowser.app.benchmark.StartupProbeActivity"
             android:exported="true" />
         <activity android:name="com.miowser.app.benchmark.StartupBarrierProbeActivity"

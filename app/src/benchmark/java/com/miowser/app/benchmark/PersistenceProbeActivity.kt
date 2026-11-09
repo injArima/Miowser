@@ -1,9 +1,10 @@
 package com.miowser.app.benchmark
 
-import android.app.Activity
 import android.os.Bundle
 import android.os.StrictMode
 import android.widget.TextView
+import androidx.activity.ComponentActivity
+import androidx.lifecycle.lifecycleScope
 import com.miowser.app.bookmarks.BookmarkList
 import com.miowser.app.downloader.DownloadQueue
 import com.miowser.app.downloader.Download
@@ -14,29 +15,37 @@ import com.miowser.app.library.LibraryFolders
 import com.miowser.app.library.MediaLibrary
 import com.miowser.app.persistence.Persistence
 import com.miowser.app.settings.AppSettings
+import kotlinx.coroutines.launch
+
+private const val PROBE_DOWNLOAD_ID = 999_999L
 
 /** Isolated benchmark-only durability probe; never compiled into debug or release APKs. */
-class PersistenceProbeActivity : Activity() {
+class PersistenceProbeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         check(packageName == "com.miowser.app.benchmark")
         val label = TextView(this).also { it.text = "Checking persistence…" }
         setContentView(label)
-        MediaLibrary.restore(this)
-        LibraryFolders.restore(this)
+        lifecycleScope.launch { runProbe(label) }
+    }
+
+    private suspend fun runProbe(label: TextView) {
+        MediaLibrary.restoreAsync(this)
+        LibraryFolders.restoreAsync(this)
         HistoryLog.restore(this)
         BookmarkList.restore(this)
         DownloadQueue.restore(this)
         AppSettings.load(this)
         if (intent.getBooleanExtra("verify", false)) {
             check(MediaLibrary.entries.size == 120)
-            check(MediaLibrary.entries.all { it.folderId == LibraryFolders.entries.single().id })
+            val movedTo = LibraryFolders.entries.single { it.name == "Step 4 folder" }.id
+            check(MediaLibrary.entries.all { it.folderId == movedTo })
             check(HistoryLog.entries.single().title == "Latest title")
             check(HistoryLog.entries.single().visitCount == 100)
             check(BookmarkList.bookmarks.single().url == "https://step4.invalid/kept")
             check(DownloadQueue.downloads.size == 151)
-            val completed = DownloadQueue.downloads.single { it.status == DownloadStatus.COMPLETED }
-            check(completed.recordSaved && completed.savedUri != null)
+            val completed = DownloadQueue.downloads.single { it.id == PROBE_DOWNLOAD_ID }
+            check(completed.status == DownloadStatus.COMPLETED && completed.recordSaved && completed.savedUri != null)
             check(!AppSettings.current.adBlockEnabled)
             label.text = "Step 4 restart verified"
             return
@@ -51,7 +60,7 @@ class PersistenceProbeActivity : Activity() {
             val folder = checkNotNull(LibraryFolders.add(this, "Step 4 folder"))
             MediaLibrary.moveToFolder(this, MediaLibrary.entries.map { it.identityKey }.toSet(), folder.id)
             // A second restore during outstanding writes must not reload stale disk data.
-            MediaLibrary.restore(this)
+            MediaLibrary.restoreAsync(this)
             check(MediaLibrary.entries.size == 120)
             HistoryLog.clear(this)
             repeat(100) { HistoryLog.recordVisit(this, "https://step4.invalid/history", "Visit $it") }
@@ -67,7 +76,7 @@ class PersistenceProbeActivity : Activity() {
         } finally { StrictMode.setThreadPolicy(before) }
         // Exercise worker -> main snapshot -> disk commit -> completion acknowledgement.
         val completed = Download(
-            id = 999_999L, sourceUrl = "blob:step4", pageUrl = "https://step4.invalid",
+            id = PROBE_DOWNLOAD_ID, sourceUrl = "blob:step4", pageUrl = "https://step4.invalid",
             userAgent = "", referer = "", cookies = "", kind = DownloadKind.WEBVIEW_RESOURCE,
             displayName = "Step 4 synthetic file", outputBaseName = "step4"
         )

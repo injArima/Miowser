@@ -5,6 +5,9 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import com.miowser.app.downloader.DownloadCodec
 import com.miowser.app.downloader.DownloadStatus
+import com.miowser.app.library.LEGACY_FOLDER_PREFS
+import com.miowser.app.library.LEGACY_MEDIA_PREFS
+import com.miowser.app.library.LibraryRepository
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -17,6 +20,7 @@ import org.json.JSONObject
 
 /** App-owned data only. Browser history, tabs, private state, cookies and transfer segments stay out. */
 private val PREF_NAMES = BACKUP_PREFERENCE_NAMES
+private val SNAPSHOT_PREF_NAMES = PREF_NAMES - setOf(LEGACY_MEDIA_PREFS, LEGACY_FOLDER_PREFS)
 private val FILE_DIRECTORIES = listOf(
     "adblock", "speed-dial-icons", "library_thumbnails", "download_thumbnails", "library_subtitles"
 )
@@ -37,8 +41,8 @@ object BackupEngine {
             repeat(3) {
                 if (staged != null) return@repeat
                 awaitWrites()
-                PREF_NAMES.forEach { app.getSharedPreferences(it, Context.MODE_PRIVATE).all }
-                val logical = onOwner { PREF_NAMES.associateWith { snapshotPreferences(app, it) } }
+                SNAPSHOT_PREF_NAMES.forEach { app.getSharedPreferences(it, Context.MODE_PRIVATE).all }
+                val logical = onOwner { SNAPSHOT_PREF_NAMES.associateWith { snapshotPreferences(app, it) } }
                 val directory = File(app.cacheDir, "backup-snapshot-${System.nanoTime()}").apply { mkdirs() }
                 val sources = mutableListOf<BackupSource>()
                 var assetRevision = 0L
@@ -47,7 +51,7 @@ object BackupEngine {
                     com.miowser.app.persistence.RestoreWriteFence.stage {
                         val assets = FILE_DIRECTORIES.flatMap { name -> File(app.filesDir, name).listFiles()
                             ?.filter { it.isFile && allowedBackupPath("files/$name/${it.name}") }.orEmpty() }
-                        val preferences = logical.mapValues { (name, values) ->
+                        val preferences = (logical + LibraryRepository.backupPreferences(app)).mapValues { (name, values) ->
                             val encoded = encodePreferences(backupPreferenceValues(name, values))
                             require(encoded.length.toLong() <= MAX_BACKUP_FILE_BYTES) { "A settings store is too large to back up safely." }
                             requireSpace(app, encoded.length.toLong() * 4 + 32L * 1024 * 1024)
@@ -75,7 +79,7 @@ object BackupEngine {
                         assetRevision = com.miowser.app.persistence.RestoreWriteFence.revision
                     }
                     awaitWrites()
-                    val current = onOwner { PREF_NAMES.associateWith { snapshotPreferences(app, it) } }
+                    val current = onOwner { SNAPSHOT_PREF_NAMES.associateWith { snapshotPreferences(app, it) } }
                     if (logical == current && assetRevision == com.miowser.app.persistence.RestoreWriteFence.revision)
                         staged = Triple(directory, sources, skippedArtwork)
                     else directory.deleteRecursively()
@@ -169,6 +173,9 @@ object BackupEngine {
         restoredPrefs.forEach { (name, values) ->
             check(commitPreferences(app, name, values)) { "Could not restore $name." }
         }
+        // The journal can replay if the process stops before this marker is durable. Room
+        // imports the restored legacy records on its next worker-side open.
+        LibraryRepository.requestLegacyImport(app)
     }
 
     private fun requireSpace(context: Context, bytes: Long) {
@@ -244,7 +251,7 @@ private fun backupPreferenceValues(name: String, values: Map<String, Any>): Map<
     return values + ("downloads" to DownloadCodec.encode(complete))
 }
 
-private fun encodePreferences(values: Map<String, Any>): String = JSONObject().apply {
+internal fun encodePreferences(values: Map<String, Any>): String = JSONObject().apply {
     values.toSortedMap().forEach { (key, value) ->
         val item = JSONObject()
         when (value) {

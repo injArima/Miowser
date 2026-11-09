@@ -96,9 +96,6 @@ object LibraryFolderCodec {
 }
 
 object LibraryFolders {
-    private const val PREFS = "library_folders"
-    private const val KEY = "folders"
-    private const val DEFAULT_KEY = "default_folder_id"
     private val mutableRecords = mutableStateListOf<LibraryFolder>()
     val entries: List<LibraryFolder> get() = mutableRecords
     var defaultFolderId by mutableStateOf<String?>(null)
@@ -114,8 +111,7 @@ object LibraryFolders {
         Persistence.requireOwner()
         if (restored) return
         val (records, savedDefault) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            LibraryFolderCodec.decode(prefs.getString(KEY, "").orEmpty()) to prefs.getString(DEFAULT_KEY, null)
+            LibraryRepository.readFolders(context)
         }
         if (restored) return
         mutableRecords.addAll(records)
@@ -125,20 +121,9 @@ object LibraryFolders {
         restored = true
     }
 
-    fun restore(context: Context) {
-        Persistence.requireOwner()
-        if (restored) return
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        mutableRecords.addAll(LibraryFolderCodec.decode(prefs.getString(KEY, "").orEmpty()))
-        defaultFolderId = prefs.getString(DEFAULT_KEY, null)?.takeIf { id -> mutableRecords.any { it.id == id && it.parentId == null } }
-        compiled = null
-        revision++
-        restored = true
-    }
-
     fun add(context: Context, name: String, domain: String? = null, parentId: String? = null): LibraryFolder? {
         Persistence.requireOwner()
-        restore(context)
+        check(restored)
         val cleanName = name.trim().take(80)
         if (cleanName.isBlank() || (parentId != null && mutableRecords.none { it.id == parentId }) ||
             (domain != null && mutableRecords.any { domain in it.websiteDomains }) ||
@@ -153,7 +138,7 @@ object LibraryFolders {
     fun ensureImportedTree(context: Context, parentId: String?, rootName: String,
         relativePaths: List<List<String>>): Map<List<String>, String> {
         Persistence.requireOwner()
-        restore(context)
+        check(restored)
         require(parentId == null || mutableRecords.any { it.id == parentId })
         val result = mutableMapOf<List<String>, String>()
         val siblings = mutableRecords.associateBy { it.parentId to it.name.lowercase(java.util.Locale.ROOT) }
@@ -232,7 +217,7 @@ object LibraryFolders {
 
     fun addWebsiteRule(context: Context, id: String, value: String): Boolean {
         Persistence.requireOwner()
-        restore(context)
+        check(restored)
         val domain = libraryDomain(value) ?: return false
         val index = mutableRecords.indexOfFirst { it.id == id }
         if (index < 0 || mutableRecords[index].titleRule != null ||
@@ -258,7 +243,7 @@ object LibraryFolders {
 
     fun replaceWebsiteRule(context: Context, id: String, domains: List<String>, operator: LibraryRuleOperator): Boolean {
         Persistence.requireOwner()
-        restore(context)
+        check(restored)
         val parsed = domains.map { libraryDomain(it) ?: return false }.distinct()
         if (parsed.any { domain -> mutableRecords.any { it.id != id && domain in it.websiteDomains } }) return false
         val index = mutableRecords.indexOfFirst { it.id == id }
@@ -273,7 +258,7 @@ object LibraryFolders {
 
     fun replaceTitleRule(context: Context, id: String, rule: LibraryTitleRule?): Boolean {
         Persistence.requireOwner()
-        restore(context)
+        check(restored)
         if (rule != null && rule.phrases.any { it.isBlank() }) return false
         val index = mutableRecords.indexOfFirst { it.id == id }
         if (index < 0) return false
@@ -286,7 +271,7 @@ object LibraryFolders {
 
     fun setDefault(context: Context, id: String?) {
         Persistence.requireOwner()
-        restore(context)
+        check(restored)
         if (id != null && mutableRecords.none { it.id == id && it.parentId == null }) return
         if (defaultFolderId == id) return
         defaultFolderId = id
@@ -340,35 +325,23 @@ object LibraryFolders {
 
     fun path(folder: LibraryFolder): String = lineage(folder.id).joinToString(" / ") { it.name }
 
-    fun matchingFolderId(context: Context, pageUrl: String?): String? {
+    fun routeNewVideo(entry: LibraryEntry): String? {
         Persistence.requireOwner()
-        restore(context)
-        return chooseLibraryFolder(mutableRecords, pageUrl, null)
-    }
-
-    fun destinationFolderId(context: Context, pageUrl: String?): String? {
-        Persistence.requireOwner()
-        restore(context)
-        return chooseLibraryFolder(mutableRecords, pageUrl, defaultFolderId)
-    }
-
-    fun routeNewVideo(context: Context, entry: LibraryEntry): String? {
-        Persistence.requireOwner()
-        restore(context)
+        check(restored)
         return router().route(defaultFolderId, entry.ruleFacts())
     }
 
-    fun routeAfterTitleChange(context: Context, entry: LibraryEntry): String? {
+    fun routeAfterTitleChange(entry: LibraryEntry): String? {
         Persistence.requireOwner()
-        restore(context)
+        check(restored)
         // Recheck the entire hierarchy so a changed title can leave its old parent,
         // match a different root, and then flow into that root's children.
         return router().route(defaultFolderId, entry.ruleFacts())
     }
 
-    fun sourceForRule(context: Context, folderId: String): String? {
+    fun sourceForRule(folderId: String): String? {
         Persistence.requireOwner()
-        restore(context)
+        check(restored)
         return mutableRecords.firstOrNull { it.id == folderId }?.parentId ?: defaultFolderId
     }
 
@@ -376,15 +349,7 @@ object LibraryFolders {
         Persistence.requireOwner()
         revision++
         compiled = null
-        val snapshot = mutableRecords.toList()
-        val selectedDefault = defaultFolderId
-        val appContext = context.applicationContext
-        Persistence.submitSnapshot("library-folders") {
-            appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .putString(KEY, LibraryFolderCodec.encode(snapshot))
-                .putString(DEFAULT_KEY, selectedDefault)
-                .commit()
-        }
+        LibraryRepository.saveFolders(context, LibraryFolderSnapshot(mutableRecords.toList(), defaultFolderId))
     }
 }
 
