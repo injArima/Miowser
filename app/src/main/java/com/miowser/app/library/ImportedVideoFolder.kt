@@ -3,6 +3,7 @@ package com.miowser.app.library
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import com.miowser.app.performance.traceSection
 import java.util.ArrayDeque
 
 private val VIDEO_EXTENSIONS = setOf("mp4", "m4v", "mkv", "webm", "mov", "3gp", "ts", "mpeg", "mpg")
@@ -23,7 +24,10 @@ internal data class ImportedVideoFolder(
     }.distinct().sortedWith(compareBy<List<String>> { it.size }.thenBy { it.joinToString("/") }).toList()
 }
 
-internal fun scanImportedVideoFolder(context: Context, treeUri: Uri): ImportedVideoFolder {
+internal fun scanImportedVideoFolder(context: Context, treeUri: Uri): ImportedVideoFolder =
+    traceSection("LibraryFolderScan") { readImportedVideoFolder(context, treeUri) }
+
+private fun readImportedVideoFolder(context: Context, treeUri: Uri): ImportedVideoFolder {
     val resolver = context.contentResolver
     val rootId = DocumentsContract.getTreeDocumentId(treeUri)
     val rootUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, rootId)

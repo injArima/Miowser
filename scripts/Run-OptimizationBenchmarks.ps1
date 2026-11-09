@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Serial,
-    [ValidateSet('populatedStartup','libraryScroll','downloadsScroll','browserAndTabs','localPlayer','hubNavigation','hubDownloadLists','tabSwipeReversals','jumpToTopReversals','playerControlsAndOverlays','remoteSubtitleControls','all','profile')]
+    [ValidateSet('populatedStartup','libraryScroll','downloadsScroll','browserAndTabs','localPlayer','hubNavigation','hubDownloadLists','tabSwipeReversals','jumpToTopReversals','playerControlsAndOverlays','remoteSubtitleControls','all','profile','libraryP0','coldRows','warmNavigation','coldArtwork','warmArtwork','folderAndSearch','longFling','scanBatchCommit','progressCommit')]
     [string]$Journey = 'populatedStartup',
     [ValidateSet(1,10,30)][int]$Tabs = 10,
     [ValidateSet(200,1000)][int]$Downloads = 200,
@@ -15,6 +15,9 @@ param(
     [string]$SdkRoot = "$env:LOCALAPPDATA/Android/Sdk"
 )
 $ErrorActionPreference = 'Stop'
+$libraryJourneys = @('libraryP0','coldRows','warmNavigation','coldArtwork','warmArtwork','folderAndSearch','longFling','scanBatchCommit','progressCommit')
+$libraryBaseline = $Journey -in $libraryJourneys
+if ($libraryBaseline -and $FixtureServer) { throw 'The P0 Library baseline uses local fixtures only.' }
 if ($Journey -eq 'profile' -and $R8) { throw 'Generate profiles with the unminified target; omit -R8.' }
 if ($ActiveTransfers -and -not $FixtureServer) { throw 'Active transfers require the loopback fixture server.' }
 if ($Journey -eq 'remoteSubtitleControls' -and -not $FixtureServer) { throw 'Remote subtitle measurements require the loopback fixture server.' }
@@ -39,6 +42,8 @@ try {
     if (-not $env:JAVA_HOME) { $env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr' }
     $testClass = if ($Journey -eq 'profile') { 'com.miowser.benchmark.BaselineProfileGenerator' }
         elseif ($Journey -eq 'all') { 'com.miowser.benchmark.AppBenchmarks' }
+        elseif ($Journey -eq 'libraryP0') { 'com.miowser.benchmark.LibraryBaselineBenchmarks' }
+        elseif ($libraryBaseline) { "com.miowser.benchmark.LibraryBaselineBenchmarks#$Journey" }
         else { "com.miowser.benchmark.AppBenchmarks#$Journey" }
     $arguments = @(':benchmark:connectedBenchmarkAndroidTest', "-Pbenchmark.r8=$($R8.IsPresent.ToString().ToLowerInvariant())",
         "-Pandroid.testInstrumentationRunnerArguments.class=$testClass",
@@ -54,7 +59,8 @@ try {
     if ($EmulatorDiagnostic) { $arguments += '-Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR' }
     [ordered]@{
         timestamp = $stamp; serial = $Serial; emulatorDiagnostic = $isEmulator; journey = $Journey
-        tabs = $Tabs; downloads = $Downloads; library = $Library; history = 2000; fixture = 'artwork-media-v3-tall-tabs'
+        tabs = $Tabs; downloads = $Downloads; library = $Library; history = 2000
+        fixture = $(if ($libraryBaseline) { 'library-baseline-v1' } else { 'artwork-media-v3-tall-tabs' })
         fixtureServer = $FixtureServer; activeTransfers = $ActiveTransfers.IsPresent
         iterations = $(if ($Journey -eq 'profile') { $null } else { $Iterations })
         r8 = $R8.IsPresent; compilation = $(if ($Journey -eq 'profile') { 'Profile collection' } else { $Compilation })

@@ -18,6 +18,7 @@ import android.view.SurfaceView
 import android.view.TextureView
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.AspectRatioFrameLayout
+import com.miowser.app.performance.traceSection
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -470,13 +471,15 @@ object LibraryThumbnailStore {
         synchronized(decodeLocks[(thumbnailUri.hashCode() and Int.MAX_VALUE) % decodeLocks.size]) {
             memoryCache.get(thumbnailUri)?.let { return it }
             val decoded = runCatching {
-                val uri = Uri.parse(thumbnailUri)
-                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-                val sample = com.miowser.app.performance.boundedImageSample(
-                    bounds.outWidth, bounds.outHeight, THUMBNAIL_WIDTH * 2) ?: return null
-                val options = BitmapFactory.Options().apply { inSampleSize = sample }
-                context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+                traceSection("LibraryArtworkDecode") {
+                    val uri = Uri.parse(thumbnailUri)
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+                    val sample = com.miowser.app.performance.boundedImageSample(
+                        bounds.outWidth, bounds.outHeight, THUMBNAIL_WIDTH * 2) ?: return null
+                    val options = BitmapFactory.Options().apply { inSampleSize = sample }
+                    context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+                }
             }.getOrNull() ?: run { LocalInspectionCache.forgetArtwork(thumbnailUri); return null }
             decoded.prepareToDraw()
             memoryCache.put(thumbnailUri, decoded)

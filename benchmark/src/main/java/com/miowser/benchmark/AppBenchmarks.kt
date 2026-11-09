@@ -14,13 +14,25 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-private const val PACKAGE = "com.miowser.app.benchmark"
+internal const val PACKAGE = "com.miowser.app.benchmark"
 private const val TIMEOUT = 30_000L
 
-private fun androidx.test.uiautomator.UiDevice.requireNode(selector: androidx.test.uiautomator.BySelector) =
+internal val benchmarkIterations get() =
+    (InstrumentationRegistry.getArguments().getString("iterations") ?: "20").toInt().also { require(it > 0) }
+
+internal val benchmarkCompilation: CompilationMode get() =
+    when (InstrumentationRegistry.getArguments().getString("compilation") ?: "None") {
+        "None" -> CompilationMode.None()
+        "BaselineProfile" -> CompilationMode.Partial(
+            baselineProfileMode = BaselineProfileMode.Require, warmupIterations = 0
+        )
+        else -> error("Unsupported compilation policy")
+    }
+
+internal fun androidx.test.uiautomator.UiDevice.requireNode(selector: androidx.test.uiautomator.BySelector) =
     checkNotNull(wait(Until.findObject(selector), TIMEOUT)) { "Missing UI node: $selector" }
 
-private fun seed() {
+internal fun seed(libraryBaseline: Boolean = false, resetLibraryOnly: Boolean = false) {
     val device = androidx.test.uiautomator.UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
     val args = InstrumentationRegistry.getArguments()
     val tabs = (args.getString("tabs") ?: "10").toInt().also { require(it in listOf(1, 10, 30)) }
@@ -30,14 +42,15 @@ private fun seed() {
     require(server == null || server == "http://127.0.0.1:8765")
     val active = args.getString("active_transfers") == "true"
     val optional = if (server != null) " --es fixture_server $server --ez active_transfers $active" else ""
+    val baseline = if (libraryBaseline) " --ez library_baseline true --ez reset_library_only $resetLibraryOnly" else ""
     device.executeShellCommand("am force-stop $PACKAGE")
     device.executeShellCommand("pm grant $PACKAGE android.permission.POST_NOTIFICATIONS")
-    device.executeShellCommand("am start -W -n $PACKAGE/com.miowser.app.benchmark.FixtureActivity --ei tabs $tabs --ei downloads $downloads --ei library $library$optional")
+    device.executeShellCommand("am start -W -n $PACKAGE/com.miowser.app.benchmark.FixtureActivity --ei tabs $tabs --ei downloads $downloads --ei library $library$optional$baseline")
     device.requireNode(By.text("Fixture ready: library=$library history=2000 downloads=$downloads tabs=$tabs"))
     device.executeShellCommand("am force-stop $PACKAGE")
 }
 
-private fun MacrobenchmarkScope.openHub() {
+internal fun MacrobenchmarkScope.openHub() {
     startActivityAndWait(Intent().setClassName(PACKAGE, "com.miowser.app.MainActivity"))
     device.requireNode(By.res("library_grid"))
     device.requireNode(By.text("Fixture video 000"))
@@ -77,13 +90,9 @@ private fun androidx.test.uiautomator.UiDevice.switchDownloadLists(repetitions: 
 @RunWith(AndroidJUnit4::class)
 class AppBenchmarks {
     @get:Rule val rule = MacrobenchmarkRule()
-    @Before fun setup() = seed()
-    private val iterations get() = (InstrumentationRegistry.getArguments().getString("iterations") ?: "20").toInt().also { require(it > 0) }
-    private val compilation: CompilationMode get() = when (InstrumentationRegistry.getArguments().getString("compilation") ?: "None") {
-        "None" -> CompilationMode.None()
-        "BaselineProfile" -> CompilationMode.Partial(baselineProfileMode = BaselineProfileMode.Require, warmupIterations = 0)
-        else -> error("Unsupported compilation policy")
-    }
+    @Before fun setup() { seed() }
+    private val iterations get() = benchmarkIterations
+    private val compilation get() = benchmarkCompilation
 
     @Test fun populatedStartup() = rule.measureRepeated(
         packageName = PACKAGE, metrics = listOf(StartupTimingMetric()),
@@ -265,7 +274,7 @@ class AppBenchmarks {
 @RunWith(AndroidJUnit4::class)
 class BaselineProfileGenerator {
     @get:Rule val rule = BaselineProfileRule()
-    @Before fun setup() = seed()
+    @Before fun setup() { seed() }
     @Test fun startup() = rule.collect(packageName = PACKAGE, includeInStartupProfile = true) { openHub() }
     @Test fun commonInteractions() = rule.collect(packageName = PACKAGE, includeInStartupProfile = false) {
         openHub()

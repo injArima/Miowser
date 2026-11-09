@@ -148,6 +148,7 @@ import com.miowser.app.library.LibraryFolders
 import com.miowser.app.library.LibraryThumbnailStore
 import com.miowser.app.library.MediaLibrary
 import com.miowser.app.library.scanImportedVideoFolder
+import com.miowser.app.performance.traceSection
 import com.miowser.app.library.LibrarySourceKind
 import com.miowser.app.library.isLibraryEntryAvailable
 import com.miowser.app.ui.ExpressiveEmptyState
@@ -499,7 +500,8 @@ fun HubHomePage(
                     OutlinedTextField(
                         value = librarySearchQuery,
                         onValueChange = { librarySearchQuery = it },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.l, vertical = 6.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.l, vertical = 6.dp)
+                            .testTag("library_search"),
                         placeholder = { Text("Search videos") },
                         leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
                         trailingIcon = {
@@ -1582,15 +1584,17 @@ private fun HubLibraryContent(
                     .collectLatest { (version, snapshot) ->
                     val cached = projection.peek(version, selectedFolderId, sort, searchQuery)
                     val projected = withContext(Dispatchers.Default) {
-                        if (cached != null) refreshLibraryProjection(cached, snapshot)
-                        else {
-                            val inFolder = snapshot.filter { entry ->
-                                when (selectedFolderId) {
-                                    UNFILED_FOLDER_ID -> entry.folderId == null
-                                    else -> entry.folderId == selectedFolderId
+                        traceSection(if (cached == null) "LibraryProjection" else "LibraryProjectionReuse") {
+                            if (cached != null) refreshLibraryProjection(cached, snapshot)
+                            else {
+                                val inFolder = snapshot.filter { entry ->
+                                    when (selectedFolderId) {
+                                        UNFILED_FOLDER_ID -> entry.folderId == null
+                                        else -> entry.folderId == selectedFolderId
+                                    }
                                 }
+                                sortLibraryEntries(filterLibraryEntries(inFolder, searchQuery), sort)
                             }
-                            sortLibraryEntries(filterLibraryEntries(inFolder, searchQuery), sort)
                         }
                     }
                     val currentVersion = if (sort == HubLibrarySort.PROGRESS) {

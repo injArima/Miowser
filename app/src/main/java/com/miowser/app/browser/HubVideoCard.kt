@@ -49,6 +49,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -379,9 +380,10 @@ fun HubVideoCard(
         }
     }
 
+    val cardModifier = if (thumbnail != null) modifier.testTag("video_card_artwork") else modifier
     if (menuOnLongPress) {
         Card(
-            modifier = modifier
+            modifier = cardModifier
                 .clip(MaterialTheme.shapes.large)
                 .combinedClickable(
                     onClick = { onClick?.invoke() },
@@ -394,13 +396,13 @@ fun HubVideoCard(
     } else if (onClick != null) {
         Card(
             onClick = onClick,
-            modifier = modifier,
+            modifier = cardModifier,
             shape = MaterialTheme.shapes.large,
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
         ) { cardContent() }
     } else {
         Card(
-            modifier = modifier,
+            modifier = cardModifier,
             shape = MaterialTheme.shapes.large,
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
         ) { cardContent() }

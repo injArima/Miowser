@@ -20,8 +20,23 @@ class FixtureActivity : Activity() {
         val librarySize = intent.getIntExtra("library", 500).also { require(it in listOf(500, 1000, 5000)) }
         val server = intent.getStringExtra("fixture_server")?.trimEnd('/')
         val active = intent.getBooleanExtra("active_transfers", false).also { require(!it || server != null) }
+        val libraryBaseline = intent.getBooleanExtra("library_baseline", false)
+        val baselineSnapshot = java.io.File(filesDir, "library-baseline-$librarySize.tsv")
+        if (intent.getBooleanExtra("reset_library_only", false)) {
+            check(libraryBaseline)
+            check(getSharedPreferences("media_library", MODE_PRIVATE).edit()
+                .putString("entries", baselineSnapshot.readText()).commit())
+            showReady(librarySize, downloads, tabs)
+            return
+        }
         listOf("hub_settings", "player_track_preferences", "player_subtitle_style", "player_display_preferences")
             .forEach { check(getSharedPreferences(it, MODE_PRIVATE).edit().clear().commit()) }
+        // A populated fixture represents an existing installation on every device.
+        check(getSharedPreferences("onboarding", MODE_PRIVATE).edit()
+            .putBoolean("guide_completed", true).commit())
+        if (libraryBaseline) {
+            check(getSharedPreferences("settings", MODE_PRIVATE).edit().clear().commit())
+        }
         val epoch = 1_790_000_000_000L
         val media = java.io.File(filesDir, "fixture.mp4")
         assets.open("fixture.mp4").use { input -> media.outputStream().use { input.copyTo(it) } }
@@ -35,26 +50,32 @@ class FixtureActivity : Activity() {
             color = android.graphics.Color.WHITE; textSize = 36f
         }
         val entries = List(librarySize) { i ->
+            val inFolder = libraryBaseline && i >= librarySize * 3 / 4
+            val title = if (inFolder) "Fixture folder video %03d".format(java.util.Locale.ROOT, i)
+                else "Fixture video %03d".format(java.util.Locale.ROOT, i)
             canvas.drawColor(android.graphics.Color.rgb(30 + i % 80, 40 + i % 90, 70 + i % 100))
-            canvas.drawText("Fixture video %03d".format(i), 32f, 180f, paint)
+            canvas.drawText(title, 32f, 180f, paint)
             val image = java.io.File(artwork, "v3_middle_fixture_$i.jpg")
             image.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 86, it) }
             val remote = i == 1 && server != null
             LibraryEntry(
                 if (remote) "$server/fixture.mp4" else android.net.Uri.fromFile(media).buildUpon()
                     .apply { if (i != 0) appendQueryParameter("fixture", i.toString()) }.build().toString(),
-                if (remote) "$server/page" else null, "Fixture video %03d".format(i), "Benchmark",
+                if (remote) "$server/page" else null, title, "Benchmark",
                 if (remote) LibrarySourceKind.REMOTE_STREAM else LibrarySourceKind.LOCAL_FILE,
                 if (remote) com.miowser.app.grabber.MediaType.MP4 else null, null, android.net.Uri.fromFile(image).toString(),
                 epoch - i, 0, 60_000,
+                folderId = if (inFolder) "series" else null,
                 pageTitle = "Fixture Series Steel Ball Run", videoName = "Fixture episode $i",
                 selectedSubtitle = if (remote) LibrarySubtitle("$server/fixture.vtt", "$server/page", "Fixture subtitles", null, null) else null
             )
         }
         bitmap.recycle()
         // 23-field format lets the same persisted workload be used by the P1 comparison APK.
-        write("media_library", "entries", LibraryCodec.encode(entries).lineSequence()
-            .joinToString("\n") { it.substringBeforeLast('\t') })
+        val librarySnapshot = LibraryCodec.encode(entries).lineSequence()
+            .joinToString("\n") { it.substringBeforeLast('\t') }
+        if (libraryBaseline) baselineSnapshot.writeText(librarySnapshot)
+        write("media_library", "entries", librarySnapshot)
         write("library_folders", "folders", LibraryFolderCodec.encode(listOf(
             LibraryFolder("series", "Fixture Series", titleRule = LibraryTitleRule(LibraryTitleSource.COMBINED,
                 LibraryRuleOperator.ALL, listOf("Fixture", "Steel ball run"))),
@@ -84,6 +105,12 @@ class FixtureActivity : Activity() {
             SavedTab("data:text/html;base64," + android.util.Base64.encodeToString(html.toByteArray(), android.util.Base64.NO_WRAP),
                 -1, title = "Fixture tab $i", lastActiveAt = epoch)
         }))
-        setContentView(TextView(this).apply { text = "Fixture ready: library=$librarySize history=2000 downloads=$downloads tabs=$tabs" })
+        showReady(librarySize, downloads, tabs)
+    }
+
+    private fun showReady(librarySize: Int, downloads: Int, tabs: Int) {
+        setContentView(TextView(this).apply {
+            text = "Fixture ready: library=$librarySize history=2000 downloads=$downloads tabs=$tabs"
+        })
     }
 }

@@ -9,6 +9,8 @@
             android:exported="true" android:process=":fixture" />
         <activity android:name="com.miowser.app.benchmark.PersistenceProbeActivity"
             android:exported="true" />
+        <activity android:name="com.miowser.app.benchmark.LibraryWriteProbeActivity"
+            android:exported="true" />
         <activity android:name="com.miowser.app.benchmark.StartupProbeActivity"
             android:exported="true" />
         <activity android:name="com.miowser.app.benchmark.StartupBarrierProbeActivity"

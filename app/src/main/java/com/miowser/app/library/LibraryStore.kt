@@ -1,6 +1,7 @@
 package com.miowser.app.library
 
 import android.content.Context
+import com.miowser.app.performance.traceSection
 import com.miowser.app.persistence.Persistence
 import com.miowser.app.grabber.MediaType
 import com.miowser.app.grabber.HlsRendition
@@ -189,17 +190,17 @@ object LibraryStore {
         val appContext = context.applicationContext
         val snapshot = entries.toList()
         return Persistence.submitSnapshot("library") {
-            val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val encoded = when {
-                discardUnsupported -> LibraryCodec.encode(snapshot)
-                restoreUnsupported != null -> LibraryCodec.encodeWithUnsupported(snapshot, restoreUnsupported)
-                else -> LibraryCodec.encodePreservingUnsupported(snapshot,
-                    prefs.getString(KEY_ENTRIES, null).orEmpty())
+            traceSection("LibrarySnapshotCommit") {
+                val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                val encoded = when {
+                    discardUnsupported -> LibraryCodec.encode(snapshot)
+                    restoreUnsupported != null -> LibraryCodec.encodeWithUnsupported(snapshot, restoreUnsupported)
+                    else -> LibraryCodec.encodePreservingUnsupported(snapshot,
+                        prefs.getString(KEY_ENTRIES, null).orEmpty())
+                }
+                Persistence.recordEncoded(encoded)
+                prefs.edit().putString(KEY_ENTRIES, encoded).commit()
             }
-            Persistence.recordEncoded(encoded)
-            val saved = prefs.edit()
-                .putString(KEY_ENTRIES, encoded).commit()
-            saved
         }
     }
 

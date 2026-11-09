@@ -5,6 +5,7 @@ import com.miowser.app.persistence.Persistence
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableLongStateOf
+import com.miowser.app.performance.traceSection
 
 
 
@@ -123,7 +124,7 @@ object MediaLibrary {
     }
 
     /** Imported content URIs retain their original files and manual folder placement. */
-    fun importLocalBatch(context: Context, entries: List<LibraryEntry>): Int {
+    fun importLocalBatch(context: Context, entries: List<LibraryEntry>): Int = traceSection("LibraryImportBatch") {
         Persistence.requireOwner()
         restore(context)
         val incoming = entries.filter { it.sourceKind == LibrarySourceKind.LOCAL_FILE }
@@ -146,7 +147,7 @@ object MediaLibrary {
         }
         if (fresh.isNotEmpty()) mutableRecords.addAll(0, fresh)
         if (fresh.isNotEmpty() || filedExisting > 0) persist(context)
-        return fresh.size + filedExisting
+        fresh.size + filedExisting
     }
 
     /** Called at meaningful player boundaries (pause/exit), not on every playback clock tick. */
@@ -165,8 +166,10 @@ object MediaLibrary {
             durationMs = durationMs.coerceAtLeast(0L)
         )
         if (updated == current) return
-        mutableRecords[index] = updated
-        persist(context, ProjectionChange.PROGRESS)
+        traceSection("LibraryProgressUpdate") {
+            mutableRecords[index] = updated
+            persist(context, ProjectionChange.PROGRESS)
+        }
     }
 
     /** Links a captured player frame to its existing Library record. */
