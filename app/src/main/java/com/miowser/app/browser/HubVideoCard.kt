@@ -50,6 +50,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import com.miowser.app.library.mediaWatchProgress
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -407,11 +408,6 @@ fun HubVideoCard(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
         ) { cardContent() }
     }
-}
-
-internal fun mediaWatchProgress(positionMs: Long, durationMs: Long): Float {
-    if (durationMs <= 0L) return 0f
-    return (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
 }
 
 internal fun formatMediaDuration(durationMs: Long): String {

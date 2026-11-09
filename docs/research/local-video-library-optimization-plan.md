@@ -13,7 +13,7 @@ Use Android’s MediaStore as the first source for device videos, following Next
 
 P0 measures the current saved Library. P1 and P2 can migrate and page that data before P3 exposes the primary device-video tab. At that point, run the same journeys against both tabs, plus a tab-switching journey. Measure local launch independently from the secondary Hub’s browser and download work.
 
-The P0 emulator run verified the benchmark harness. The physical-device measurements were waived before P1. P1 migrated the saved Library to Room and kept the existing backup format. [P1 release notes](G:/Projects/Miowser/docs/RELEASE_NOTES_0.1.53.md)
+The P0 emulator run verified the benchmark harness. The physical-device measurements were waived before P1. P1 migrated the saved Library to Room and kept the existing backup format. P2 added indexed browsing, a bounded page window, and playlists that span pages. [P1 release notes](G:/Projects/Miowser/docs/RELEASE_NOTES_0.1.53.md) · [P2 release notes](G:/Projects/Miowser/docs/RELEASE_NOTES_0.1.54.md)
 
 ## Evidence and scope
 

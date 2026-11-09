@@ -1,0 +1,388 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "812645b95f3dbd8750dc74669d4c8a2a",
+    "entities": [
+      {
+        "tableName": "library_media",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`rowId` INTEGER NOT NULL, `identityKey` TEXT NOT NULL, `mediaUri` TEXT NOT NULL, `pageUrl` TEXT, `title` TEXT NOT NULL, `sourceLabel` TEXT NOT NULL, `sourceKind` TEXT NOT NULL, `mediaType` TEXT, `userAgent` TEXT, `thumbnailUrl` TEXT, `lastPlayedAt` INTEGER NOT NULL, `pageTitle` TEXT, `videoName` TEXT, `folderId` TEXT, `qualityHeight` INTEGER, `requestReferer` TEXT, `requestOrigin` TEXT, `manualFolder` INTEGER NOT NULL, `explicitlySaved` INTEGER NOT NULL, `hlsRenditions` TEXT NOT NULL, `titleSortKey` BLOB NOT NULL DEFAULT X'', `titleSearch` TEXT NOT NULL DEFAULT '', `sourceSearch` TEXT NOT NULL DEFAULT '', `uriSearch` TEXT NOT NULL DEFAULT '', `subtitle_url` TEXT, `subtitle_pageUrl` TEXT, `subtitle_label` TEXT, `subtitle_requestReferer` TEXT, `subtitle_requestOrigin` TEXT, PRIMARY KEY(`rowId`))",
+        "fields": [
+          {
+            "fieldPath": "rowId",
+            "columnName": "rowId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "identityKey",
+            "columnName": "identityKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mediaUri",
+            "columnName": "mediaUri",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pageUrl",
+            "columnName": "pageUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceLabel",
+            "columnName": "sourceLabel",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceKind",
+            "columnName": "sourceKind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mediaType",
+            "columnName": "mediaType",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "userAgent",
+            "columnName": "userAgent",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "thumbnailUrl",
+            "columnName": "thumbnailUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastPlayedAt",
+            "columnName": "lastPlayedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pageTitle",
+            "columnName": "pageTitle",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "videoName",
+            "columnName": "videoName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "folderId",
+            "columnName": "folderId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "qualityHeight",
+            "columnName": "qualityHeight",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "requestReferer",
+            "columnName": "requestReferer",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "requestOrigin",
+            "columnName": "requestOrigin",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "manualFolder",
+            "columnName": "manualFolder",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "explicitlySaved",
+            "columnName": "explicitlySaved",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hlsRenditions",
+            "columnName": "hlsRenditions",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "titleSortKey",
+            "columnName": "titleSortKey",
+            "affinity": "BLOB",
+            "notNull": true,
+            "defaultValue": "X''"
+          },
+          {
+            "fieldPath": "titleSearch",
+            "columnName": "titleSearch",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "sourceSearch",
+            "columnName": "sourceSearch",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "uriSearch",
+            "columnName": "uriSearch",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "selectedSubtitle.url",
+            "columnName": "subtitle_url",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "selectedSubtitle.pageUrl",
+            "columnName": "subtitle_pageUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "selectedSubtitle.label",
+            "columnName": "subtitle_label",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "selectedSubtitle.requestReferer",
+            "columnName": "subtitle_requestReferer",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "selectedSubtitle.requestOrigin",
+            "columnName": "subtitle_requestOrigin",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "rowId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_library_media_identityKey",
+            "unique": false,
+            "columnNames": [
+              "identityKey"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_library_media_identityKey` ON `${TABLE_NAME}` (`identityKey`)"
+          },
+          {
+            "name": "index_library_media_folderId_lastPlayedAt_rowId",
+            "unique": false,
+            "columnNames": [
+              "folderId",
+              "lastPlayedAt",
+              "rowId"
+            ],
+            "orders": [
+              "ASC",
+              "DESC",
+              "ASC"
+            ],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_library_media_folderId_lastPlayedAt_rowId` ON `${TABLE_NAME}` (`folderId` ASC, `lastPlayedAt` DESC, `rowId` ASC)"
+          },
+          {
+            "name": "index_library_media_folderId_titleSortKey_lastPlayedAt_rowId",
+            "unique": false,
+            "columnNames": [
+              "folderId",
+              "titleSortKey",
+              "lastPlayedAt",
+              "rowId"
+            ],
+            "orders": [
+              "ASC",
+              "ASC",
+              "DESC",
+              "ASC"
+            ],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_library_media_folderId_titleSortKey_lastPlayedAt_rowId` ON `${TABLE_NAME}` (`folderId` ASC, `titleSortKey` ASC, `lastPlayedAt` DESC, `rowId` ASC)"
+          }
+        ]
+      },
+      {
+        "tableName": "library_watch_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`rowId` INTEGER NOT NULL, `positionMs` INTEGER NOT NULL, `durationMs` INTEGER NOT NULL, `progress` REAL NOT NULL DEFAULT 0, PRIMARY KEY(`rowId`))",
+        "fields": [
+          {
+            "fieldPath": "rowId",
+            "columnName": "rowId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "positionMs",
+            "columnName": "positionMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "durationMs",
+            "columnName": "durationMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "progress",
+            "columnName": "progress",
+            "affinity": "REAL",
+            "notNull": true,
+            "defaultValue": "0"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "rowId"
+          ]
+        }
+      },
+      {
+        "tableName": "library_folders",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`rowId` INTEGER NOT NULL, `id` TEXT NOT NULL, `name` TEXT NOT NULL, `domain` TEXT, `parentId` TEXT, `additionalDomains` TEXT NOT NULL, `websiteOperator` TEXT NOT NULL, `title_source` TEXT, `title_operator` TEXT, `title_phrases` TEXT, PRIMARY KEY(`rowId`))",
+        "fields": [
+          {
+            "fieldPath": "rowId",
+            "columnName": "rowId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "domain",
+            "columnName": "domain",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "parentId",
+            "columnName": "parentId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "additionalDomains",
+            "columnName": "additionalDomains",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "websiteOperator",
+            "columnName": "websiteOperator",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "titleRule.source",
+            "columnName": "title_source",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "titleRule.operator",
+            "columnName": "title_operator",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "titleRule.phrases",
+            "columnName": "title_phrases",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "rowId"
+          ]
+        }
+      },
+      {
+        "tableName": "library_opaque_records",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`rowId` INTEGER NOT NULL, `record` TEXT NOT NULL, PRIMARY KEY(`rowId`))",
+        "fields": [
+          {
+            "fieldPath": "rowId",
+            "columnName": "rowId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "record",
+            "columnName": "record",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "rowId"
+          ]
+        }
+      },
+      {
+        "tableName": "library_metadata",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `generation` TEXT NOT NULL, `defaultFolderId` TEXT, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "generation",
+            "columnName": "generation",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "defaultFolderId",
+            "columnName": "defaultFolderId",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '812645b95f3dbd8750dc74669d4c8a2a')"
+    ]
+  }
+}

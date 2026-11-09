@@ -32,6 +32,10 @@ class LibraryMigrationProbeActivity : ComponentActivity() {
             label.text = when (intent.getStringExtra("stage")) {
                 "edit" -> editMigratedRecords()
                 "prepare" -> prepareInterruptedRestore()
+                "paging" -> {
+                    withContext(Dispatchers.IO) { verifyPagingUpgrade(this@LibraryMigrationProbeActivity) }
+                    "Library paging upgrade verified"
+                }
                 "verify" -> {
                     check(withContext(Dispatchers.IO) { LibraryRepository.readMedia(this@LibraryMigrationProbeActivity) }
                         == expectedAfterEdits)
@@ -47,6 +51,7 @@ class LibraryMigrationProbeActivity : ComponentActivity() {
     private suspend fun editMigratedRecords(): String {
         withContext(Dispatchers.IO) {
             val db = Room.databaseBuilder(applicationContext, LibraryDatabase::class.java, LIBRARY_DATABASE_NAME)
+                .addMigrations(LIBRARY_MIGRATION_1_2)
                 .build()
             val before = db.library().metadata()
             val oldRows = db.library().media()
@@ -72,8 +77,20 @@ class LibraryMigrationProbeActivity : ComponentActivity() {
         check(LibraryFolders.entries.toList() == folders && LibraryFolders.defaultFolderId == root.id) {
             "Migrated folders or default differ from the fixture"
         }
-        MediaLibrary.updateProgress(this, remote.identityKey, 9_000, remote.durationMs)
-        MediaLibrary.updateProgress(this, local.identityKey, 7_000, local.durationMs)
+        var remoteUpdates = 0
+        var localUpdates = 0
+        val stopRemote = MediaLibrary.observeCard(LibraryCardId(remote.identityKey)) { remoteUpdates++ }
+        val stopLocal = MediaLibrary.observeCard(LibraryCardId(local.identityKey)) { localUpdates++ }
+        try {
+            MediaLibrary.updateProgress(this, remote.identityKey, 9_000, remote.durationMs)
+            MediaLibrary.updateQuality(this, remote.identityKey, 720)
+            check(remoteUpdates == 3 && localUpdates == 1)
+            MediaLibrary.updateProgress(this, local.identityKey, 7_000, local.durationMs)
+            check(remoteUpdates == 3 && localUpdates == 2)
+        } finally {
+            stopRemote()
+            stopLocal()
+        }
         awaitWrites()
         MediaLibrary.relinkLocal(this, local.mediaUri, relinkedUri)
         awaitWrites()
@@ -128,7 +145,8 @@ class LibraryMigrationProbeActivity : ComponentActivity() {
         private val legacyRows = LibraryCodec.encodeWithUnsupported(initialEntries, listOf(opaque))
         private const val relinkedUri = "content://example.test/files/renamed"
         private val expectedAfterEdits = LibraryMediaSnapshot(
-            listOf(remote.copy(positionMs = 9_000), local.copy(mediaUri = relinkedUri, positionMs = 7_000), duplicate),
+            listOf(remote.copy(positionMs = 9_000, qualityHeight = 720),
+                local.copy(mediaUri = relinkedUri, positionMs = 7_000), duplicate),
             listOf(opaque)
         )
 

@@ -141,6 +141,9 @@ import com.miowser.app.history.HistoryLog
 import com.miowser.app.library.MediaLibrary
 import com.miowser.app.library.isLibraryEntryAvailable
 import com.miowser.app.library.LibraryEntry
+import com.miowser.app.library.LibraryBrowseQuery
+import com.miowser.app.library.LibraryCardId
+import com.miowser.app.library.LibraryRepository
 import com.miowser.app.library.FailedVideoLog
 import com.miowser.app.library.LibrarySourceKind
 import com.miowser.app.player.PlaybackRequest
@@ -1718,10 +1721,19 @@ fun BrowserScreen(
         } else prepared
     }
 
-    fun playLibraryEntry(entry: LibraryEntry, queue: LibraryPlaybackQueue? = null) {
+    fun findLibraryEntry(identityKey: String) = MediaLibrary.entryForCard(LibraryCardId(identityKey))
+
+    fun playLibraryEntry(entry: LibraryEntry, query: LibraryBrowseQuery? = null) {
         val requestId = ++libraryPlayRequestId
         coroutineScope.launch {
             try {
+                val queue = query?.let {
+                    val keys = withContext(Dispatchers.IO) {
+                        LibraryRepository.readQueueKeys(context.applicationContext, it)
+                    }
+                    LibraryPlaybackQueue(if (entry.identityKey in keys) keys else listOf(entry.identityKey))
+                }
+                if (requestId != libraryPlayRequestId) return@launch
                 val prepared = prepareLibraryPlayback(entry)
                 if (requestId != libraryPlayRequestId) return@launch
                 if (queue != null) libraryPlaybackQueue = queue
@@ -1740,7 +1752,7 @@ fun BrowserScreen(
         val queue = libraryPlaybackQueue ?: return
         val requestId = ++libraryPlayRequestId
         coroutineScope.launch {
-            var candidate = queue.neighbor(currentKey, MediaLibrary.entries, direction)
+            var candidate = queue.neighbor(currentKey, direction, ::findLibraryEntry)
             while (candidate != null) {
                 val entry = candidate
                 if (entry.sourceKind != LibrarySourceKind.LOCAL_FILE || withContext(Dispatchers.IO) {
@@ -1761,7 +1773,7 @@ fun BrowserScreen(
                     return@launch
                 }
                 if (requestId != libraryPlayRequestId) return@launch
-                candidate = queue.neighbor(entry.identityKey, MediaLibrary.entries, direction)
+                candidate = queue.neighbor(entry.identityKey, direction, ::findLibraryEntry)
             }
             if (requestId == libraryPlayRequestId) {
                 showActionSnackbar("No more available videos in this playlist")
@@ -2646,9 +2658,7 @@ fun BrowserScreen(
                     )
                 },
                 libraryEntries = MediaLibrary.entries,
-                onPlayLibraryEntry = { entry, visibleEntries ->
-                    playLibraryEntry(entry, LibraryPlaybackQueue.fromVisible(visibleEntries))
-                },
+                onPlayLibraryEntry = ::playLibraryEntry,
                 onRemoveLibraryEntry = { entry ->
                     MediaLibrary.remove(context, entry)
                     showSavedSnackbar("Removed from Library", "Undo") {
@@ -2919,6 +2929,10 @@ fun BrowserScreen(
             val queue = libraryPlaybackQueue?.takeIf {
                 showingHub && currentKey in it.identityKeys
             }
+            val playlist = remember(queue, MediaLibrary.layoutRevision) {
+                queue?.entries(::findLibraryEntry).orEmpty()
+            }
+            val playlistIndex = remember(playlist, currentKey) { playlist.indexOfFirst { it.identityKey == currentKey } }
             val recordCurrentPlayback = shouldRecordLibraryPlayback(
                 behavior = AppSettings.current.libraryBehavior,
                 openedFromLibrary = playbackFromLibrary,
@@ -2927,11 +2941,13 @@ fun BrowserScreen(
             MiowserPlayerTheme {
                 PlayerScreen(
                     request = request,
-                    playlist = queue?.entries(MediaLibrary.entries).orEmpty(),
-                    onSelectPlaylistEntry = if (queue != null) ({ entry -> playLibraryEntry(entry) }) else null,
-                    onPlayNext = if (queue?.neighbor(currentKey, MediaLibrary.entries, 1) != null)
+                    playlist = playlist,
+                    onSelectPlaylistEntry = if (queue != null) ({
+                        entry -> findLibraryEntry(entry.identityKey)?.let { playLibraryEntry(it) }
+                    }) else null,
+                    onPlayNext = if (playlistIndex >= 0 && playlistIndex < playlist.lastIndex)
                         ({ playLibraryNeighbor(currentKey, 1) }) else null,
-                    onPlayPrevious = if (queue?.neighbor(currentKey, MediaLibrary.entries, -1) != null)
+                    onPlayPrevious = if (playlistIndex > 0)
                         ({ playLibraryNeighbor(currentKey, -1) }) else null,
                     recordInLibrary = recordCurrentPlayback,
                     onOpenSourcePage = if (request is PlaybackRequest.Remote) ({

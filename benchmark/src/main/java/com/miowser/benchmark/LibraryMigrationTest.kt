@@ -9,6 +9,13 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LibraryMigrationTest {
+    @Test fun roomV1UpgradePreservesIndexedPagingAndQueueOrder() {
+        val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        device.executeShellCommand("am force-stop $PACKAGE")
+        device.executeShellCommand("am start -W -n $PACKAGE/com.miowser.app.benchmark.LibraryMigrationProbeActivity --es stage paging")
+        device.requireNode(By.text("Library paging upgrade verified"))
+    }
+
     @Test fun migrationRetriesAndBackupReplacesRoomAfterRestart() {
         val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         fun run(activity: String, arguments: String, ready: String) {

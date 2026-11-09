@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -149,7 +151,10 @@ import com.miowser.app.library.LibraryThumbnailStore
 import com.miowser.app.library.MediaLibrary
 import com.miowser.app.library.scanImportedVideoFolder
 import com.miowser.app.library.LibraryRepository
-import com.miowser.app.performance.traceSection
+import com.miowser.app.library.LibraryBrowseQuery
+import com.miowser.app.library.LibraryCardId
+import com.miowser.app.ui.theme.HubVideoCardTokens
+import com.miowser.app.ui.theme.UiControlSize
 import com.miowser.app.library.LibrarySourceKind
 import com.miowser.app.library.isLibraryEntryAvailable
 import com.miowser.app.ui.ExpressiveEmptyState
@@ -200,13 +205,13 @@ private enum class HubLibraryView { GRID, LIST }
 /** Root Hub with bottom navigation for Library, Downloads, and independent Hub settings. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HubHomePage(
+internal fun HubHomePage(
     selectedSection: HubSection,
     onSectionSelected: (HubSection) -> Unit,
     selectedDownloadSection: HubDownloadSection,
     onDownloadSectionSelected: (HubDownloadSection) -> Unit,
     libraryEntries: List<LibraryEntry>,
-    onPlayLibraryEntry: (LibraryEntry, List<LibraryEntry>) -> Unit,
+    onPlayLibraryEntry: (LibraryEntry, LibraryBrowseQuery) -> Unit,
     onRelinkLibraryEntry: (LibraryEntry) -> Unit,
     onRemoveLibraryEntry: (LibraryEntry) -> Unit,
     onSaveLibraryEntry: (LibraryEntry) -> Unit,
@@ -356,20 +361,13 @@ fun HubHomePage(
             it.id == activeFolderId
         }?.parentId ?: UNFILED_FOLDER_ID
     }
-    val libraryLayoutRevision = if (libraryEntries === MediaLibrary.entries) MediaLibrary.layoutRevision else -1L
-    val selectedFolderVideoCount = remember(libraryEntries, libraryLayoutRevision,
-        activeFolderId, LibraryFolders.revision) {
-        val countedFolderIds = activeFolderId.takeIf { it.isNotEmpty() }
-            ?.let(LibraryFolders::descendantsIncluding)
-        libraryEntries.count { entry ->
-            when (activeFolderId) {
-                UNFILED_FOLDER_ID -> entry.folderId == null
-                else -> entry.folderId in countedFolderIds.orEmpty()
-            }
-        }
-    }
+    val directCounts = rememberLibraryFolderCounts(uiVisible && selectedSection == HubSection.LIBRARY)
+    val foldersForCounts = LibraryFolders.entries.toList()
+    val folderVideoCounts = remember(directCounts, foldersForCounts) { countLibraryBranches(directCounts, foldersForCounts) }
+    val selectedFolderVideoCount = folderVideoCounts[activeFolderId.takeIf { it.isNotEmpty() }] ?: 0
     val destinations = rememberSaveableStateHolder()
-    val libraryProjection = remember { HubLibraryProjection() }
+    val libraryViews = rememberSaveableStateHolder()
+    val libraryHasEntries by remember(libraryEntries) { derivedStateOf { libraryEntries.isNotEmpty() } }
     LaunchedEffect(activeFolderId, LibraryFolders.revision) {
         if (selectedFolderId == null || (LibraryFolders.revision > 0L &&
                 activeFolderId != UNFILED_FOLDER_ID && LibraryFolders.entries.none { it.id == activeFolderId })) {
@@ -483,7 +481,7 @@ fun HubHomePage(
                                         leadingIcon = {
                                             Icon(Icons.Rounded.DeleteSweep, contentDescription = null)
                                         },
-                                        enabled = libraryEntries.isNotEmpty(),
+                                        enabled = libraryHasEntries,
                                         onClick = {
                                             hubMenuExpanded = false
                                             showClearLibraryConfirmation = true
@@ -546,11 +544,12 @@ fun HubHomePage(
             if (uiVisible) destinations.SaveableStateProvider(selectedSection.name) {
                 key(inspectionEpoch) {
                     when (selectedSection) {
-                        HubSection.LIBRARY -> HubLibraryContent(
+                        HubSection.LIBRARY -> LibraryViewState(
+                            libraryViews, "${libraryView.name}:${librarySort.name}:$activeFolderId", librarySearchQuery
+                        ) { HubLibraryContent(
                             onIdleChanged = onLibraryIdleChanged,
-                            projection = libraryProjection,
-                            uiVisible = uiVisible,
-                            entries = libraryEntries,
+                            hasEntries = libraryHasEntries,
+                            folderVideoCounts = folderVideoCounts,
                             onPlay = onPlayLibraryEntry,
                             onRelink = onRelinkLibraryEntry,
                             onRemove = onRemoveLibraryEntry,
@@ -609,7 +608,7 @@ fun HubHomePage(
                             },
                             libraryView = libraryView,
                             modifier = Modifier.fillMaxSize().padding(top = UiSpacing.s)
-                        )
+                        ) }
                         HubSection.DOWNLOADS -> HubDownloadsTabContent(
                             uiVisible = uiVisible,
                             selectedSection = selectedDownloadSection,
@@ -1513,39 +1512,23 @@ internal fun downloadsForSection(
     HubDownloadSection.DOWNLOADED -> downloads.filter { it.status == DownloadStatus.COMPLETED }
 }
 
-private fun countLibraryVideosByFolder(
-    entries: List<LibraryEntry>,
-    folders: List<LibraryFolder>
-): Map<String, Int> {
-    val parents = folders.associate { it.id to it.parentId }
-    val counts = HashMap<String, Int>()
-    val visited = HashSet<String>()
-    entries.forEach { entry ->
-        visited.clear()
-        var folderId = entry.folderId
-        while (folderId != null && visited.add(folderId)) {
-            counts[folderId] = (counts[folderId] ?: 0) + 1
-            folderId = parents[folderId]
-        }
-    }
-    return counts
-}
-
-private fun refreshLibraryProjection(
-    projected: List<LibraryEntry>,
-    currentEntries: List<LibraryEntry>
-): List<LibraryEntry> {
-    if (projected.isEmpty()) return projected
-    val currentByKey = currentEntries.associateBy(LibraryEntry::identityKey)
-    return projected.mapNotNull { currentByKey[it.identityKey] }
+@Composable
+private fun LibraryViewState(
+    holder: androidx.compose.runtime.saveable.SaveableStateHolder,
+    viewKey: String,
+    search: String,
+    content: @Composable () -> Unit
+) {
+    if (search.isBlank()) holder.SaveableStateProvider(viewKey, content)
+    else key(viewKey, search.trim()) { content() }
 }
 
 @Composable
 private fun HubLibraryContent(
     onIdleChanged: (Boolean) -> Unit,
-    projection: HubLibraryProjection,
-    entries: List<LibraryEntry>,
-    onPlay: (LibraryEntry, List<LibraryEntry>) -> Unit,
+    hasEntries: Boolean,
+    folderVideoCounts: Map<String?, Int>,
+    onPlay: (LibraryEntry, LibraryBrowseQuery) -> Unit,
     onRelink: (LibraryEntry) -> Unit,
     onRemove: (LibraryEntry) -> Unit,
     onSave: (LibraryEntry) -> Unit,
@@ -1557,8 +1540,7 @@ private fun HubLibraryContent(
     onImportFolder: (String?) -> Unit,
     onDeleteFolder: (LibraryFolder, Boolean) -> Unit,
     libraryView: HubLibraryView,
-    modifier: Modifier = Modifier,
-    uiVisible: Boolean = true
+    modifier: Modifier = Modifier
 ) {
     var unavailableEntry by remember { mutableStateOf<LibraryEntry?>(null) }
     val gridState = rememberLazyGridState()
@@ -1567,76 +1549,33 @@ private fun HubLibraryContent(
         folder.parentId == selectedFolderId && selectedFolderId != UNFILED_FOLDER_ID &&
             (searchQuery.isBlank() || folder.name.contains(searchQuery.trim(), ignoreCase = true))
     }.sortedBy { it.id != LibraryFolders.defaultFolderId }
-    val repositoryOwned = entries === MediaLibrary.entries
-    val layoutRevision = if (repositoryOwned) MediaLibrary.layoutRevision else -1L
-    val folderVideoCounts = remember(entries, layoutRevision, LibraryFolders.revision) {
-        countLibraryVideosByFolder(entries, LibraryFolders.entries)
-    }
     val selectedFolder = LibraryFolders.entries.firstOrNull { it.id == selectedFolderId }
-    // Snapshot on the UI owner; sort/filter immutable records on a worker. collectLatest
-    // prevents an older query from publishing over a newer folder/search selection.
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val revision = if (!repositoryOwned) -1L else if (sort == HubLibrarySort.PROGRESS) {
-        MediaLibrary.progressSortRevision
-    } else MediaLibrary.layoutRevision
-    val visibleEntries by key(selectedFolderId, sort, searchQuery) {
-        produceState<List<LibraryEntry>?>(projection.peek(revision, selectedFolderId, sort, searchQuery), entries, uiVisible, lifecycle) {
-            if (!uiVisible) return@produceState
-            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                snapshotFlow {
-                    (if (!repositoryOwned) -1L else if (sort == HubLibrarySort.PROGRESS) {
-                        MediaLibrary.progressSortRevision
-                    } else MediaLibrary.layoutRevision) to entries.toList()
-                }
-                    .collectLatest { (version, snapshot) ->
-                    val cached = projection.peek(version, selectedFolderId, sort, searchQuery)
-                    val projected = withContext(Dispatchers.Default) {
-                        traceSection(if (cached == null) "LibraryProjection" else "LibraryProjectionReuse") {
-                            if (cached != null) refreshLibraryProjection(cached, snapshot)
-                            else {
-                                val inFolder = snapshot.filter { entry ->
-                                    when (selectedFolderId) {
-                                        UNFILED_FOLDER_ID -> entry.folderId == null
-                                        else -> entry.folderId == selectedFolderId
-                                    }
-                                }
-                                sortLibraryEntries(filterLibraryEntries(inFolder, searchQuery), sort)
-                            }
-                        }
-                    }
-                    val currentVersion = if (sort == HubLibrarySort.PROGRESS) {
-                        MediaLibrary.progressSortRevision
-                    } else MediaLibrary.layoutRevision
-                    if (!repositoryOwned || currentVersion == version) {
-                        projection.publish(version, selectedFolderId, sort, searchQuery, projected)
-                        value = projected
-                    }
-                }
-            }
-        }
+    val query = remember(selectedFolderId, sort, searchQuery.trim()) {
+        LibraryBrowseQuery(selectedFolderId.takeIf { it.isNotEmpty() }, sort, searchQuery.trim())
     }
+    val pages = rememberHubLibraryPages(query, gridState, childFolders.size)
+    val window = pages.window
     val artworkContext = LocalContext.current.applicationContext
-    LaunchedEffect(visibleEntries, childFolders.size, gridState, uiVisible) {
-        if (!uiVisible) return@LaunchedEffect
+    LaunchedEffect(window, childFolders.size, gridState) {
         snapshotFlow {
             if (gridState.isScrollInProgress) null
             else gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
         }.distinctUntilChanged().collectLatest { lastVisible ->
             if (lastVisible == null) return@collectLatest
-            visibleEntries.orEmpty().asSequence()
-                .drop((lastVisible + 1 - childFolders.size).coerceAtLeast(0))
-                .take(6).mapNotNull(LibraryEntry::thumbnailUrl).distinct()
+            val next = (lastVisible + 1 - childFolders.size).coerceAtLeast(0)
+            (next until next + 6).asSequence()
+                .mapNotNull { window?.get(it)?.let(MediaLibrary::entryForCard)?.thumbnailUrl }.distinct()
                 .forEach { LibraryThumbnailStore.prefetch(artworkContext, it) }
         }
     }
-    val layoutKeys = remember(childFolders, visibleEntries) {
-        childFolders.map { "folder-${it.id}" } + visibleEntries.orEmpty().map { it.identityKey }
+    val layoutKeys = remember(childFolders, window) {
+        childFolders.map { "folder-${it.id}" } + window?.ids.orEmpty().map { it.gridKey }
     }
     val reportIdle by rememberUpdatedState(onIdleChanged)
     DisposableEffect(Unit) { onDispose { reportIdle(false) } }
-    LaunchedEffect(visibleEntries != null, gridState.isScrollInProgress, uiVisible) {
+    LaunchedEffect(window != null, gridState.isScrollInProgress) {
         reportIdle(false)
-        if (visibleEntries != null && !gridState.isScrollInProgress && uiVisible) {
+        if (window != null && !gridState.isScrollInProgress) {
             // Let the prepared grid/empty state draw before scheduling optional browser work.
             withFrameNanos { }
             withFrameNanos { }
@@ -1645,9 +1584,8 @@ private fun HubLibraryContent(
     }
     val motion = LocalMotionPolicy.current
     var preparedLayout by remember(placement) { mutableStateOf<List<String>?>(null) }
-    val placeItems = remember(layoutKeys, preparedLayout, visibleEntries != null,
-        motion.reduced, gridState.isScrollInProgress, uiVisible) {
-        visibleEntries != null && placement.update(layoutKeys, uiVisible && !motion.reduced && !gridState.isScrollInProgress)
+    val placeItems = remember(layoutKeys, preparedLayout, window != null, motion.reduced, gridState.isScrollInProgress) {
+        window != null && placement.update(layoutKeys, !motion.reduced && !gridState.isScrollInProgress)
     }
     // After a snapped structural change has laid out, re-arm the stable nodes for the next
     // manual edit. One frame per layout change, never a frame loop or an action-start delay.
@@ -1655,17 +1593,6 @@ private fun HubLibraryContent(
         if (!motion.reduced) withFrameNanos { }
         preparedLayout = layoutKeys
     }
-    fun removeEntry(entry: LibraryEntry) {
-        onRemove(entry)
-        if (entries.none { it.identityKey == entry.identityKey }) placement.removedByUser(entry.identityKey)
-    }
-    var previousView by rememberSaveable { mutableStateOf(listOf(selectedFolderId, sort.name, searchQuery)) }
-    LaunchedEffect(selectedFolderId, sort, searchQuery) {
-        val view = listOf(selectedFolderId, sort.name, searchQuery)
-        if (view != previousView) gridState.scrollToItem(0)
-        previousView = view
-    }
-
     Column(modifier = modifier) {
         LibraryFolderStrip(selectedFolderId, onFolderSelected, onCreateFolder, onImportFolder, onDeleteFolder)
         if (selectedFolder?.parentId != null) {
@@ -1680,7 +1607,11 @@ private fun HubLibraryContent(
                 }
             }
         }
-        if (entries.isEmpty() && childFolders.isEmpty()) {
+        if (pages.failed) {
+            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                TextButton(onClick = { pages.retry++ }) { Text("Retry loading Library") }
+            }
+        } else if (!hasEntries && childFolders.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxWidth().weight(1f).padding(UiSpacing.xxl),
                 contentAlignment = Alignment.Center
@@ -1691,11 +1622,11 @@ private fun HubLibraryContent(
                     icon = Icons.Rounded.VideoLibrary
                 )
             }
-        } else if (visibleEntries == null) {
+        } else if (window == null) {
             Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                 Text("Loading library…")
             }
-        } else if (visibleEntries.orEmpty().isEmpty() && childFolders.isEmpty()) {
+        } else if (window.count == 0 && childFolders.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxWidth().weight(1f).padding(UiSpacing.xxl),
                 contentAlignment = Alignment.Center
@@ -1733,19 +1664,28 @@ private fun HubLibraryContent(
                             placementSpec = if (placeItems) motion.spec(MotionTokens.selection) else null)
                     )
                 }
-                items(visibleEntries.orEmpty(), key = { it.identityKey }, contentType = { "library-card" }) { entry ->
-                    ManagedLibraryCard(
-                        entry = entry,
-                        listMode = libraryView == HubLibraryView.LIST,
-                        onPlay = { selected -> onPlay(selected, visibleEntries.orEmpty()) },
-                        onRemove = ::removeEntry,
-                        onSave = onSave,
-                        onUnavailable = { unavailableEntry = it },
-                        deferArtwork = { gridState.isScrollInProgress },
-                        modifier = Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null,
-                            placementSpec = if (placeItems) motion.spec(MotionTokens.selection) else null),
-                        onMovedOut = { placement.removedByUser(it.identityKey) }
-                    )
+                items(window.count, key = { window[it]?.gridKey ?: "pending:$it" }, contentType = { "library-card" }) { index ->
+                    val id = window[index]
+                    val entry = if (id == null) null else observeLibraryCard(id)
+                    if (entry == null || id == null) {
+                        LibraryCardPlaceholder(listMode = libraryView == HubLibraryView.LIST)
+                    } else {
+                        ManagedLibraryCard(
+                            entry = entry,
+                            listMode = libraryView == HubLibraryView.LIST,
+                            onPlay = { selected -> onPlay(selected, query) },
+                            onRemove = {
+                                onRemove(it)
+                                if (MediaLibrary.entryForCard(id) == null) placement.removedByUser(id.gridKey)
+                            },
+                            onSave = onSave,
+                            onUnavailable = { unavailableEntry = it },
+                            deferArtwork = { gridState.isScrollInProgress },
+                            modifier = Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null,
+                                placementSpec = if (placeItems) motion.spec(MotionTokens.selection) else null),
+                            onMovedOut = { placement.removedByUser(id.gridKey) }
+                        )
+                    }
                 }
             }
         }
@@ -1764,10 +1704,34 @@ private fun HubLibraryContent(
                 }),
                 ConfirmationAction("Remove record", {
                     unavailableEntry = null
-                    removeEntry(entry)
+                    onRemove(entry)
                 }, ConfirmationTone.CAUTION)
             )
         )
+    }
+}
+
+@Composable
+private fun observeLibraryCard(id: LibraryCardId): LibraryEntry? {
+    var entry by remember(id) { mutableStateOf<LibraryEntry?>(null) }
+    DisposableEffect(id) {
+        val stop = MediaLibrary.observeCard(id) { entry = it }
+        onDispose(stop)
+    }
+    return entry
+}
+
+@Composable
+private fun LibraryCardPlaceholder(listMode: Boolean) {
+    val color = MaterialTheme.colorScheme.surfaceContainer
+    if (listMode) {
+        Spacer(Modifier.fillMaxWidth().height(HubVideoCardTokens.listArtworkHeight + UiSpacing.s * 2)
+            .clip(MaterialTheme.shapes.large).background(color))
+    } else {
+        Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(color)) {
+            Spacer(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(MaterialTheme.colorScheme.surfaceContainerHigh))
+            Spacer(Modifier.height(UiControlSize.touchTarget + UiSpacing.compact))
+        }
     }
 }
 
@@ -1895,32 +1859,4 @@ private fun ManagedLibraryCard(
         tertiaryMenuActionLabel = "Save video details",
         onTertiaryMenuAction = { onSave(entry) }
     )
-}
-
-internal fun sortLibraryEntries(
-    entries: List<LibraryEntry>,
-    sort: HubLibrarySort
-): List<LibraryEntry> = when (sort) {
-    HubLibrarySort.RECENT -> entries.sortedByDescending { it.lastPlayedAt }
-    HubLibrarySort.TITLE -> entries.sortedWith(
-        compareBy<LibraryEntry> { it.title.lowercase() }
-            .thenByDescending { it.lastPlayedAt }
-    )
-    HubLibrarySort.PROGRESS -> entries.sortedWith(
-        compareByDescending<LibraryEntry> { mediaWatchProgress(it.positionMs, it.durationMs) }
-            .thenByDescending { it.lastPlayedAt }
-    )
-}
-
-internal fun filterLibraryEntries(
-    entries: List<LibraryEntry>,
-    query: String
-): List<LibraryEntry> {
-    val normalized = query.trim()
-    if (normalized.isEmpty()) return entries
-    return entries.filter { entry ->
-        entry.title.contains(normalized, ignoreCase = true) ||
-            entry.sourceLabel.contains(normalized, ignoreCase = true) ||
-            entry.mediaUri.contains(normalized, ignoreCase = true)
-    }
 }

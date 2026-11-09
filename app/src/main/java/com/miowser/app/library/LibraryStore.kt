@@ -1,5 +1,7 @@
 package com.miowser.app.library
 
+import androidx.room.Embedded
+
 import com.miowser.app.grabber.MediaType
 import com.miowser.app.grabber.HlsRendition
 import java.util.Base64
@@ -39,7 +41,7 @@ data class LibraryEntry(
     val qualityHeight: Int? = null,
     val requestReferer: String? = null,
     val requestOrigin: String? = null,
-    val selectedSubtitle: LibrarySubtitle? = null,
+    @Embedded(prefix = "subtitle_") val selectedSubtitle: LibrarySubtitle? = null,
     val manualFolder: Boolean = false,
     val explicitlySaved: Boolean = true,
     val hlsRenditions: List<HlsRendition> = emptyList()

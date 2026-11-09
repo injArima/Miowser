@@ -26,21 +26,23 @@ class LibraryPlaybackQueueTest {
         val first = entry(1)
         val second = entry(2)
         val third = entry(3)
-        val queue = LibraryPlaybackQueue.fromVisible(listOf(first, second, third))
+        val queue = LibraryPlaybackQueue(listOf(first, second, third).map(LibraryEntry::identityKey))
+        val records = listOf(third, first, second).associateBy(LibraryEntry::identityKey)
 
-        assertEquals(listOf(first, second, third), queue.entries(listOf(third, first, second)))
-        assertEquals(third, queue.neighbor(second.identityKey, listOf(third, first, second), 1))
-        assertEquals(first, queue.neighbor(second.identityKey, listOf(third, first, second), -1))
-        assertNull(queue.neighbor(third.identityKey, listOf(third, first, second), 1))
+        assertEquals(listOf(first, second, third), queue.entries(records::get))
+        assertEquals(third, queue.neighbor(second.identityKey, 1, records::get))
+        assertEquals(first, queue.neighbor(second.identityKey, -1, records::get))
+        assertNull(queue.neighbor(third.identityKey, 1, records::get))
     }
 
     @Test fun `skips entries removed after the queue was created`() {
         val first = entry(1)
         val second = entry(2)
         val third = entry(3)
-        val queue = LibraryPlaybackQueue.fromVisible(listOf(first, second, third))
+        val queue = LibraryPlaybackQueue(listOf(first, second, third).map(LibraryEntry::identityKey))
+        val records = listOf(first, third).associateBy(LibraryEntry::identityKey)
 
-        assertEquals(third, queue.neighbor(first.identityKey, listOf(first, third), 1))
-        assertEquals(listOf(first, third), queue.entries(listOf(first, third)))
+        assertEquals(third, queue.neighbor(first.identityKey, 1, records::get))
+        assertEquals(listOf(first, third), queue.entries(records::get))
     }
 }

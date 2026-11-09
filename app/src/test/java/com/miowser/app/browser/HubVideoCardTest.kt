@@ -1,5 +1,7 @@
 package com.miowser.app.browser
 
+import com.miowser.app.library.mediaWatchProgress
+
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

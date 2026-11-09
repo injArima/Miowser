@@ -9,6 +9,8 @@ import java.io.File
 import java.io.FileNotFoundException
 import java.util.UUID
 import java.util.concurrent.Callable
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 internal const val LEGACY_MEDIA_PREFS = "media_library"
 internal const val LEGACY_FOLDER_PREFS = "library_folders"
@@ -22,20 +24,56 @@ internal data class LibraryFolderSnapshot(val folders: List<LibraryFolder>, val 
 
 internal object LibraryRepository {
     private val migrationLock = Any()
+    private val browseLock = Any()
     @Volatile private var initializedDatabase: LibraryDatabase? = null
     private var openedDatabase: LibraryDatabase? = null
 
     private data class Structure(
         val media: LibraryMediaSnapshot? = null,
-        val folders: LibraryFolderSnapshot? = null
+        val folders: LibraryFolderSnapshot? = null,
+        val layoutChanged: Boolean = false,
+        val progressChanged: Boolean = false
     ) {
-        fun with(change: Structure) = Structure(change.media ?: media, change.folders ?: folders)
+        fun with(change: Structure) = Structure(
+            change.media ?: media, change.folders ?: folders,
+            layoutChanged || change.layoutChanged, progressChanged || change.progressChanged
+        )
     }
 
     // One staging slot on the UI owner, one set of failed writes on the ordered disk writer.
     private var batch: Structure? = null
     private var pendingStructure = Structure()
     private val pendingWatch = linkedMapOf<String, Pair<Long, Long>>()
+    private val pendingDetails = linkedMapOf<String, LibraryEntry>()
+    private val revisions = MutableStateFlow(LibraryBrowseRevision())
+    val browseRevisions = revisions.asStateFlow()
+
+    fun readWindow(
+        context: Context, query: LibraryBrowseQuery, requestedIndex: Int,
+        knownCount: Int?, anchor: LibraryCardId?, expected: LibraryBrowseRevision? = null
+    ): LibraryWindow? {
+        val db = database(context)
+        return traceSection("LibraryProjection") {
+            synchronized(browseLock) {
+                if (expected != null && revisions.value.forSort(query.sort) != expected) return@synchronized null
+                db.runInTransaction(Callable {
+                    val dao = db.library()
+                    val count = knownCount ?: dao.browseCount(query.count())
+                    val anchorIndex = anchor?.let { dao.browseCount(query.rank(it)).takeIf { rank -> rank >= 0 } }
+                    val center = (anchorIndex ?: requestedIndex).coerceIn(0, (count - 1).coerceAtLeast(0)) / LIBRARY_PAGE_SIZE
+                    val start = ((center - 1) * LIBRARY_PAGE_SIZE).coerceAtLeast(0)
+                    val end = ((center + 2) * LIBRARY_PAGE_SIZE).coerceAtMost(count)
+                    val ids = if (start < end) dao.cardIds(query.page(start, end - start)) else emptyList()
+                    LibraryWindow(start, ids, count, anchorIndex)
+                })
+            }
+        }
+    }
+
+    fun readFolderCounts(context: Context): List<LibraryFolderCount> = database(context).library().folderCounts()
+
+    fun readQueueKeys(context: Context, query: LibraryBrowseQuery): List<String> =
+        database(context).library().orderedKeys(query.keys()).distinct()
 
     fun readMedia(context: Context): LibraryMediaSnapshot {
         val db = database(context)
@@ -91,6 +129,7 @@ internal object LibraryRepository {
         initializedDatabase?.let { return@synchronized it }
         val app = context.applicationContext
         val db = openedDatabase ?: Room.databaseBuilder(app, LibraryDatabase::class.java, LIBRARY_DATABASE_NAME)
+            .addMigrations(LIBRARY_MIGRATION_1_2)
             .build().also { openedDatabase = it }
         val marker = generationFile(app)
         val generation = try {
@@ -136,8 +175,8 @@ internal object LibraryRepository {
         }
     }
 
-    fun saveMedia(context: Context, snapshot: LibraryMediaSnapshot) =
-        saveStructure(context, Structure(media = snapshot))
+    fun saveMedia(context: Context, snapshot: LibraryMediaSnapshot, layoutChanged: Boolean) =
+        saveStructure(context, Structure(media = snapshot, layoutChanged = layoutChanged))
 
     fun saveFolders(context: Context, snapshot: LibraryFolderSnapshot) =
         saveStructure(context, Structure(folders = snapshot))
@@ -153,8 +192,12 @@ internal object LibraryRepository {
         val app = context.applicationContext
         Persistence.submit("library") {
             pendingStructure = pendingStructure.with(change)
+            if (change.media != null) pendingDetails.clear()
             // The newer complete media snapshot includes every earlier progress edit.
-            if (change.media != null) pendingWatch.clear()
+            if (change.media != null && pendingWatch.isNotEmpty()) {
+                pendingStructure = pendingStructure.copy(progressChanged = true)
+                pendingWatch.clear()
+            }
             traceSection("LibrarySnapshotCommit") { commitPending(app) }
         }
     }
@@ -170,27 +213,53 @@ internal object LibraryRepository {
         }
     }
 
+    fun saveDetails(context: Context, entry: LibraryEntry) {
+        Persistence.requireOwner()
+        val app = context.applicationContext
+        Persistence.submit("library") {
+            pendingDetails[entry.identityKey] = entry
+            traceSection("LibraryDetailCommit") { commitPending(app) }
+        }
+    }
+
     // If a commit fails, the next Library command retries the outstanding work in order. This
     // also makes OrderedWriter's latest-command retry safe when several different videos change.
     private fun commitPending(context: Context): Boolean {
         val db = database(context)
-        db.runInTransaction {
-            val dao = db.library()
-            pendingStructure.media?.let { dao.replaceMedia(it) }
-            pendingStructure.folders?.let {
-                dao.replaceFolders(it.folders)
-                dao.setDefaultFolder(it.defaultFolderId)
+        synchronized(browseLock) {
+            db.runInTransaction {
+                val dao = db.library()
+                pendingStructure.media?.let { dao.replaceMedia(it) }
+                pendingStructure.folders?.let {
+                    dao.replaceFolders(it.folders)
+                    dao.setDefaultFolder(it.defaultFolderId)
+                }
+                pendingWatch.forEach { (key, watch) ->
+                    check(dao.updateWatch(key, watch.first, watch.second, mediaWatchProgress(watch.first, watch.second)) == 1)
+                }
+                pendingDetails.forEach { (key, entry) ->
+                    val subtitle = entry.selectedSubtitle
+                    check(dao.updateDetails(key, entry.thumbnailUrl, entry.qualityHeight, subtitle?.url,
+                        subtitle?.pageUrl, subtitle?.label, subtitle?.requestReferer, subtitle?.requestOrigin) == 1)
+                }
             }
-            pendingWatch.forEach { (key, watch) ->
-                check(dao.updateWatch(key, watch.first, watch.second) == 1)
+            val layoutChanged = pendingStructure.layoutChanged
+            val progressChanged = pendingStructure.progressChanged || pendingWatch.isNotEmpty()
+            if (layoutChanged || progressChanged) {
+                val previous = revisions.value
+                revisions.value = LibraryBrowseRevision(
+                    previous.layout + if (layoutChanged) 1 else 0,
+                    previous.progress + if (progressChanged) 1 else 0
+                )
             }
         }
         pendingStructure = Structure()
         pendingWatch.clear()
+        pendingDetails.clear()
         return true
     }
 
-    private fun LibraryDao.mediaSnapshot() = LibraryMediaSnapshot(media().map { it.toEntry() }, opaqueRecords())
+    private fun LibraryDao.mediaSnapshot() = LibraryMediaSnapshot(media(), opaqueRecords())
 
     private fun LibraryDao.folderSnapshot() = LibraryFolderSnapshot(
         folders().map { it.toFolder() }, checkNotNull(metadata()).defaultFolderId
@@ -201,9 +270,7 @@ internal object LibraryRepository {
         clearMedia()
         clearOpaqueRecords()
         insertMedia(snapshot.entries.mapIndexed(::LibraryMediaRow))
-        insertWatch(snapshot.entries.mapIndexed { rowId, entry ->
-            LibraryWatchRow(rowId, entry.positionMs.coerceAtLeast(0), entry.durationMs.coerceAtLeast(0))
-        })
+        insertWatch(snapshot.entries.mapIndexed(::LibraryWatchRow))
         insertOpaqueRecords(snapshot.opaqueRecords.mapIndexed(::LibraryOpaqueRow))
     }
 

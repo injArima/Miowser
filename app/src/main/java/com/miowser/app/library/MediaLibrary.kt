@@ -13,29 +13,71 @@ import com.miowser.app.performance.traceSection
 object MediaLibrary {
     private val mutableRecords = mutableStateListOf<LibraryEntry>()
     val entries: List<LibraryEntry> get() = mutableRecords
+    private var cardIndices: Map<LibraryCardId, Int>? = null
+    private val cardObservers = mutableMapOf<LibraryCardId, MutableSet<(LibraryEntry?) -> Unit>>()
+
+    internal fun entryForCard(id: LibraryCardId): LibraryEntry? {
+        val indices = cardIndices ?: indexCards(mutableRecords).also { cardIndices = it }
+        return indices[id]?.let(mutableRecords::getOrNull)
+    }
+
+    private fun indexCards(entries: List<LibraryEntry>): Map<LibraryCardId, Int> =
+        buildMap(entries.size) {
+            val occurrences = mutableMapOf<String, Int>()
+            entries.forEachIndexed { index, entry ->
+                val key = entry.identityKey
+                val occurrence = occurrences[key] ?: 0
+                put(LibraryCardId(key, occurrence), index)
+                occurrences[key] = occurrence + 1
+            }
+        }
+
+    internal fun observeCard(id: LibraryCardId, onChanged: (LibraryEntry?) -> Unit): () -> Unit {
+        Persistence.requireOwner()
+        cardObservers.getOrPut(id) { mutableSetOf() }.add(onChanged)
+        onChanged(entryForCard(id))
+        return {
+            cardObservers[id]?.let { observers ->
+                observers.remove(onChanged)
+                if (observers.isEmpty()) cardObservers.remove(id)
+            }
+        }
+    }
+
+    private fun refreshCards() {
+        cardObservers.forEach { (id, observers) ->
+            val entry = entryForCard(id)
+            observers.forEach { it(entry) }
+        }
+    }
+
+    private fun replaceFirstCard(index: Int, entry: LibraryEntry) {
+        mutableRecords[index] = entry
+        revision++
+        cardObservers[LibraryCardId(entry.identityKey)]?.forEach { it(entry) }
+    }
     internal var opaqueRecords: List<String> = emptyList()
         private set
 
     @Volatile private var revision = 0L
     val contentRevision: Long get() = revision
     private val layoutVersion = mutableLongStateOf(0L)
-    private val progressVersion = mutableLongStateOf(0L)
     val layoutRevision: Long get() = layoutVersion.longValue
-    val progressSortRevision: Long get() = progressVersion.longValue
     private var cleanup: kotlinx.coroutines.Job? = null
     @Volatile private var restored = false
 
     suspend fun restoreAsync(context: Context) {
         Persistence.requireOwner()
         if (restored) return
-        val snapshot = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            LibraryRepository.readMedia(context)
+        val (snapshot, indices) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val snapshot = LibraryRepository.readMedia(context)
+            snapshot to indexCards(snapshot.entries)
         }
         if (restored) return
         mutableRecords.addAll(snapshot.entries)
+        cardIndices = indices
         opaqueRecords = snapshot.opaqueRecords
         layoutVersion.longValue++
-        progressVersion.longValue++
         restored = true
         LibraryThumbnailStore.pruneAsync(context, mutableRecords.mapNotNull { it.thumbnailUrl })
         LibrarySubtitleStore.pruneAsync(context, mutableRecords)
@@ -160,9 +202,7 @@ object MediaLibrary {
         )
         if (updated == current) return
         traceSection("LibraryProgressUpdate") {
-            mutableRecords[index] = updated
-            revision++
-            progressVersion.longValue++
+            replaceFirstCard(index, updated)
             LibraryRepository.saveWatch(context, updated)
         }
     }
@@ -175,8 +215,7 @@ object MediaLibrary {
         val current = mutableRecords[index]
         if (current.thumbnailUrl == thumbnailUri) return
         if (!LibraryThumbnailStore.shouldReplace(current.thumbnailUrl, thumbnailUri)) return
-        mutableRecords[index] = current.copy(thumbnailUrl = thumbnailUri)
-        persist(context, ProjectionChange.DETAIL)
+        saveDetails(context, index, current.copy(thumbnailUrl = thumbnailUri))
     }
 
     /** The selected video resolution may change during adaptive playback. */
@@ -185,8 +224,7 @@ object MediaLibrary {
         if (height <= 0) return
         val index = mutableRecords.indexOfFirst { it.identityKey == identityKey }
         if (index < 0 || mutableRecords[index].qualityHeight == height) return
-        mutableRecords[index] = mutableRecords[index].copy(qualityHeight = height)
-        persist(context, ProjectionChange.DETAIL)
+        saveDetails(context, index, mutableRecords[index].copy(qualityHeight = height))
     }
 
     /** Keeps only the VTT the viewer chose, including the headers needed to reopen it. */
@@ -196,9 +234,13 @@ object MediaLibrary {
         if (index < 0) return
         val current = mutableRecords[index]
         if (current.selectedSubtitle == subtitle) return
-        mutableRecords[index] = current.copy(selectedSubtitle = subtitle)
-        persist(context, ProjectionChange.DETAIL)
+        saveDetails(context, index, current.copy(selectedSubtitle = subtitle))
         scheduleCleanup(context)
+    }
+
+    private fun saveDetails(context: Context, index: Int, entry: LibraryEntry) {
+        replaceFirstCard(index, entry)
+        LibraryRepository.saveDetails(context, entry)
     }
 
     /** Reconnect a restored local Library card when Android requires a new document grant. */
@@ -239,6 +281,7 @@ object MediaLibrary {
             }
         }
         if (changed > 0) {
+            refreshCards()
             persist(context, ProjectionChange.DETAIL)
             scheduleCleanup(context)
         }
@@ -454,12 +497,16 @@ object MediaLibrary {
         revision++
         when (change) {
             ProjectionChange.STRUCTURE -> {
+                cardIndices = null
                 layoutVersion.longValue++
-                progressVersion.longValue++
+                refreshCards()
             }
             ProjectionChange.DETAIL -> Unit
         }
-        LibraryRepository.saveMedia(context, LibraryMediaSnapshot(mutableRecords.toList(), opaqueRecords))
+        LibraryRepository.saveMedia(
+            context, LibraryMediaSnapshot(mutableRecords.toList(), opaqueRecords),
+            layoutChanged = change == ProjectionChange.STRUCTURE
+        )
     }
 }
 
