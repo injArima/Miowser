@@ -152,6 +152,7 @@ import com.miowser.app.library.LibrarySourceKind
 import com.miowser.app.library.LocalInspectionCache
 import com.miowser.app.library.device.DeviceDownload
 import com.miowser.app.library.device.DeviceVideo
+import com.miowser.app.library.device.openGrantedVideo
 import com.miowser.app.library.isImportableVideo
 import com.miowser.app.player.PlaybackRequest
 import com.miowser.app.player.LibraryPlaybackQueue
@@ -340,7 +341,7 @@ fun BrowserScreen(
     var openingTabs by remember { mutableStateOf(false) }
     // A launcher browser action must enter the browser on the first rendered frame.
     // The shortcut's tab operation can still wait for saved tabs to restore below.
-    var showingHub by rememberSaveable { mutableStateOf(shortcutRequest == null) }
+    var showingHub by rememberSaveable { mutableStateOf(shortcutRequest == null || shortcutRequest.localVideo != null) }
     var deviceVideosSelected by rememberSaveable { mutableStateOf(true) }
     val hubDestinations = rememberSaveableStateHolder()
     val libraryEnabled = AppSettings.current.libraryBehavior.isAvailable
@@ -1064,7 +1065,7 @@ fun BrowserScreen(
     // Keep the load running if Back returns to Hub; never publish a partial restored session.
     LaunchedEffect(showingHub) { if (!showingHub) browserRequested = true }
     LaunchedEffect(shortcutRequest?.sequence) {
-        if (shortcutRequest == null) return@LaunchedEffect
+        if (shortcutRequest == null || shortcutRequest.localVideo != null) return@LaunchedEffect
         showingHub = false
         if (activeScreen != Screen.ONBOARDING) activeScreen = null
         playbackRequest = null
@@ -1185,7 +1186,7 @@ fun BrowserScreen(
 
     LaunchedEffect(shortcutRequest?.sequence, recordsReady) {
         val request = shortcutRequest ?: return@LaunchedEffect
-        if (!recordsReady) return@LaunchedEffect
+        if (request.localVideo != null || !recordsReady) return@LaunchedEffect
         when (request.action) {
             com.miowser.app.LauncherShortcuts.NEW_TAB ->
                 activeTabId = createAndInsertTab(configuredBrowserHomeTarget(), null).id
@@ -1732,6 +1733,32 @@ fun BrowserScreen(
     }
 
     fun findLibraryEntry(identityKey: String) = MediaLibrary.entryForCard(LibraryCardId(identityKey))
+
+    suspend fun playGrantedVideo(uri: Uri) {
+        val requestId = ++libraryPlayRequestId
+        val request = openGrantedVideo(context.applicationContext, uri)
+        if (requestId != libraryPlayRequestId) return
+        if (request == null) {
+            showActionSnackbar("Couldn’t open this video. Check the file and its access.")
+            return
+        }
+        if (activeScreen != Screen.ONBOARDING) activeScreen = null
+        closeCompanionBrowser(resumeOld = false)
+        exitWebFullscreen()
+        showOverflowMenu = false
+        libraryPlaybackQueue = null
+        playbackFromLibrary = false
+        playbackRequest = request
+    }
+
+    LaunchedEffect(shortcutRequest?.sequence) {
+        val uri = shortcutRequest?.localVideo ?: return@LaunchedEffect
+        playGrantedVideo(uri)
+        onShortcutHandled()
+    }
+    val openVideoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) coroutineScope.launch { playGrantedVideo(uri) }
+    }
 
     fun playDeviceVideo(video: DeviceVideo) {
         val requestId = ++libraryPlayRequestId
@@ -2679,7 +2706,8 @@ fun BrowserScreen(
             )
         }
 
-        if (showingHub && playbackRequest == null && activeScreen == null && !showBackupRestore) {
+        if (showingHub && playbackRequest == null && activeScreen == null && !showBackupRestore &&
+            shortcutRequest?.localVideo == null) {
             Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding()) {
                 SecondaryTabRow(selectedTabIndex = if (deviceVideosSelected) 0 else 1) {
                     Tab(selected = deviceVideosSelected, onClick = { deviceVideosSelected = true },
@@ -2690,12 +2718,15 @@ fun BrowserScreen(
                 Box(Modifier.weight(1f)) {
                     hubDestinations.SaveableStateProvider(if (deviceVideosSelected) "device" else "saved") {
                         if (deviceVideosSelected) {
-                            val imported by remember { derivedStateOf {
-                                MediaLibrary.entries.asSequence().filter { it.sourceKind == LibrarySourceKind.LOCAL_FILE }
+                            val discoveryEnabled = AppSettings.current.deviceDiscoveryEnabled
+                            val imported by remember(discoveryEnabled) { derivedStateOf {
+                                if (!discoveryEnabled) emptyList()
+                                else MediaLibrary.entries.asSequence().filter { it.sourceKind == LibrarySourceKind.LOCAL_FILE }
                                     .map { it.mediaUri }.filter { "/tree/" in it }.distinct().toList()
                             } }
-                            val deviceDownloads by remember { derivedStateOf {
-                                DownloadQueue.downloads.mapNotNull { download ->
+                            val deviceDownloads by remember(discoveryEnabled) { derivedStateOf {
+                                if (!discoveryEnabled) emptyList()
+                                else DownloadQueue.downloads.mapNotNull { download ->
                                     if (download.status != DownloadStatus.COMPLETED || download.id in pendingDownloadDeletes ||
                                         !isImportableVideo(download.displayName, "")) null
                                     else download.savedUri?.let { DeviceDownload(it, download.displayName) }
@@ -2703,6 +2734,9 @@ fun BrowserScreen(
                             } }
                             SideEffect { hubBottomBarHeightPx = 0 }
                             DeviceVideosPage(imported, deviceDownloads, onBrowse = { showingHub = false },
+                                discoveryEnabled = discoveryEnabled,
+                                onOpenVideo = { openVideoPicker.launch(arrayOf("video/*")) },
+                                onDiscoverySettings = { deviceVideosSelected = false; hubSection = HubSection.MORE },
                                 onPlay = ::playDeviceVideo, onMessage = { showActionSnackbar(it) },
                                 onIdleChanged = { libraryIdle = it })
                         } else {
@@ -3007,11 +3041,12 @@ fun BrowserScreen(
                 queue?.entries(::findLibraryEntry).orEmpty()
             }
             val playlistIndex = remember(playlist, currentKey) { playlist.indexOfFirst { it.identityKey == currentKey } }
-            val recordCurrentPlayback = shouldRecordLibraryPlayback(
-                behavior = AppSettings.current.libraryBehavior,
-                openedFromLibrary = playbackFromLibrary,
-                privateTab = !showingHub && activeTab?.isPrivate == true
-            )
+            val recordCurrentPlayback = (request !is PlaybackRequest.Local || request.allowLibraryRecording) &&
+                shouldRecordLibraryPlayback(
+                    behavior = AppSettings.current.libraryBehavior,
+                    openedFromLibrary = playbackFromLibrary,
+                    privateTab = !showingHub && activeTab?.isPrivate == true
+                )
             MiowserPlayerTheme {
                 PlayerScreen(
                     request = request,

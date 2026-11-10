@@ -1,6 +1,7 @@
 package com.miowser.app.benchmark
 
 import android.content.ContentValues
+import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -27,6 +28,15 @@ class FixtureActivity : ComponentActivity() {
         check(packageName == "com.miowser.app.benchmark")
         intent.getStringExtra("device_catalog")?.let { action ->
             lifecycleScope.launch {
+                if (action == "open") {
+                    val uri = withContext(Dispatchers.IO) {
+                        Uri.parse(checkNotNull(getSharedPreferences("device_catalog_fixture", MODE_PRIVATE).getString("uri", null)))
+                    }
+                    startActivity(Intent(Intent.ACTION_VIEW).setPackage(packageName).setDataAndType(uri, "video/mp4")
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                    finish()
+                    return@launch
+                }
                 withContext(Dispatchers.IO) { updateDeviceCatalogFixture(action, intent.getStringExtra("fixture_name")) }
                 setContentView(TextView(this@FixtureActivity).apply { text = "Device fixture: $action" })
             }
@@ -137,6 +147,9 @@ class FixtureActivity : ComponentActivity() {
         val store = getSharedPreferences("device_catalog_fixture", MODE_PRIVATE)
         val previous = store.getString("uri", null)?.let(Uri::parse)
         when (action) {
+            "scale" -> verifyDeviceCatalogScale(this)
+            "discovery_off", "discovery_on" -> check(getSharedPreferences("settings", MODE_PRIVATE).edit()
+                .putBoolean("device_video_discovery", action == "discovery_on").commit())
             "create" -> {
                 previous?.let { contentResolver.delete(it, null, null) }
                 val uri = checkNotNull(contentResolver.insert(

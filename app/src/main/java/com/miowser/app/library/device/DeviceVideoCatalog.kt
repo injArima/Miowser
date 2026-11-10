@@ -32,13 +32,16 @@ import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
+internal enum class DeviceSourceIssue { OFFLINE, NEEDS_ACCESS, SCAN_FAILED }
+
 internal data class DeviceCatalogStatus(
     val access: DeviceMediaAccess = DeviceMediaAccess.NONE,
     val sources: List<DeviceSource> = emptyList(),
     val visible: Set<String> = emptySet(),
-    val unavailable: Set<String> = emptySet(),
+    val issues: Map<String, DeviceSourceIssue> = emptyMap(),
     val revision: Long = 0,
-    val scanning: Boolean = true
+    val scanning: Boolean = true,
+    val checkingSource: String? = null
 )
 
 internal data class DeviceVideoWindow(val start: Int, val rows: List<DeviceVideo>, val count: Int) {
@@ -58,22 +61,47 @@ internal object DeviceVideoCatalog {
                 opened = db
             }
 
-    suspend fun link(context: Context, tree: Uri) = withContext(Dispatchers.IO) {
+    suspend fun link(context: Context, tree: Uri, replaceId: String? = null): String = withContext(Dispatchers.IO) {
+        val root = requireNotNull(linkedTree(tree))
+        val rootDocument = DocumentsContract.buildDocumentUriUsingTree(root, DocumentsContract.getTreeDocumentId(root))
+        val label = context.contentResolver.query(rootDocument, arrayOf(
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE
+        ), null, null, null)?.use {
+            if (it.moveToFirst() && it.getString(1) == DocumentsContract.Document.MIME_TYPE_DIR) it.getString(0) else null
+        }
+        checkNotNull(label) { "Could not open the selected folder" }
         scanLock.withLock {
-            val dao = database(context).catalog()
-            val old = dao.sources().firstOrNull { it.id == tree.toString() }
-            val updated = old?.copy(linked = true) ?: newLink(tree)
-            check(RestoreWriteFence.write { dao.saveSource(updated); true } == true)
+            val db = database(context)
+            val dao = db.catalog()
+            val sources = dao.sources()
+            val id = root.toString()
+            val existing = sources.firstOrNull { it.id == id }
+            val replaced = sources.firstOrNull { it.id == replaceId && it.id != id && it.kind == DEVICE_LINK }
+            val updated = (existing ?: newLink(root)).copy(linked = true, label = label)
+            check(RestoreWriteFence.write {
+                db.runInTransaction {
+                    dao.saveSource(updated)
+                    if (replaced != null) deactivate(dao, replaced)
+                }
+                true
+            } == true)
+            id
         }
     }
 
     suspend fun unlink(context: Context, id: String) = withContext(Dispatchers.IO) {
         scanLock.withLock {
-            val dao = database(context).catalog()
+            val db = database(context)
+            val dao = db.catalog()
             val source = dao.sources().firstOrNull { it.id == id && it.kind == DEVICE_LINK }
                 ?: return@withLock
-            check(RestoreWriteFence.write { dao.saveSource(source.copy(linked = false, generation = null)); true } == true)
+            check(RestoreWriteFence.write { db.runInTransaction { deactivate(dao, source) }; true } == true)
         }
+    }
+
+    private fun deactivate(dao: DeviceCatalogDao, source: DeviceSource) {
+        dao.saveSource(source.copy(linked = false, generation = null, stamp = null))
+        source.generation?.let { dao.discard(source.id, it) }
     }
 
     fun readWindow(context: Context, query: DeviceBrowseQuery, index: Int, knownCount: Int?): DeviceVideoWindow {
@@ -89,7 +117,8 @@ internal object DeviceVideoCatalog {
     }
 
     fun scan(
-        context: Context, imported: List<String>, downloads: List<DeviceDownload>, force: Boolean
+        context: Context, imported: List<String>, downloads: List<DeviceDownload>, force: Boolean,
+        preferredSource: String? = null, previous: DeviceCatalogStatus? = null
     ): Flow<DeviceCatalogStatus> = flow {
         scanLock.withLock {
             val app = context.applicationContext
@@ -117,10 +146,11 @@ internal object DeviceVideoCatalog {
             val offline = if (access == DeviceMediaAccess.NONE) emptyList() else stored.values.filter {
                 it.kind == DEVICE_MEDIA && it.id.removePrefix("media:") !in mounted
             }
-            val sources = (media + offline + links + listOfNotNull(downloadSource.takeIf { downloads.isNotEmpty() }))
+            val sources = (listOfNotNull(downloadSource.takeIf { downloads.isNotEmpty() }) + media + offline + links)
                 .associateBy { it.id }.toMutableMap()
             val visible = linkedSetOf<String>()
-            val unavailable = (offline + links.filter { it.id !in grants }).mapTo(linkedSetOf()) { it.id }
+            val issues = offline.associate { it.id to DeviceSourceIssue.OFFLINE }.toMutableMap()
+            links.filter { it.id !in grants }.forEach { issues[it.id] = DeviceSourceIssue.NEEDS_ACCESS }
             val downloadStamp = downloads.joinToString("\n") { "${it.uri}\t${it.title}" }.let {
                 java.security.MessageDigest.getInstance("SHA-256").digest(it.toByteArray()).joinToString("") { byte -> "%02x".format(byte) }
             }
@@ -136,12 +166,19 @@ internal object DeviceVideoCatalog {
                     (stamp.getOrNull() == null || source.stamp?.substringBeforeLast(':') == stamp.getOrNull()?.version)
             }.forEach { visible += it.id }
             links.filter { it.id in grants && it.generation != null }.forEach { visible += it.id }
-            suspend fun report(scanning: Boolean) = emit(DeviceCatalogStatus(
-                access, sources.values.toList(), visible.toSet(), unavailable.toSet(), revision, scanning
+            val targeted = previous?.takeIf { force && preferredSource != null && it.access == access }
+            targeted?.issues?.forEach { (id, issue) ->
+                if (id != preferredSource && id in sources && issue == DeviceSourceIssue.SCAN_FAILED && id !in issues) {
+                    issues[id] = issue
+                    visible -= id
+                }
+            }
+            suspend fun report(scanning: Boolean, checkingSource: String? = null) = emit(DeviceCatalogStatus(
+                access, sources.values.toList(), visible.toSet(), issues.toMap(), revision, scanning, checkingSource
             ))
             report(true)
-            for (source in sources.values.toList()) {
-                if (source.id in unavailable || RestoreWriteFence.frozen) continue
+            for (source in sources.values.sortedBy { it.id != preferredSource }) {
+                if (source.id in issues || RestoreWriteFence.frozen) continue
                 try {
                     val volume = source.id.removePrefix("media:")
                     val stamp = stamps[source.id]?.getOrThrow()
@@ -150,8 +187,12 @@ internal object DeviceVideoCatalog {
                         DEVICE_DOWNLOADS -> downloadStamp
                         else -> null
                     }
-                    if (!force && key != null && source.generation != null && source.stamp == key &&
+                    val forceSource = force && (preferredSource == null || preferredSource == source.id)
+                    val alreadyVisible = source.id in visible && targeted?.visible?.contains(source.id) == true
+                    if (source.id != preferredSource && alreadyVisible && source.kind != DEVICE_MEDIA) continue
+                    if (!forceSource && key != null && source.generation != null && source.stamp == key &&
                         source.kind == DEVICE_MEDIA) continue
+                    report(true, source.label)
                     val published = publish(db, source, key) { generation, signal, add ->
                         when (source.kind) {
                             DEVICE_MEDIA -> {
@@ -186,7 +227,8 @@ internal object DeviceVideoCatalog {
                     throw cancelled
                 } catch (failure: Exception) {
                     visible -= source.id
-                    unavailable += source.id
+                    issues[source.id] = if (source.kind == DEVICE_LINK && source.id !in readTreeGrants(app))
+                        DeviceSourceIssue.NEEDS_ACCESS else DeviceSourceIssue.SCAN_FAILED
                     android.util.Log.w("DeviceVideoCatalog", "Could not refresh video source", failure)
                 }
                 report(true)

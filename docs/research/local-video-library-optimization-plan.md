@@ -19,6 +19,8 @@ P3 adds Device Videos as the primary tab and keeps Miowser Hub as the second tab
 
 P4 shares regenerable local previews across Device Videos, Downloads, and local Library frame generation. A bounded queue prioritizes visible requests and limits frame extraction to one at a time. [P4 release notes](G:/Projects/Miowser/docs/RELEASE_NOTES_0.1.56.md)
 
+P5 adds direct Android video opening, a discovery toggle, and source-level recovery. A benchmark probe compares MediaStore-only and alias-aware queries at 10,000 and 50,000 rows. [P5 release notes](G:/Projects/Miowser/docs/RELEASE_NOTES_0.1.57.md)
+
 ## Evidence and scope
 
 I inspected the supplied packages with REA/JADX, matched Next Player’s obfuscated classes to DEX instructions and database declarations, and inspected symbols and selected ARM64 instructions in VLC’s native media library. I used the two matching release tags to clarify the control flow and UI. The native VideoLAN source endpoint returned a challenge page, so the findings about the shipped native scanner below come from the binary. These are static findings. Launch time, frame pacing, native memory peaks, and actual cache hit rates require device measurements.

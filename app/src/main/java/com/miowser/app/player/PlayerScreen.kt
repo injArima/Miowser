@@ -201,7 +201,8 @@ sealed class PlaybackRequest {
         val pageUrl: String? = null,
         val pageTitle: String? = null,
         val videoName: String? = null,
-        override val startPositionMs: Long = 0L
+        override val startPositionMs: Long = 0L,
+        val allowLibraryRecording: Boolean = true
     ) : PlaybackRequest()
 }
 

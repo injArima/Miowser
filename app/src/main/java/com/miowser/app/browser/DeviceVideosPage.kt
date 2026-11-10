@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.VideoLibrary
@@ -53,6 +54,9 @@ import kotlinx.coroutines.withContext
 internal fun DeviceVideosPage(
     imported: List<String>,
     downloads: List<DeviceDownload>,
+    discoveryEnabled: Boolean,
+    onOpenVideo: () -> Unit,
+    onDiscoverySettings: () -> Unit,
     onBrowse: () -> Unit,
     onPlay: (DeviceVideo) -> Unit,
     onMessage: (String) -> Unit,
@@ -63,6 +67,8 @@ internal fun DeviceVideosPage(
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val scope = rememberCoroutineScope()
     var refresh by remember { mutableIntStateOf(0) }
+    var finishedRefresh by remember { mutableIntStateOf(0) }
+    var refreshSource by remember { mutableStateOf<String?>(null) }
     var status by remember { mutableStateOf(DeviceCatalogStatus(access = deviceMediaAccess(app))) }
     var loadFailed by remember { mutableStateOf(false) }
     var search by rememberSaveable { mutableStateOf("") }
@@ -71,27 +77,36 @@ internal fun DeviceVideosPage(
     var listMode by rememberSaveable { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var removeLink by remember { mutableStateOf<DeviceSource?>(null) }
+    var replacingLink by rememberSaveable { mutableStateOf<String?>(null) }
+    fun refreshCatalog(target: String?) {
+        refreshSource = target
+        refresh++
+    }
     val requestAccess = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         val access = deviceMediaAccess(app)
         status = status.copy(access = access,
             visible = status.visible.filterNot { it.startsWith("media:") }.toSet())
-        refresh++
+        refreshCatalog(null)
     }
     val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        val replaceId = replacingLink
+        replacingLink = null
         if (uri != null) scope.launch {
             try {
-                withContext(Dispatchers.IO) {
+                val id = withContext(Dispatchers.IO) {
                     app.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    DeviceVideoCatalog.link(app, uri)
+                    DeviceVideoCatalog.link(app, uri, replaceId)
                 }
-                source = uri.toString()
-                refresh++
+                source = id
+                refreshCatalog(id)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { onMessage("Couldn’t link this folder. Choose it again.") }
         }
     }
-    LaunchedEffect(lifecycle, refresh, imported, downloads) {
-        var forced = refresh > 0
+    LaunchedEffect(lifecycle, discoveryEnabled, refresh, imported, downloads) {
+        if (!discoveryEnabled) return@LaunchedEffect
+        val request = refresh
+        val target = refreshSource
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             val access = deviceMediaAccess(app)
             if (access != DeviceMediaAccess.FULL) {
@@ -101,8 +116,10 @@ internal fun DeviceVideosPage(
             DeviceVideoCatalog.changes(app).debounce(250).onStart { emit(Unit) }.collectLatest {
                 try {
                     loadFailed = false
-                    DeviceVideoCatalog.scan(app, imported, downloads, forced).collect { status = it }
-                    forced = false
+                    val forced = request != finishedRefresh
+                    DeviceVideoCatalog.scan(app, imported, downloads, forced, target.takeIf { forced }, previous = status)
+                        .collect { status = it }
+                    finishedRefresh = request
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (_: Exception) {
                     loadFailed = true
@@ -125,8 +142,24 @@ internal fun DeviceVideosPage(
     Column(Modifier.fillMaxSize().navigationBarsPadding().padding(horizontal = UiSpacing.m)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Device Videos", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-            IconButton(onClick = { refresh++ }) { Icon(Icons.Rounded.Refresh, "Refresh device videos") }
+            if (discoveryEnabled) {
+                IconButton(onClick = { refreshCatalog(source) }) { Icon(Icons.Rounded.Refresh, "Refresh device videos") }
+            }
+            IconButton(onClick = onOpenVideo) { Icon(Icons.Rounded.FolderOpen, "Open video file") }
             IconButton(onClick = onBrowse) { Icon(Icons.Rounded.Language, "Browse") }
+        }
+        if (!discoveryEnabled) {
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                ExpressiveEmptyState(
+                    title = "Device discovery is off",
+                    description = "Open a video directly or turn discovery back on in Hub settings.",
+                    icon = Icons.Rounded.VideoLibrary
+                )
+                MiowserActionButton(style = AppButtonStyle.TONAL, onClick = onOpenVideo) { Text("Open video") }
+                MiowserActionButton(style = AppButtonStyle.TEXT, onClick = onDiscoverySettings) { Text("Hub settings") }
+            }
+            return@Column
         }
         OutlinedTextField(
             value = search, onValueChange = { search = it }, singleLine = true,
@@ -144,7 +177,7 @@ internal fun DeviceVideosPage(
                     DropdownMenuItem(text = { Text("All sources") }, onClick = { source = null; menu = false })
                     status.sources.forEach { item ->
                         DropdownMenuItem(text = {
-                            Text(item.label + if (item.id in status.unavailable) " · Unavailable" else "")
+                            Text(item.label + (status.issues[item.id]?.let { " · ${it.label}" } ?: ""))
                         }, onClick = { source = item.id; menu = false })
                     }
                 }
@@ -154,26 +187,41 @@ internal fun DeviceVideosPage(
             FilterChip(selected = listMode, onClick = { listMode = !listMode },
                 label = { Text(if (listMode) "List" else "Grid") })
         }
-        if (status.access != DeviceMediaAccess.FULL || source?.let { id -> status.sources.any { it.id == id && it.kind == DEVICE_LINK } } == true) {
-            Row(horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
-                if (status.access != DeviceMediaAccess.FULL) {
-                    MiowserActionButton(style = AppButtonStyle.TONAL, onClick = { requestAccess.launch(deviceVideoPermissions()) }) {
-                        Text(if (status.access == DeviceMediaAccess.SELECTED) "Change video access" else "Allow video access")
-                    }
-                }
-                MiowserActionButton(style = AppButtonStyle.TEXT, onClick = { pickFolder.launch(source?.takeIf { it in status.unavailable }?.let(Uri::parse)) }) {
-                    Text("Link folder")
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
+            if (status.access != DeviceMediaAccess.FULL) {
+                MiowserActionButton(style = AppButtonStyle.TONAL, onClick = { requestAccess.launch(deviceVideoPermissions()) }) {
+                    Text(if (status.access == DeviceMediaAccess.SELECTED) "Change video access" else "Allow video access")
                 }
             }
-        } else {
-            MiowserActionButton(style = AppButtonStyle.TEXT, onClick = { pickFolder.launch(null) }) { Text("Link folder") }
+            MiowserActionButton(style = AppButtonStyle.TEXT, onClick = {
+                replacingLink = null
+                pickFolder.launch(null)
+            }) { Text("Link folder") }
+            status.sources.firstOrNull { it.id == source && it.kind == DEVICE_LINK }?.let { linked ->
+                MiowserActionButton(style = AppButtonStyle.TEXT, onClick = {
+                    replacingLink = linked.id
+                    pickFolder.launch(Uri.parse(linked.id))
+                }) {
+                    Text("Relink folder")
+                }
+                MiowserActionButton(style = AppButtonStyle.TEXT, onClick = { removeLink = linked }) { Text("Unlink folder") }
+            }
         }
-        status.sources.firstOrNull { it.id == source && it.kind == DEVICE_LINK }?.let { linked ->
-            MiowserActionButton(style = AppButtonStyle.TEXT, onClick = { removeLink = linked }) { Text("Unlink folder") }
+        if (status.scanning) {
+            Text(status.checkingSource?.let { "Checking $it…" } ?: "Checking videos…",
+                Modifier.testTag("device_scan_status"), style = MaterialTheme.typography.labelMedium)
         }
-        if (status.scanning) Text("Checking videos…", style = MaterialTheme.typography.labelMedium)
-        if (status.unavailable.isNotEmpty() || loadFailed) {
-            Text("Some sources are unavailable. Refresh or link the folder again.", style = MaterialTheme.typography.bodySmall)
+        if (!status.scanning && (status.issues.isNotEmpty() || loadFailed)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val issue = source?.let { status.issues[it] }
+                Text(when (issue) {
+                    DeviceSourceIssue.OFFLINE -> "Reconnect this storage to see its videos."
+                    DeviceSourceIssue.NEEDS_ACCESS -> "Relink this folder to restore access."
+                    DeviceSourceIssue.SCAN_FAILED -> "Couldn’t check this source."
+                    null -> if (loadFailed) "Couldn’t load Device Videos." else "Some video sources are unavailable."
+                }, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                MiowserActionButton(style = AppButtonStyle.TEXT, onClick = { refreshCatalog(source) }) { Text("Retry") }
+            }
         }
         val term = search.trim()
         key(source, term, titleOrder, listMode) {
@@ -193,7 +241,7 @@ internal fun DeviceVideosPage(
                         try {
                             DeviceVideoCatalog.unlink(app, linked.id)
                             source = null
-                            refresh++
+                            refreshCatalog(null)
                         } catch (cancelled: CancellationException) { throw cancelled }
                         catch (_: Exception) { onMessage("Couldn’t unlink this folder") }
                     }
@@ -201,6 +249,12 @@ internal fun DeviceVideosPage(
             )
         )
     }
+}
+
+private val DeviceSourceIssue.label: String get() = when (this) {
+    DeviceSourceIssue.OFFLINE -> "Offline"
+    DeviceSourceIssue.NEEDS_ACCESS -> "Needs access"
+    DeviceSourceIssue.SCAN_FAILED -> "Scan failed"
 }
 
 @Composable

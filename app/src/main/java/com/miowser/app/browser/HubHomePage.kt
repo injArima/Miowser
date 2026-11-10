@@ -1165,6 +1165,18 @@ private fun HubMoreContent(
         }
 
         ExpressiveChoiceSetting(
+            title = "Device video discovery",
+            description = "Scan device storage and linked folders for videos. You can still open individual files when discovery is off."
+        ) {
+            val enabled = AppSettings.current.deviceDiscoveryEnabled
+            listOf(true, false).forEach { option ->
+                FilterChip(selected = option == enabled,
+                    onClick = { AppSettings.update(context) { it.copy(deviceDiscoveryEnabled = option) } },
+                    label = { Text(if (option) "On" else "Off") })
+            }
+        }
+
+        ExpressiveChoiceSetting(
             title = "Appearance",
             description = "Choose the theme for the Hub and browser."
         ) {

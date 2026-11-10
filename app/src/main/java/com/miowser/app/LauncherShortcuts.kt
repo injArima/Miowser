@@ -2,6 +2,7 @@ package com.miowser.app
 
 import android.content.Context
 import android.content.pm.ShortcutManager
+import android.net.Uri
 
 /** Launcher actions are delivered to the existing singleTask activity as well as cold starts. */
 internal object LauncherShortcuts {
@@ -24,5 +25,6 @@ data class LauncherShortcutRequest(
     val sequence: Long,
     val action: String,
     val url: String? = null,
-    val query: String? = null
+    val query: String? = null,
+    val localVideo: Uri? = null
 )

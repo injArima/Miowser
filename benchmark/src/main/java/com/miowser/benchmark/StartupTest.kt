@@ -33,6 +33,7 @@ class StartupTest {
     @Test fun emptyHubThenBrowserCanOpen() {
         clear()
         device.executeShellCommand("am start -W -n $target/com.miowser.app.MainActivity")
+        device.wait(Until.findObject(By.text("Skip")), 10_000)?.click()
         val browse = device.wait(Until.findObject(By.desc("Browse")), 30_000)
         assertNotNull(browse)
         browse!!.click()

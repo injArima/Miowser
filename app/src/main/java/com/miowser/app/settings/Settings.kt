@@ -94,7 +94,8 @@ data class Settings(
     val libraryBehavior: LibraryBehavior = LibraryBehavior.AUTOMATIC,
     val backgroundPlaybackEnabled: Boolean = true,
     val companionBrowsingEnabled: Boolean = false,
-    val crashDiagnosticsEnabled: Boolean = true
+    val crashDiagnosticsEnabled: Boolean = true,
+    val deviceDiscoveryEnabled: Boolean = true
 ) {
     val autoDeleteInactiveTabs: Boolean get() = inactiveTabRetention != InactiveTabRetention.NEVER
     val searchUrlTemplate: String get() = if (searchEngine == SearchEngine.CUSTOM) customSearchUrl

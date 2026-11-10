@@ -32,14 +32,15 @@ fun StartupHost(
         )
         else -> StartupLoading(
             error = state == StartupState.Error,
-            openingBrowser = shortcutRequest != null,
+            openingBrowser = shortcutRequest != null && shortcutRequest.localVideo == null,
+            openingVideo = shortcutRequest?.localVideo != null,
             onRetry = { AppStartup.start(context) }
         )
     }
 }
 
 @Composable
-fun StartupLoading(error: Boolean, openingBrowser: Boolean = false, onRetry: () -> Unit) {
+fun StartupLoading(error: Boolean, openingBrowser: Boolean = false, openingVideo: Boolean = false, onRetry: () -> Unit) {
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
         .testTag(if (error) "startup_error" else "startup_loading").safeDrawingPadding().padding(UiSpacing.xxl),
         verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
@@ -51,7 +52,11 @@ fun StartupLoading(error: Boolean, openingBrowser: Boolean = false, onRetry: () 
         } else {
             MiowserLoadingIndicator(contained = true, description = "Starting Miowser")
             Spacer(Modifier.height(UiSpacing.l))
-            Text(if (openingBrowser) "Opening browser…" else "Loading your Library…")
+            Text(when {
+                openingVideo -> "Opening video…"
+                openingBrowser -> "Opening browser…"
+                else -> "Loading your Library…"
+            })
         }
     }
 }

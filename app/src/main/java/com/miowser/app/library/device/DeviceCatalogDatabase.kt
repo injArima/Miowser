@@ -99,11 +99,15 @@ internal data class DeviceBrowseQuery(
     private val term = librarySearchKey(search.trim())
     private val matching = if (term.isEmpty()) "" else " AND (instr(v.nameKey, ?) > 0 OR instr(v.folderKey, ?) > 0)"
     private val duplicateMatch = if (term.isEmpty()) "" else " AND (instr(d.nameKey, ?) > 0 OR instr(d.folderKey, ?) > 0)"
-    private val filter = """
-        FROM device_videos v JOIN device_sources s ON s.id = v.sourceId AND s.generation = v.generation
-        WHERE v.sourceId IN ($placeholders)$matching
+    // MediaStore locators already include the volume and row ID. Only mixed or linked
+    // sources can publish multiple locators for the same canonical URI.
+    private val deduplicate = sources.any { !it.startsWith("media:") }
+    // Find URI matches before checking source generations. On a fresh database SQLite
+    // otherwise tends to put the source loop first, repeating the alias lookup per source.
+    private val aliases = if (!deduplicate) "" else """
         AND NOT EXISTS (
-            SELECT 1 FROM device_videos d JOIN device_sources ds ON ds.id = d.sourceId AND ds.generation = d.generation
+            SELECT 1 FROM device_videos d INDEXED BY index_device_videos_canonicalUri
+            CROSS JOIN device_sources ds ON ds.id = d.sourceId AND ds.generation = d.generation
             WHERE d.sourceId IN ($placeholders)$duplicateMatch AND d.canonicalUri = v.canonicalUri AND (
                 d.priority < v.priority OR (d.priority = v.priority AND (
                     d.sourceId < v.sourceId OR (d.sourceId = v.sourceId AND d.uri < v.uri)
@@ -111,7 +115,13 @@ internal data class DeviceBrowseQuery(
             )
         )
     """.trimIndent()
-    private val args: List<Any> = (sources.toList() + if (term.isEmpty()) emptyList() else listOf(term, term)).let { it + it }
+    private val filter = """
+        FROM device_videos v JOIN device_sources s ON s.id = v.sourceId AND s.generation = v.generation
+        WHERE v.sourceId IN ($placeholders)$matching
+        $aliases
+    """.trimIndent()
+    private val args: List<Any> = (sources.toList() + if (term.isEmpty()) emptyList() else listOf(term, term))
+        .let { if (deduplicate) it + it else it }
 
     fun count() = SimpleSQLiteQuery("SELECT COUNT(*) $filter", args.toTypedArray())
 

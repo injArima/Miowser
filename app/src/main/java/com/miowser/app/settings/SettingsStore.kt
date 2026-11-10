@@ -20,6 +20,7 @@ private const val KEY_AUTO_DELETE_INACTIVE_TABS = "auto_delete_inactive_tabs"
 private const val KEY_INACTIVE_TAB_RETENTION = "inactive_tab_retention"
 private const val KEY_REDUCE_MOTION = "reduce_motion"
 private const val KEY_LIBRARY_BEHAVIOR = "library_behavior"
+private const val KEY_DEVICE_DISCOVERY = "device_video_discovery"
 private const val KEY_BACKGROUND_PLAYBACK_ENABLED = "background_playback_enabled"
 private const val KEY_COMPANION_BROWSING_ENABLED = "companion_browsing_enabled"
 private const val KEY_CRASH_DIAGNOSTICS_ENABLED = "crash_diagnostics_enabled"
@@ -72,7 +73,8 @@ object SettingsStore {
             companionBrowsingEnabled = prefs.getBoolean(
                 KEY_COMPANION_BROWSING_ENABLED, defaults.companionBrowsingEnabled
             ),
-            crashDiagnosticsEnabled = crashDiagnosticsEnabled(context)
+            crashDiagnosticsEnabled = crashDiagnosticsEnabled(context),
+            deviceDiscoveryEnabled = prefs.getBoolean(KEY_DEVICE_DISCOVERY, defaults.deviceDiscoveryEnabled)
         )
     }
 
@@ -96,6 +98,7 @@ object SettingsStore {
                 .putString(KEY_INACTIVE_TAB_RETENTION, settings.inactiveTabRetention.name)
                 .putBoolean(KEY_REDUCE_MOTION, settings.reduceMotion)
                 .putString(KEY_LIBRARY_BEHAVIOR, settings.libraryBehavior.name)
+                .putBoolean(KEY_DEVICE_DISCOVERY, settings.deviceDiscoveryEnabled)
                 .putBoolean(KEY_BACKGROUND_PLAYBACK_ENABLED, settings.backgroundPlaybackEnabled)
                 .putBoolean(KEY_COMPANION_BROWSING_ENABLED, settings.companionBrowsingEnabled)
                 .putBoolean(KEY_CRASH_DIAGNOSTICS_ENABLED, settings.crashDiagnosticsEnabled)

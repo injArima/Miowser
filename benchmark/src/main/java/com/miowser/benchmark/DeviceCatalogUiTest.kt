@@ -15,18 +15,47 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @SdkSuppress(minSdkVersion = 29)
 class DeviceCatalogUiTest {
-    @Test fun primaryCatalogReconcilesMediaStoreAndOpensThePlayer() {
-        val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
-        fun fixture(action: String, title: String? = null) {
-            val flags = (Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK).toString(16)
-            val titleArgument = if (title == null) "" else " --es fixture_name $title"
-            val result = device.executeShellCommand(
-                "am start -W -f 0x$flags " +
-                    "-n $PACKAGE/com.miowser.app.benchmark.FixtureActivity --es device_catalog $action$titleArgument"
-            )
-            check("Status: ok" in result) { result }
-            device.requireNode(By.text("Device fixture: $action"))
+    private val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+
+    private fun fixture(action: String, title: String? = null) {
+        val flags = (Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK).toString(16)
+        val titleArgument = if (title == null) "" else " --es fixture_name $title"
+        val result = device.executeShellCommand(
+            "am start -W -f 0x$flags " +
+                "-n $PACKAGE/com.miowser.app.benchmark.FixtureActivity --es device_catalog $action$titleArgument"
+        )
+        check("Status: ok" in result) { result }
+        if (action != "open") device.requireNode(By.text("Device fixture: $action"))
+    }
+
+    @Test fun coldAndroidOpenPlaysWithDiscoveryTurnedOff() {
+        seed(libraryBaseline = true)
+        fixture("discovery_off")
+        try {
+            device.executeShellCommand("am force-stop $PACKAGE")
+            device.executeShellCommand("am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n $PACKAGE/com.miowser.app.MainActivity")
+            device.requireNode(By.text("Device discovery is off"))
+            device.requireNode(By.desc("Open video file"))
+            device.executeShellCommand("am force-stop $PACKAGE")
+            fixture("create", "Direct-open-${UUID.randomUUID().toString().take(8)}.mp4")
+            val started = android.os.SystemClock.elapsedRealtime()
+            fixture("open")
+            device.requireNode(By.res("player_first_frame"))
+            android.util.Log.i("DeviceCatalogScale",
+                "Android open to first frame ms=${android.os.SystemClock.elapsedRealtime() - started}")
+            check(!device.hasObject(By.res("device_scan_status")))
+        } finally {
+            device.executeShellCommand("am force-stop $PACKAGE")
+            fixture("delete")
+            fixture("discovery_on")
         }
+    }
+
+    @Test fun catalogQueriesKeepBoundedPagesAtScale() {
+        fixture("scale")
+    }
+
+    @Test fun primaryCatalogReconcilesMediaStoreAndOpensThePlayer() {
         fun openDeviceVideos() {
             device.executeShellCommand("am start -W -n $PACKAGE/com.miowser.app.MainActivity")
             device.requireNode(By.res("hub_destination_device"))
@@ -58,6 +87,7 @@ class DeviceCatalogUiTest {
 
             fixture("rename", renamedTitle)
             openDeviceVideos()
+            device.requireNode(By.desc("Refresh device videos")).click()
             val newTitle = By.text(renamedTitle)
             device.requireNode(newTitle)
             check(device.wait(Until.gone(oldTitle), 10_000)) { "Previous name is still visible" }

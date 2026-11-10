@@ -116,6 +116,12 @@ class MainActivity : ComponentActivity() {
         if (LauncherShortcuts.isSupported(action)) {
             shortcutRequest = LauncherShortcutRequest(++shortcutSequence, requireNotNull(action))
         } else if (action == Intent.ACTION_VIEW) {
+            val data = intent.data
+            if (data?.scheme == "content" && !data.authority.isNullOrBlank() &&
+                intent.type?.startsWith("video/", ignoreCase = true) == true) {
+                shortcutRequest = LauncherShortcutRequest(++shortcutSequence, Intent.ACTION_VIEW, localVideo = data)
+                return
+            }
             val url = intent.data?.takeIf { uri ->
                 (uri.scheme.equals("http", true) || uri.scheme.equals("https", true)) &&
                     !uri.host.isNullOrBlank()
