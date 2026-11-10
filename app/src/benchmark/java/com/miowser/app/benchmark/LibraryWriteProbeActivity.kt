@@ -23,25 +23,12 @@ class LibraryWriteProbeActivity : ComponentActivity() {
     }
 
     private fun prepareWrite(label: TextView) {
-        val batch = MediaLibrary.entries.asSequence()
-            .filter { it.folderId == null && it.sourceKind == LibrarySourceKind.LOCAL_FILE }
-            .take(64).toList()
-        check(batch.size == 64)
-        val operation = requireNotNull(intent.getStringExtra("operation"))
+        val entry = MediaLibrary.entries.first { it.folderId == null && it.sourceKind == LibrarySourceKind.LOCAL_FILE }
         label.text = "Library write ready"
         label.setOnClickListener {
             label.isEnabled = false
-            when (operation) {
-                "import" -> check(MediaLibrary.importLocalBatch(this, batch.map {
-                    it.copy(folderId = "series", manualFolder = true)
-                }) == batch.size)
-                "progress" -> {
-                    val entry = batch.first()
-                    check(entry.positionMs == 0L)
-                    MediaLibrary.updateProgress(this, entry.identityKey, 12_345, entry.durationMs)
-                }
-                else -> error("Unexpected operation: $operation")
-            }
+            check(entry.positionMs == 0L)
+            MediaLibrary.updateProgress(this, entry.identityKey, 12_345, entry.durationMs)
             Persistence.afterWrites { label.text = "Library write committed" }
         }
     }

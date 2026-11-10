@@ -43,8 +43,8 @@ Miowser is an Android browser built for discovering, playing, downloading, and o
 - Download queue with pause, resume, retry, cancel, recovery, and duplicate handling
 - Default `Downloads/Miowser` destination or a user-selected folder
 - Automatic and manual reconnection of restored records to existing files
-- Folder and subfolder organization, per-folder sorting, grid/list views, rules, imports, undoable actions, and duplicate cleanup
-- Recursive device-folder imports that link files without copying them
+- Folder and subfolder organization, per-folder sorting, grid/list views, rules, undoable actions, and duplicate cleanup
+- Device folder linking with recursive video discovery
 
 ## Ad blocker
 

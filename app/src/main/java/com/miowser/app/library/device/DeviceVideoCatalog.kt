@@ -235,7 +235,7 @@ internal object DeviceVideoCatalog {
                                 source.label
                             }
                             DEVICE_LINK -> {
-                                val name = walkImportedVideoFolder(app, Uri.parse(source.id), includeMetadata = true, signal = signal) { file ->
+                                val name = walkImportedVideoFolder(app, Uri.parse(source.id), signal = signal) { file ->
                                     val canonical = canonicalVideoUri(app, file.uri)
                                     add(DeviceVideo(source.id, generation, file.uri.toString(), canonical, DEVICE_LINK,
                                         file.name, file.relativeFolder.joinToString("/"), 0, null, file.modifiedAt,

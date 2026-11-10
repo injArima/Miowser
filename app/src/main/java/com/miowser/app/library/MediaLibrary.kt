@@ -147,44 +147,6 @@ object MediaLibrary {
         return true
     }
 
-    fun remainingSavedCapacity(): Int =
-        MAX_EXPLICIT_LIBRARY_ENTRIES - mutableRecords.count { it.explicitlySaved || it.manualFolder }
-
-    fun savedSlotsNeededForImport(uris: Collection<String>): Int {
-        val byKey = mutableRecords.associateBy(LibraryEntry::identityKey)
-        return uris.asSequence().distinct().count { uri ->
-            val existing = byKey["${LibrarySourceKind.LOCAL_FILE.name}:$uri"]
-            existing == null || (!existing.explicitlySaved && !existing.manualFolder)
-        }
-    }
-
-    /** Imported content URIs retain their original files and manual folder placement. */
-    fun importLocalBatch(context: Context, entries: List<LibraryEntry>): Int = traceSection("LibraryImportBatch") {
-        Persistence.requireOwner()
-        check(restored)
-        val incoming = entries.filter { it.sourceKind == LibrarySourceKind.LOCAL_FILE }
-            .distinctBy(LibraryEntry::identityKey)
-        requireSaveCapacity(savedSlotsNeededForImport(incoming.map(LibraryEntry::mediaUri)))
-        val indices = mutableRecords.withIndex().associate { it.value.identityKey to it.index }
-        val fresh = mutableListOf<LibraryEntry>()
-        var filedExisting = 0
-        incoming.forEach { entry ->
-            val index = indices[entry.identityKey]
-            if (index == null) fresh.add(entry)
-            else {
-                val previous = mutableRecords[index]
-                if (!previous.manualFolder) {
-                    mutableRecords[index] = previous.copy(folderId = entry.folderId,
-                        manualFolder = true, explicitlySaved = true)
-                    filedExisting++
-                }
-            }
-        }
-        if (fresh.isNotEmpty()) mutableRecords.addAll(0, fresh)
-        if (fresh.isNotEmpty() || filedExisting > 0) persist(context)
-        fresh.size + filedExisting
-    }
-
     /** Called at meaningful player boundaries (pause/exit), not on every playback clock tick. */
     fun updateProgress(
         context: Context,

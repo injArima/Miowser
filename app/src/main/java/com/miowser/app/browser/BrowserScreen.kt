@@ -2829,7 +2829,6 @@ fun BrowserScreen(
                                     openMediaSettings()
                                     activeScreen = Screen.MEDIA_DIRECTORIES
                                 },
-                                onBrowse = { showingHub = false },
                                 discoveryEnabled = discoveryEnabled,
                                 autoRescan = AppSettings.current.deviceAutoRescanEnabled,
                                 onOpenVideo = { openVideoPicker.launch(arrayOf("video/*")) },
@@ -2926,7 +2925,6 @@ fun BrowserScreen(
                     pendingRelinkDownload = download
                     relinkDownloadLauncher.launch(arrayOf("*/*"))
                 },
-                onOpenBrowser = { showingHub = false },
                 onOpenBackupRestore = { showBackupRestore = true },
                 onOpenRecordInBrowser = ::openHubRecord
             )
@@ -2948,6 +2946,7 @@ fun BrowserScreen(
                             selectedDownloadSection = hubDownloadSection,
                             onDownloadSectionSelected = ::selectDownloadSection,
                             onSectionSelected = ::selectHubSection,
+                            onOpenBrowser = { showingHub = false },
                             downloadDirectory = downloadDirectory,
                             customDownloadDirectoryAccessible = downloadDirectory?.let { directory ->
                                 directory.mode != DownloadDirectoryMode.CUSTOM ||

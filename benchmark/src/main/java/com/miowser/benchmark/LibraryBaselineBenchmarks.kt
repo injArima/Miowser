@@ -106,20 +106,16 @@ class LibraryBaselineBenchmarks {
         repeat(10) { grid.fling(Direction.UP) }
     }
 
-    @Test fun scanBatchCommit() = measureWrite("import", "LibraryImportBatch", "LibrarySnapshotCommit")
-
-    @Test fun progressCommit() = measureWrite("progress", "LibraryProgressUpdate", "LibraryProgressCommit")
-
-    private fun measureWrite(operation: String, mutationSection: String, commitSection: String) = rule.measureRepeated(
+    @Test fun progressCommit() = rule.measureRepeated(
         packageName = PACKAGE,
-        metrics = listOf(observed("P0WriteCommitted"), appTrace(mutationSection),
-            appTrace(commitSection)),
+        metrics = listOf(observed("P0WriteCommitted"), appTrace("LibraryProgressUpdate"),
+            appTrace("LibraryProgressCommit")),
         compilationMode = benchmarkCompilation,
         iterations = benchmarkIterations,
         setupBlock = {
             seed(libraryBaseline = true, resetLibraryOnly = true)
             device.executeShellCommand(
-                "am start -W -n $PACKAGE/com.miowser.app.benchmark.LibraryWriteProbeActivity --es operation $operation"
+                "am start -W -n $PACKAGE/com.miowser.app.benchmark.LibraryWriteProbeActivity"
             )
             device.requireNode(By.text("Library write ready"))
         }

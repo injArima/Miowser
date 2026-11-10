@@ -130,7 +130,7 @@ internal fun MediaSettingsPage(
         SettingsSection("History") {
             val description = when (settings.libraryBehavior) {
                 LibraryBehavior.AUTOMATIC -> "Save played media and progress automatically."
-                LibraryBehavior.MANUAL_ONLY -> "Keep entries you add or import and update their progress."
+                LibraryBehavior.MANUAL_ONLY -> "Keep entries you add and update their progress."
                 LibraryBehavior.DISABLED -> "Hide the Miowser Library and keep your entries for later."
             }
             MediaChoiceRow("Playback history", description,

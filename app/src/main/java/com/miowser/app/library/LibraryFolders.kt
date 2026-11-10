@@ -134,38 +134,6 @@ object LibraryFolders {
         return folder
     }
 
-    /** Create the selected directory and only branches containing imported videos in one write. */
-    fun ensureImportedTree(context: Context, parentId: String?, rootName: String,
-        relativePaths: List<List<String>>): Map<List<String>, String> {
-        Persistence.requireOwner()
-        check(restored)
-        require(parentId == null || mutableRecords.any { it.id == parentId })
-        val result = mutableMapOf<List<String>, String>()
-        val siblings = mutableRecords.associateBy { it.parentId to it.name.lowercase(java.util.Locale.ROOT) }
-            .toMutableMap()
-        var changed = false
-        fun child(parent: String?, name: String): String {
-            val clean = name.trim().take(80).ifBlank { "Imported videos" }
-            val key = parent to clean.lowercase(java.util.Locale.ROOT)
-            val existing = siblings[key]
-            if (existing != null) return existing.id
-            val folder = LibraryFolder(UUID.randomUUID().toString(), clean, parentId = parent)
-            mutableRecords.add(folder)
-            siblings[key] = folder
-            changed = true
-            return folder.id
-        }
-        result[emptyList()] = child(parentId, rootName)
-        relativePaths.sortedBy { it.size }.forEach { path ->
-            if (path.isNotEmpty()) {
-                val parent = result[path.dropLast(1)] ?: error("Missing imported parent folder")
-                result[path] = child(parent, path.last())
-            }
-        }
-        if (changed) persist(context)
-        return result
-    }
-
     fun rename(context: Context, id: String, name: String): Boolean {
         Persistence.requireOwner()
         val cleanName = name.trim().take(80)

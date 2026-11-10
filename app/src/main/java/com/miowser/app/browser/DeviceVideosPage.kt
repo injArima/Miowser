@@ -19,8 +19,6 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.automirrored.rounded.Sort
-import androidx.compose.material.icons.rounded.Language
-import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.VideoLibrary
@@ -48,8 +46,6 @@ import com.miowser.app.ui.ChoiceRow
 import com.miowser.app.ui.ExpressiveEmptyState
 import com.miowser.app.ui.MiowserActionButton
 import com.miowser.app.ui.MiowserLoadingIndicator
-import com.miowser.app.ui.MiowserDropdownMenu
-import com.miowser.app.ui.MiowserMenuItem
 import com.miowser.app.ui.theme.HubLibraryTokens
 import com.miowser.app.ui.theme.UiSpacing
 import kotlinx.coroutines.CancellationException
@@ -77,7 +73,6 @@ internal fun DeviceVideosPage(
     autoRescan: Boolean,
     onOpenVideo: () -> Unit,
     onDiscoverySettings: () -> Unit,
-    onBrowse: () -> Unit,
     onPlay: (DevicePlaybackSelection) -> Unit,
     onMessage: (String) -> Unit,
     onIdleChanged: (Boolean) -> Unit
@@ -94,7 +89,6 @@ internal fun DeviceVideosPage(
     var loadFailed by remember { mutableStateOf(false) }
     var search by rememberSaveable { mutableStateOf("") }
     var searchVisible by rememberSaveable { mutableStateOf(false) }
-    var headerMenu by remember { mutableStateOf(false) }
     var source by rememberSaveable { mutableStateOf<String?>(null) }
     var titleOrder by rememberSaveable { mutableStateOf(initialView.deviceTitleSort) }
     var listMode by rememberSaveable { mutableStateOf(initialView.deviceList) }
@@ -193,23 +187,6 @@ internal fun DeviceVideosPage(
                 }
                 IconButton(onClick = { refreshCatalog(folderSource ?: source) }) {
                     Icon(Icons.Rounded.Refresh, "Refresh device videos")
-                }
-            }
-            Box {
-                IconButton(onClick = { headerMenu = true }) {
-                    Icon(Icons.Rounded.MoreVert, "Device Videos menu")
-                }
-                MiowserDropdownMenu(expanded = headerMenu, onDismissRequest = { headerMenu = false }) {
-                    MiowserMenuItem(
-                        text = { Text("Open video file") },
-                        leadingIcon = { Icon(Icons.Rounded.FolderOpen, contentDescription = null) },
-                        onClick = { headerMenu = false; onOpenVideo() }
-                    )
-                    MiowserMenuItem(
-                        text = { Text("Browse") },
-                        leadingIcon = { Icon(Icons.Rounded.Language, contentDescription = null) },
-                        onClick = { headerMenu = false; onBrowse() }
-                    )
                 }
             }
         }
@@ -340,6 +317,10 @@ internal fun DeviceVideosPage(
                 }
             }
             LibraryOptionsGroup("Storage access", Icons.Rounded.FolderOpen) {
+                LibraryOptionAction("Open video file", Icons.Rounded.FolderOpen) {
+                    onDismissLibrarySettings()
+                    onOpenVideo()
+                }
                 LibraryOptionAction("Manage folders", Icons.Rounded.FolderOpen) {
                     onDismissLibrarySettings()
                     onOpenDirectories()

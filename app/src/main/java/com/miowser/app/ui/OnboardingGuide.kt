@@ -91,7 +91,7 @@ private val onboardingPages = listOf(
         title = "Build your Library",
         description = "Save media references, remember playback progress, and arrange videos in folders and subfolders.",
         points = listOf(
-            "Import device folders without copying their videos.",
+            "Link folders in Device to browse their videos in place.",
             "Use private tabs, site controls, ad blocking, and local backups when you need them."
         )
     )

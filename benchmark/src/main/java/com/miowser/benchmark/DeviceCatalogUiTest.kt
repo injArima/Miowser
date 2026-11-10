@@ -35,7 +35,7 @@ class DeviceCatalogUiTest {
             device.executeShellCommand("am force-stop $PACKAGE")
             device.executeShellCommand("am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n $PACKAGE/com.miowser.app.MainActivity")
             device.requireNode(By.text("Device discovery is off"))
-            device.requireNode(By.desc("Open video file"))
+            device.requireNode(By.text("Open video"))
             device.executeShellCommand("am force-stop $PACKAGE")
             fixture("create", "Direct-open-${UUID.randomUUID().toString().take(8)}.mp4")
             val started = android.os.SystemClock.elapsedRealtime()

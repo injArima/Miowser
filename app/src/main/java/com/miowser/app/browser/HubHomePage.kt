@@ -1,10 +1,7 @@
 package com.miowser.app.browser
 
 import android.net.Uri
-import android.content.Intent
 import android.view.HapticFeedbackConstants
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -59,7 +56,6 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.HealthAndSafety
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.VideoLibrary
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -146,7 +142,6 @@ import com.miowser.app.library.LibraryFolder
 import com.miowser.app.library.LibraryFolders
 import com.miowser.app.library.LibraryThumbnailStore
 import com.miowser.app.library.MediaLibrary
-import com.miowser.app.library.scanImportedVideoFolder
 import com.miowser.app.library.LibraryRepository
 import com.miowser.app.library.LibraryBrowseQuery
 import com.miowser.app.library.LibraryCardId
@@ -168,7 +163,6 @@ import com.miowser.app.ui.ConfirmationAction
 import com.miowser.app.ui.ConfirmationTone
 import com.miowser.app.ui.MiowserConfirmationDialog
 import com.miowser.app.ui.MiowserSnackbarHost
-import com.miowser.app.ui.sheetVerticalEdgeFade
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.lifecycle.Lifecycle
@@ -226,7 +220,6 @@ internal fun HubHomePage(
     onRefreshDownloadLink: (Download) -> Unit,
     onOpenLocalDownload: (Download) -> Unit,
     onRelinkDownload: (Download) -> Unit,
-    onOpenBrowser: () -> Unit,
     onOpenMediaSettings: () -> Unit,
     onOpenBackupRestore: () -> Unit,
     onOpenRecordInBrowser: (String, Boolean) -> Unit,
@@ -265,69 +258,9 @@ internal fun HubHomePage(
         HubSettingsStore.saveLibrarySort(context, activeFolderId, sort)
     }
     var folderHistory by rememberSaveable { mutableStateOf(emptyList<String>()) }
-    var importParentId by rememberSaveable { mutableStateOf<String?>(null) }
-    var importLocationVisible by remember { mutableStateOf(false) }
-    var importLocationParent by remember { mutableStateOf<String?>(null) }
-    var choosingImportParent by remember { mutableStateOf(false) }
-    var importingFolder by remember { mutableStateOf(false) }
-    val importScope = rememberCoroutineScope()
-    val importSnackbar = remember { SnackbarHostState() }
+    val libraryActionScope = rememberCoroutineScope()
+    val librarySnackbar = remember { SnackbarHostState() }
     var failedVideoLogExpanded by remember { mutableStateOf(false) }
-    val importFolderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { treeUri ->
-        if (treeUri != null && !importingFolder) {
-            val targetParent = importParentId
-            importingFolder = true
-            importScope.launch {
-                val message = try {
-                    context.contentResolver.takePersistableUriPermission(treeUri,
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    val scanned = withContext(Dispatchers.IO) {
-                        scanImportedVideoFolder(context.applicationContext, treeUri)
-                    }
-                    if (scanned.files.isEmpty()) {
-                        "No video files found in this folder"
-                    } else {
-                        val needed = MediaLibrary.savedSlotsNeededForImport(
-                            scanned.files.map { it.uri.toString() })
-                        if (needed > MediaLibrary.remainingSavedCapacity()) {
-                            "Library can hold 5,000 saved videos. Remove some before importing this folder."
-                        } else {
-                            val (rootId, added) = LibraryRepository.batchStructure(context) {
-                                val folders = LibraryFolders.ensureImportedTree(context, targetParent,
-                                    scanned.name, scanned.folderPaths)
-                                val rootId = requireNotNull(folders[emptyList()])
-                                val records = scanned.files.map { file ->
-                                    LibraryEntry(
-                                        mediaUri = file.uri.toString(), pageUrl = null,
-                                        title = file.name.substringBeforeLast('.', file.name),
-                                        sourceLabel = scanned.name,
-                                        sourceKind = LibrarySourceKind.LOCAL_FILE,
-                                        mediaType = null, userAgent = null, thumbnailUrl = null,
-                                        lastPlayedAt = 0L, positionMs = 0L, durationMs = 0L,
-                                        videoName = file.name,
-                                        folderId = folders[file.relativeFolder] ?: rootId,
-                                        manualFolder = true
-                                    )
-                                }
-                                rootId to MediaLibrary.importLocalBatch(context, records)
-                            }
-                            if (activeFolderId != rootId) {
-                                folderHistory = (folderHistory + activeFolderId).takeLast(32)
-                                selectedFolderId = rootId
-                            }
-                            if (added == 0) "These videos are already in your Library"
-                            else "Imported $added ${if (added == 1) "video" else "videos"}"
-                        }
-                    }
-                } catch (_: Exception) {
-                    "Couldn't import this folder. Check access and try again."
-                } finally {
-                    importingFolder = false
-                }
-                importSnackbar.showSnackbar(message)
-            }
-        }
-    }
     if (libraryHealthVisible) {
         LibraryHealthPage(
             entries = libraryEntries.toList(),
@@ -367,7 +300,7 @@ internal fun HubHomePage(
     Scaffold(
         snackbarHost = {
             MiowserSnackbarHost(
-                hostState = importSnackbar,
+                hostState = librarySnackbar,
                 modifier = Modifier.padding(bottom = bottomBarHeight + UiSpacing.s)
             )
         },
@@ -429,22 +362,6 @@ internal fun HubHomePage(
                     )
                 }
             }
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = onOpenBrowser,
-                modifier = Modifier.padding(bottom = 64.dp),
-                shape = MaterialTheme.shapes.large,
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 4.dp)
-            ) {
-                Icon(
-                    Icons.Rounded.Language,
-                    contentDescription = "Browse",
-                    modifier = Modifier.size(UiIconSize.featured)
-                )
-            }
         }
     ) { innerPadding ->
         Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
@@ -476,12 +393,6 @@ internal fun HubHomePage(
                                 folderCreationParentId = parentId
                                 creatingFolder = true
                             },
-                            onImportFolder = { parentId ->
-                                if (!importingFolder) {
-                                    importLocationParent = parentId
-                                    importLocationVisible = true
-                                }
-                            },
                             onDeleteFolder = { folder, withVideos ->
                                 val beforeFolders = LibraryFolders.entries.toList()
                                 val previousDefault = LibraryFolders.defaultFolderId
@@ -502,9 +413,9 @@ internal fun HubHomePage(
                                 if (activeFolderId == folder.id || (withVideos && activeFolderId in affectedIds)) {
                                     selectedFolderId = folder.parentId ?: UNFILED_FOLDER_ID
                                 }
-                                importSnackbar.currentSnackbarData?.dismiss()
-                                importScope.launch {
-                                    val result = importSnackbar.showSnackbar(
+                                librarySnackbar.currentSnackbarData?.dismiss()
+                                libraryActionScope.launch {
+                                    val result = librarySnackbar.showSnackbar(
                                         if (withVideos) "Folder and Library entries removed" else "Folder dissolved",
                                         actionLabel = "Undo", duration = SnackbarDuration.Long)
                                     if (result == SnackbarResult.ActionPerformed) {
@@ -586,60 +497,6 @@ internal fun HubHomePage(
     if (creatingFolder) {
         LibraryFolderCreationFlow(folderCreationParentId, onFinished = { creatingFolder = false })
     }
-    if (importLocationVisible) AlertDialog(
-        onDismissRequest = { importLocationVisible = false },
-        title = { Text("Import folder as") },
-        text = { Text(if (importLocationParent == null)
-            "Primary places it at the Library root. Subfolder lets you choose a parent folder."
-            else "Primary places it at the Library root. Subfolder places it inside ${LibraryFolders.entries.firstOrNull { it.id == importLocationParent }?.name ?: "the current folder"}.") },
-        confirmButton = {
-            Row {
-                MiowserActionButton(onClick = {
-                    importLocationVisible = false
-                    importParentId = null
-                    importFolderPicker.launch(null)
-                }, style = AppButtonStyle.TONAL) { Text("Primary") }
-                MiowserActionButton(enabled = importLocationParent != null || LibraryFolders.entries.isNotEmpty(), onClick = {
-                    importLocationVisible = false
-                    if (importLocationParent != null) {
-                        importParentId = importLocationParent
-                        importFolderPicker.launch(null)
-                    } else choosingImportParent = true
-                }, style = AppButtonStyle.OUTLINED) { Text("Subfolder") }
-            }
-        },
-        dismissButton = { MiowserActionButton(onClick = { importLocationVisible = false }, style = AppButtonStyle.CAUTION_OUTLINED) { Text("Cancel") } }
-    )
-    if (choosingImportParent) ExpressiveBottomSheet(onDismissRequest = { choosingImportParent = false }) {
-        ExpressiveSheetHeading("Choose parent folder")
-        val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-        androidx.compose.foundation.lazy.LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp)
-                .sheetVerticalEdgeFade(listState, MaterialTheme.colorScheme.surface)
-        ) {
-            items(LibraryFolders.orderedEntries().size) { index ->
-                val folder = LibraryFolders.orderedEntries()[index]
-                TextButton(onClick = {
-                    choosingImportParent = false
-                    importParentId = folder.id
-                    importFolderPicker.launch(null)
-                }, modifier = Modifier.fillMaxWidth()) { Text(LibraryFolders.path(folder)) }
-            }
-        }
-    }
-    if (importingFolder) {
-        AlertDialog(onDismissRequest = {}, title = { Text("Importing folder") },
-            text = { Row(verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(UiSpacing.l)) {
-                MiowserLoadingIndicator(
-                    size = UiIconSize.standard,
-                    description = "Importing folder"
-                )
-                Text("Finding videos and building your Library folders…")
-            } }, confirmButton = {})
-    }
-
     if (showClearLibraryConfirmation) {
         ClearLibraryConfirmationDialog(
             onDismiss = { showClearLibraryConfirmation = false },
@@ -662,6 +519,7 @@ internal fun HubBottomNavigation(
     onChooseCustomDownloadDirectory: () -> Unit,
     onRelinkConfiguredDownloads: () -> Unit,
     onSectionSelected: (HubSection) -> Unit,
+    onOpenBrowser: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val motion = LocalMotionPolicy.current
@@ -693,11 +551,12 @@ internal fun HubBottomNavigation(
                 56.dp + with(density) { textMeasurer.measure(label, style = textStyle).size.width.toDp() }
             }
         }
-        val iconWidth = 48.dp
+        val segmentSpace = (maxWidth - HubLibraryTokens.railHeight - UiSpacing.s -
+            UiSpacing.xs * 2 - UiSpacing.xxs * (sections.size - 1)).coerceAtLeast(0.dp)
+        val iconWidth = UiControlSize.touchTarget.coerceAtMost(segmentSpace / sections.size)
         fun segmentWidth(section: HubSection, active: HubSection): Dp =
             if (section == active) expandedWidths.getValue(section)
-                .coerceAtMost((maxWidth - iconWidth * (sections.size - 1) - 12.dp)
-                    .coerceAtLeast(iconWidth))
+                .coerceAtMost(segmentSpace - iconWidth * (sections.size - 1))
             else iconWidth
         val selection = updateTransition(selectedSection, label = "Hub destination")
         val pillLeft = selection.animateDp(
@@ -722,87 +581,103 @@ internal fun HubBottomNavigation(
             Brush.horizontalGradient(listOf(pillColor, lerp(pillColor, pillHighlight, 0.06f)))
         }
         FixedHubRailViewport {
-            Surface(
-                shape = RoundedCornerShape(30.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shadowElevation = UiElevation.raised
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)
             ) {
-                Box(modifier = Modifier.padding(UiSpacing.xs)) {
-                    // The highlight and segment widths share the same transition clock.
-                    Box(Modifier.matchParentSize().drawBehind {
-                        val width = pillWidth.value.toPx().coerceIn(0f, size.width)
-                        val start = pillLeft.value.toPx().coerceIn(0f, size.width - width)
-                        val left = if (layoutDirection == LayoutDirection.Rtl) size.width - start - width else start
-                        withTransform({ inset(left, 0f, size.width - left - width, 0f) }) {
-                            drawRoundRect(brush = pillBrush, cornerRadius = CornerRadius(26.dp.toPx()))
-                        }
-                    })
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(UiSpacing.xxs)
-                    ) {
-                        sections.forEach { section ->
-                            val label = labels.getValue(section)
-                            val itemWidth = selection.animateDp(
-                                transitionSpec = { motion.spec(MotionTokens.selection) },
-                                label = "${label} width"
-                            ) { active -> segmentWidth(section, active) }
-                            val labelAlpha = selection.animateFloat(
-                                transitionSpec = { motion.spec(MotionTokens.selection) },
-                                label = "${label} label"
-                            ) { active -> if (section == active) 1f else 0f }
-                            HubNavigationItem(
-                                testTag = if (section == HubSection.LIBRARY) "hub_nav_network"
-                                    else "hub_nav_${section.name.lowercase()}",
-                                selected = selectedSection == section,
-                                width = itemWidth,
-                                labelAlpha = labelAlpha,
-                                onClick = {
-                                    if (selectedSection != section) {
-                                        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                                    }
-                                    onSectionSelected(section)
-                                },
-                                onLongClick = when (section) {
-                                    HubSection.DEVICE, HubSection.LIBRARY -> ({
-                                        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                                        onOpenLibrarySettings(section)
-                                    })
-                                    HubSection.DOWNLOADS -> ({
-                                        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                                        downloadSettingsExpanded = true
-                                    })
-                                    HubSection.MORE -> null
-                                },
-                                longClickLabel = when (section) {
-                                    HubSection.DEVICE, HubSection.LIBRARY ->
-                                        stringResource(R.string.nav_open_section_settings, label)
-                                    HubSection.DOWNLOADS -> "Open Downloads settings"
-                                    HubSection.MORE -> null
-                                },
-                                label = label,
-                                spokenLabel = if (section == HubSection.DOWNLOADS && activeDownloadCount > 0) {
-                                    pluralStringResource(R.plurals.nav_downloads_active, activeDownloadCount, activeDownloadCount)
-                                } else label,
-                                icon = {
-                                    if (section == HubSection.DOWNLOADS && activeDownloadCount > 0) {
-                                        BadgedBox(
-                                            badge = { Badge(Modifier.clearAndSetSemantics { }) {
-                                                Text(activeDownloadCount.coerceAtMost(99).toString())
-                                            } }
-                                        ) {
-                                            Icon(Icons.Rounded.Download, contentDescription = null)
+                Surface(
+                    shape = RoundedCornerShape(30.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shadowElevation = UiElevation.raised
+                ) {
+                    Box(modifier = Modifier.padding(UiSpacing.xs)) {
+                        // The highlight and segment widths share the same transition clock.
+                        Box(Modifier.matchParentSize().drawBehind {
+                            val width = pillWidth.value.toPx().coerceIn(0f, size.width)
+                            val start = pillLeft.value.toPx().coerceIn(0f, size.width - width)
+                            val left = if (layoutDirection == LayoutDirection.Rtl) size.width - start - width else start
+                            withTransform({ inset(left, 0f, size.width - left - width, 0f) }) {
+                                drawRoundRect(brush = pillBrush, cornerRadius = CornerRadius(26.dp.toPx()))
+                            }
+                        })
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(UiSpacing.xxs)
+                        ) {
+                            sections.forEach { section ->
+                                val label = labels.getValue(section)
+                                val itemWidth = selection.animateDp(
+                                    transitionSpec = { motion.spec(MotionTokens.selection) },
+                                    label = "${label} width"
+                                ) { active -> segmentWidth(section, active) }
+                                val labelAlpha = selection.animateFloat(
+                                    transitionSpec = { motion.spec(MotionTokens.selection) },
+                                    label = "${label} label"
+                                ) { active -> if (section == active) 1f else 0f }
+                                HubNavigationItem(
+                                    testTag = if (section == HubSection.LIBRARY) "hub_nav_network"
+                                        else "hub_nav_${section.name.lowercase()}",
+                                    selected = selectedSection == section,
+                                    width = itemWidth,
+                                    labelAlpha = labelAlpha,
+                                    onClick = {
+                                        if (selectedSection != section) {
+                                            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
                                         }
-                                    } else when (section) {
-                                        HubSection.DEVICE -> Icon(painterResource(R.drawable.ic_hexagon_symbol_rounded), null)
-                                        HubSection.LIBRARY -> Icon(painterResource(R.drawable.ic_blur_on_symbol_rounded), null)
-                                        HubSection.DOWNLOADS -> Icon(Icons.Rounded.Download, null)
-                                        HubSection.MORE -> Icon(Icons.Rounded.MoreHoriz, null)
+                                        onSectionSelected(section)
+                                    },
+                                    onLongClick = when (section) {
+                                        HubSection.DEVICE, HubSection.LIBRARY -> ({
+                                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                            onOpenLibrarySettings(section)
+                                        })
+                                        HubSection.DOWNLOADS -> ({
+                                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                            downloadSettingsExpanded = true
+                                        })
+                                        HubSection.MORE -> null
+                                    },
+                                    longClickLabel = when (section) {
+                                        HubSection.DEVICE, HubSection.LIBRARY ->
+                                            stringResource(R.string.nav_open_section_settings, label)
+                                        HubSection.DOWNLOADS -> "Open Downloads settings"
+                                        HubSection.MORE -> null
+                                    },
+                                    label = label,
+                                    spokenLabel = if (section == HubSection.DOWNLOADS && activeDownloadCount > 0) {
+                                        pluralStringResource(R.plurals.nav_downloads_active, activeDownloadCount, activeDownloadCount)
+                                    } else label,
+                                    icon = {
+                                        if (section == HubSection.DOWNLOADS && activeDownloadCount > 0) {
+                                            BadgedBox(
+                                                badge = { Badge(Modifier.clearAndSetSemantics { }) {
+                                                    Text(activeDownloadCount.coerceAtMost(99).toString())
+                                                } }
+                                            ) {
+                                                Icon(Icons.Rounded.Download, contentDescription = null)
+                                            }
+                                        } else when (section) {
+                                            HubSection.DEVICE -> Icon(painterResource(R.drawable.ic_hexagon_symbol_rounded), null)
+                                            HubSection.LIBRARY -> Icon(painterResource(R.drawable.ic_blur_on_symbol_rounded), null)
+                                            HubSection.DOWNLOADS -> Icon(Icons.Rounded.Download, null)
+                                            HubSection.MORE -> Icon(Icons.Rounded.MoreHoriz, null)
+                                        }
                                     }
-                                }
-                            )
+                                )
+                            }
                         }
                     }
+                }
+                FloatingActionButton(
+                    onClick = onOpenBrowser,
+                    modifier = Modifier.size(HubLibraryTokens.railHeight),
+                    shape = MaterialTheme.shapes.large,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = UiElevation.raised)
+                ) {
+                    Icon(Icons.Rounded.Language, contentDescription = "Browse",
+                        modifier = Modifier.size(UiIconSize.featured))
                 }
             }
         }
@@ -1333,7 +1208,6 @@ private fun HubLibraryContent(
     selectedFolderId: String,
     onFolderSelected: (String) -> Unit,
     onCreateFolder: (String?) -> Unit,
-    onImportFolder: (String?) -> Unit,
     onDeleteFolder: (LibraryFolder, Boolean) -> Unit,
     libraryView: HubLibraryView,
     modifier: Modifier = Modifier
@@ -1390,7 +1264,7 @@ private fun HubLibraryContent(
         preparedLayout = layoutKeys
     }
     Column(modifier = modifier) {
-        LibraryFolderStrip(selectedFolderId, onFolderSelected, onCreateFolder, onImportFolder, onDeleteFolder)
+        LibraryFolderStrip(selectedFolderId, onFolderSelected, onCreateFolder, onDeleteFolder)
         if (selectedFolder?.parentId != null) {
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())

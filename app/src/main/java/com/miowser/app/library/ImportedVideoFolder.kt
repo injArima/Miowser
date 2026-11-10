@@ -3,7 +3,6 @@ package com.miowser.app.library
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
-import com.miowser.app.performance.traceSection
 import java.util.ArrayDeque
 
 private val VIDEO_EXTENSIONS = setOf("mp4", "m4v", "mkv", "webm", "mov", "3gp", "ts", "mpeg", "mpg")
@@ -17,26 +16,9 @@ internal data class ImportedVideoFile(
     val modifiedAt: Long = 0
 )
 
-internal data class ImportedVideoFolder(
-    val name: String,
-    val files: List<ImportedVideoFile>
-) {
-    val folderPaths: List<List<String>> get() = files.asSequence().flatMap { file ->
-        (0..file.relativeFolder.size).asSequence().map { file.relativeFolder.take(it) }
-    }.distinct().sortedWith(compareBy<List<String>> { it.size }.thenBy { it.joinToString("/") }).toList()
-}
-
-internal fun scanImportedVideoFolder(context: Context, treeUri: Uri): ImportedVideoFolder =
-    traceSection("LibraryFolderScan") {
-        val files = mutableListOf<ImportedVideoFile>()
-        val name = walkImportedVideoFolder(context, treeUri) { files.add(it) }
-        ImportedVideoFolder(name, files)
-    }
-
 internal fun walkImportedVideoFolder(
     context: Context,
     treeUri: Uri,
-    includeMetadata: Boolean = false,
     signal: android.os.CancellationSignal? = null,
     onVideo: (ImportedVideoFile) -> Unit
 ): String {
@@ -47,15 +29,13 @@ internal fun walkImportedVideoFolder(
         null, null, null, signal)?.use { cursor ->
         if (cursor.moveToFirst()) cursor.getString(0) else null
     }?.trim()?.takeIf(String::isNotEmpty)
-    if (includeMetadata) checkNotNull(name) { "The linked folder could not be opened" }
+    checkNotNull(name) { "The linked folder could not be opened" }
     val pending = ArrayDeque<Pair<String, List<String>>>()
     val visited = mutableSetOf<String>()
     pending.add(rootId to emptyList())
-    val baseColumns = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-        DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE)
-    val columns = if (includeMetadata) baseColumns + arrayOf(
-        DocumentsContract.Document.COLUMN_SIZE, DocumentsContract.Document.COLUMN_LAST_MODIFIED
-    ) else baseColumns
+    val columns = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+        DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE,
+        DocumentsContract.Document.COLUMN_SIZE, DocumentsContract.Document.COLUMN_LAST_MODIFIED)
     while (pending.isNotEmpty()) {
         signal?.throwIfCanceled()
         val (folderId, path) = pending.removeFirst()
@@ -81,7 +61,7 @@ internal fun walkImportedVideoFolder(
             }
         } ?: error("The selected folder could not be read")
     }
-    return name ?: "Imported videos"
+    return name
 }
 
 internal fun isImportableVideo(name: String, mimeType: String): Boolean {

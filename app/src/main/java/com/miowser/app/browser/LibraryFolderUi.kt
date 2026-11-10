@@ -30,7 +30,6 @@ import com.miowser.app.ui.ConfirmationTone
 import com.miowser.app.ui.MiowserConfirmationDialog
 import com.miowser.app.ui.sheetVerticalEdgeFade
 import androidx.compose.material.icons.rounded.CreateNewFolder
-import androidx.compose.material.icons.rounded.DriveFolderUpload
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.AlertDialog
@@ -81,7 +80,6 @@ internal fun LibraryFolderStrip(
     selectedId: String,
     onSelected: (String) -> Unit,
     onCreateFolder: (String?) -> Unit,
-    onImportFolder: (String?) -> Unit,
     onDeleteFolder: (LibraryFolder, Boolean) -> Unit
 ) {
     val context = LocalContext.current
@@ -184,12 +182,6 @@ internal fun LibraryFolderStrip(
                     createMenuOpen = false
                     if (parentId != null) onCreateFolder(parentId)
                     else choosingSubfolderParent = true
-                })
-                MiowserMenuDivider()
-                MiowserMenuItem(text = { Text("Import folder") },
-                    leadingIcon = { Icon(Icons.Rounded.DriveFolderUpload, contentDescription = null) }, onClick = {
-                    createMenuOpen = false
-                    onImportFolder(parentId)
                 })
             }
         }
