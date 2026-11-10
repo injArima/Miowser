@@ -95,6 +95,7 @@ class DeviceCatalogUiTest {
 
             fixture("delete")
             openDeviceVideos()
+            device.requireNode(By.desc("Refresh device videos")).click()
             check(device.wait(Until.gone(newTitle), 10_000)) { "Deleted video is still visible" }
             device.requireNode(By.textStartsWith("Fixture download "))
             device.requireNode(By.res("hub_nav_network")).click()

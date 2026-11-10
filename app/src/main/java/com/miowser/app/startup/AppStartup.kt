@@ -8,6 +8,7 @@ import com.miowser.app.browser.*
 import com.miowser.app.downloader.DownloadQueue
 import com.miowser.app.library.LibraryFolders
 import com.miowser.app.library.MediaLibrary
+import com.miowser.app.library.device.DeviceCatalogSession
 import com.miowser.app.settings.AppSettings
 import kotlinx.coroutines.*
 import kotlin.coroutines.resume
@@ -54,6 +55,7 @@ object AppStartup {
                     saved
                 }
                 state = StartupState.Ready(settings)
+                DeviceCatalogSession.start(app)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { state = StartupState.Error }
         }

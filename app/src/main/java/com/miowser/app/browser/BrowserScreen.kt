@@ -150,14 +150,12 @@ import com.miowser.app.library.LibraryRepository
 import com.miowser.app.library.FailedVideoLog
 import com.miowser.app.library.LibrarySourceKind
 import com.miowser.app.library.LocalInspectionCache
-import com.miowser.app.library.device.DeviceDownload
 import com.miowser.app.library.device.DevicePlaybackSelection
 import com.miowser.app.library.device.DeviceVideo
 import com.miowser.app.library.device.DeviceVideoCatalog
 import com.miowser.app.library.device.openGrantedVideo
 import com.miowser.app.player.PagedPlayerPlaylist
 import com.miowser.app.player.PlayerPlaylistPage
-import com.miowser.app.library.isImportableVideo
 import com.miowser.app.player.PlaybackRequest
 import com.miowser.app.player.LibraryPlaybackQueue
 import com.miowser.app.player.PlayerScreen
@@ -2818,20 +2816,7 @@ fun BrowserScreen(
                     hubDestinations.SaveableStateProvider(if (deviceVideosSelected) "device" else "saved") {
                         if (deviceVideosSelected) {
                             val discoveryEnabled = AppSettings.current.deviceDiscoveryEnabled
-                            val imported by remember(discoveryEnabled) { derivedStateOf {
-                                if (!discoveryEnabled) emptyList()
-                                else MediaLibrary.entries.asSequence().filter { it.sourceKind == LibrarySourceKind.LOCAL_FILE }
-                                    .map { it.mediaUri }.filter { "/tree/" in it }.distinct().toList()
-                            } }
-                            val deviceDownloads by remember(discoveryEnabled) { derivedStateOf {
-                                if (!discoveryEnabled) emptyList()
-                                else DownloadQueue.downloads.mapNotNull { download ->
-                                    if (download.status != DownloadStatus.COMPLETED || download.id in pendingDownloadDeletes ||
-                                        !isImportableVideo(download.displayName, "")) null
-                                    else download.savedUri?.let { DeviceDownload(it, download.displayName) }
-                                }.distinctBy { it.uri }
-                            } }
-                            DeviceVideosPage(imported, deviceDownloads, initialView = initialHubSettings,
+                            DeviceVideosPage(initialView = initialHubSettings,
                                 librarySettingsOpen = librarySettingsOpen,
                                 onDismissLibrarySettings = { librarySettingsOpen = false },
                                 onOpenDirectories = {
@@ -2839,7 +2824,6 @@ fun BrowserScreen(
                                     activeScreen = Screen.MEDIA_DIRECTORIES
                                 },
                                 discoveryEnabled = discoveryEnabled,
-                                autoRescan = AppSettings.current.deviceAutoRescanEnabled,
                                 onOpenVideo = { openVideoPicker.launch(arrayOf("video/*")) },
                                 onDiscoverySettings = { openMediaSettings() },
                                 onPlay = { playDeviceVideo(it) }, onMessage = { showActionSnackbar(it) },

@@ -42,6 +42,7 @@ class MainActivity : ComponentActivity() {
     internal var browserVideoPipOwner by mutableStateOf<com.miowser.app.browser.video.BrowserVideoPipOwner?>(null)
         private set
     private var shortcutSequence = 0L
+    private var recheckSelectedVideoAccess = false
     private var shortcutRequest by mutableStateOf<LauncherShortcutRequest?>(null)
     internal var playerInPictureInPicture by mutableStateOf(false)
         private set
@@ -102,7 +103,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        com.miowser.app.library.device.DeviceCatalogSession.checkPermissions(
+            this, selectionMayHaveChanged = recheckSelectedVideoAccess
+        )
+        recheckSelectedVideoAccess = false
         if (!isInPictureInPictureMode) browserVideoPipOwner = null
+    }
+
+    override fun onStop() {
+        if (!isChangingConfigurations) recheckSelectedVideoAccess = true
+        super.onStop()
     }
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean,

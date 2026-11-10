@@ -27,6 +27,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 import com.miowser.app.library.device.DeviceSource
 import com.miowser.app.library.device.DeviceVideoCatalog
+import com.miowser.app.library.device.DeviceCatalogSession
 import com.miowser.app.library.device.LinkedDeviceFolder
 import com.miowser.app.ui.theme.ExpressiveTokens
 import com.miowser.app.ui.theme.UiSpacing
@@ -70,7 +71,7 @@ internal fun MediaDirectoriesPage(onBack: () -> Unit) {
         val replacing = relinkId
         relinkId = null
         if (uri != null) updateFolders("Couldn’t link this folder. Choose it again.") {
-            DeviceVideoCatalog.link(app, uri, replacing)
+            DeviceCatalogSession.refresh(DeviceVideoCatalog.link(app, uri, replacing))
         }
     }
 
@@ -128,7 +129,10 @@ internal fun MediaDirectoriesPage(onBack: () -> Unit) {
                 ConfirmationAction("Cancel", { unlink = null }, ConfirmationTone.CAUTION),
                 ConfirmationAction("Unlink", {
                     unlink = null
-                    updateFolders("Couldn’t unlink this folder.") { DeviceVideoCatalog.unlink(app, folder.id) }
+                    updateFolders("Couldn’t unlink this folder.") {
+                        DeviceVideoCatalog.unlink(app, folder.id)
+                        DeviceCatalogSession.folderRemoved()
+                    }
                 }, ConfirmationTone.CAUTION)
             )
         )

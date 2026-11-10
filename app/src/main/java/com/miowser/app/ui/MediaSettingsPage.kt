@@ -48,6 +48,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import com.miowser.app.library.device.DeviceCatalogSession
 import com.miowser.app.library.device.DeviceMediaAccess
 import com.miowser.app.library.device.deviceMediaAccess
 import com.miowser.app.library.device.deviceVideoPermissions
@@ -93,10 +94,11 @@ internal fun MediaSettingsPage(
                 "Find videos in device storage and linked folders. You can still open individual files when this is off.",
                 settings.deviceDiscoveryEnabled) { enabled ->
                 AppSettings.update(context) { it.copy(deviceDiscoveryEnabled = enabled) }
+                DeviceCatalogSession.setDiscoveryEnabled(enabled)
             }
             if (settings.deviceDiscoveryEnabled) {
                 SectionDivider()
-                SettingRow("Auto rescan", "Check for changes while Device Videos is open.",
+                SettingRow("Auto rescan", "Check for new or removed device videos once at app startup.",
                     settings.deviceAutoRescanEnabled) { enabled ->
                     AppSettings.update(context) { it.copy(deviceAutoRescanEnabled = enabled) }
                 }
@@ -340,6 +342,7 @@ private fun MediaPermissionsDialog(onDismiss: () -> Unit) {
     var access by remember { mutableStateOf(deviceMediaAccess(context)) }
     val requestAccess = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         access = deviceMediaAccess(context)
+        DeviceCatalogSession.checkPermissions(context, selectionMayHaveChanged = true)
     }
     LaunchedEffect(lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { access = deviceMediaAccess(context) }

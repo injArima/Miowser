@@ -4,11 +4,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.database.ContentObserver
 import android.net.Uri
 import android.os.CancellationSignal
-import android.os.Handler
-import android.os.Looper
 import android.provider.DocumentsContract
 import androidx.core.content.ContextCompat
 import androidx.room.Room
@@ -33,6 +30,33 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 internal data class LinkedDeviceFolder(val source: DeviceSource, val hasReadAccess: Boolean)
+
+internal enum class DeviceCatalogRefresh {
+    INDEX, MISSING, CHECK, FORCE;
+
+    fun selects(source: DeviceSource, cached: Boolean, scope: DeviceCatalogScope): Boolean =
+        scope.includes(source) && when (this) {
+            INDEX -> false
+            MISSING -> !cached
+            CHECK, FORCE -> true
+        }
+}
+
+internal sealed interface DeviceCatalogScope {
+    fun includes(source: DeviceSource): Boolean
+
+    data object All : DeviceCatalogScope {
+        override fun includes(source: DeviceSource) = true
+    }
+
+    data object Media : DeviceCatalogScope {
+        override fun includes(source: DeviceSource) = source.kind == DEVICE_MEDIA
+    }
+
+    data class Source(val id: String) : DeviceCatalogScope {
+        override fun includes(source: DeviceSource) = source.id == id
+    }
+}
 
 internal enum class DeviceSourceIssue { OFFLINE, NEEDS_ACCESS, SCAN_FAILED }
 
@@ -150,8 +174,8 @@ internal object DeviceVideoCatalog {
     }
 
     fun scan(
-        context: Context, imported: List<String>, downloads: List<DeviceDownload>, force: Boolean,
-        preferredSource: String? = null, previous: DeviceCatalogStatus? = null
+        context: Context, imported: List<String>, downloads: List<DeviceDownload>, refresh: DeviceCatalogRefresh,
+        scope: DeviceCatalogScope, previous: DeviceCatalogStatus
     ): Flow<DeviceCatalogStatus> = flow {
         scanLock.withLock {
             val app = context.applicationContext
@@ -190,18 +214,25 @@ internal object DeviceVideoCatalog {
             if (downloads.isNotEmpty() && downloadSource.generation != null && downloadSource.stamp == downloadStamp) {
                 visible += DOWNLOAD_SOURCE
             }
-            val stamps = media.associate { source ->
+            val stamps = media.filter {
+                refresh.selects(it, it.generation != null && access == DeviceMediaAccess.FULL, scope)
+            }.associate { source ->
                 source.id to runCatching { videoVolumeStamp(app, source.id.removePrefix("media:")) }
             }
             media.filter { source ->
-                val stamp = stamps.getValue(source.id)
-                access == DeviceMediaAccess.FULL && source.generation != null && stamp.isSuccess &&
-                    (stamp.getOrNull() == null || source.stamp?.substringBeforeLast(':') == stamp.getOrNull()?.version)
+                val stamp = stamps[source.id]
+                source.generation != null && when (access) {
+                    DeviceMediaAccess.FULL -> stamp?.isFailure != true &&
+                        (stamp?.getOrNull() == null || source.stamp?.substringBeforeLast(':') == stamp.getOrNull()?.version)
+                    DeviceMediaAccess.SELECTED -> previous.access == access && source.id in previous.visible
+                    DeviceMediaAccess.NONE -> false
+                }
             }.forEach { visible += it.id }
             links.filter { it.id in grants && it.generation != null }.forEach { visible += it.id }
-            val targeted = previous?.takeIf { force && preferredSource != null && it.access == access }
-            targeted?.issues?.forEach { (id, issue) ->
-                if (id != preferredSource && id in sources && issue == DeviceSourceIssue.SCAN_FAILED && id !in issues) {
+            val targets = sources.values.filter { refresh.selects(it, it.id in visible, scope) }
+            val targetIds = targets.mapTo(hashSetOf()) { it.id }
+            previous.issues.forEach { (id, issue) ->
+                if (id !in targetIds && id in sources && issue == DeviceSourceIssue.SCAN_FAILED && id !in issues) {
                     issues[id] = issue
                     visible -= id
                 }
@@ -209,8 +240,8 @@ internal object DeviceVideoCatalog {
             suspend fun report(scanning: Boolean, checkingSource: String? = null) = emit(DeviceCatalogStatus(
                 access, sources.values.toList(), visible.toSet(), issues.toMap(), revision, scanning, checkingSource
             ))
-            report(true)
-            for (source in sources.values.sortedBy { it.id != preferredSource }) {
+            if (targets.isNotEmpty()) report(true)
+            for (source in targets) {
                 if (source.id in issues || RestoreWriteFence.frozen) continue
                 try {
                     val volume = source.id.removePrefix("media:")
@@ -220,11 +251,8 @@ internal object DeviceVideoCatalog {
                         DEVICE_DOWNLOADS -> downloadStamp
                         else -> null
                     }
-                    val forceSource = force && (preferredSource == null || preferredSource == source.id)
-                    val alreadyVisible = source.id in visible && targeted?.visible?.contains(source.id) == true
-                    if (source.id != preferredSource && alreadyVisible && source.kind != DEVICE_MEDIA) continue
-                    if (!forceSource && key != null && source.generation != null && source.stamp == key &&
-                        source.kind == DEVICE_MEDIA) continue
+                    if (refresh != DeviceCatalogRefresh.FORCE && key != null &&
+                        source.generation != null && source.stamp == key) continue
                     report(true, source.label)
                     val published = publish(db, source, key) { generation, signal, add ->
                         when (source.kind) {
@@ -322,16 +350,7 @@ internal object DeviceVideoCatalog {
     private fun readTreeGrants(context: Context): Set<String> = context.contentResolver.persistedUriPermissions
         .filter { it.isReadPermission }.mapNotNull { linkedTree(it.uri)?.toString() }.toSet()
 
-    fun changes(context: Context): Flow<Unit> = callbackFlow {
-        val resolver = context.contentResolver
-        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
-            override fun onChange(selfChange: Boolean) { trySend(Unit) }
-        }
-        val authorities = resolver.persistedUriPermissions.asSequence().filter { it.isReadPermission }
-            .mapNotNull { linkedTree(it.uri)?.authority }.toSet() + "media"
-        authorities.forEach { authority ->
-            runCatching { resolver.registerContentObserver(Uri.Builder().scheme("content").authority(authority).build(), true, observer) }
-        }
+    fun mountChanges(context: Context): Flow<Unit> = callbackFlow {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) { trySend(Unit) }
         }
@@ -343,9 +362,6 @@ internal object DeviceVideoCatalog {
             addDataScheme("file")
         }
         ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_EXPORTED)
-        awaitClose {
-            resolver.unregisterContentObserver(observer)
-            context.unregisterReceiver(receiver)
-        }
+        awaitClose { context.unregisterReceiver(receiver) }
     }
 }

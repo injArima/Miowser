@@ -36,7 +36,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
-import androidx.lifecycle.repeatOnLifecycle
 import com.miowser.app.library.LibraryThumbnailStore
 import com.miowser.app.library.LibraryCardId
 import com.miowser.app.library.device.*
@@ -50,27 +49,18 @@ import com.miowser.app.ui.theme.HubLibraryTokens
 import com.miowser.app.ui.theme.UiSpacing
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.conflate
-import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.emptyFlow
-import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-@OptIn(FlowPreview::class)
 @Composable
 internal fun DeviceVideosPage(
-    imported: List<String>,
-    downloads: List<DeviceDownload>,
     initialView: HubSettings,
     librarySettingsOpen: Boolean,
     onDismissLibrarySettings: () -> Unit,
     onOpenDirectories: () -> Unit,
     discoveryEnabled: Boolean,
-    autoRescan: Boolean,
     onOpenVideo: () -> Unit,
     onDiscoverySettings: () -> Unit,
     onPlay: (DevicePlaybackSelection) -> Unit,
@@ -81,13 +71,9 @@ internal fun DeviceVideosPage(
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val app = context.applicationContext
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
     val scope = rememberCoroutineScope()
-    var refresh by remember { mutableIntStateOf(0) }
-    var finishedRefresh by remember { mutableIntStateOf(0) }
-    var refreshSource by remember { mutableStateOf<String?>(null) }
-    var status by remember { mutableStateOf(DeviceCatalogStatus(access = deviceMediaAccess(app))) }
-    var loadFailed by remember { mutableStateOf(false) }
+    val status = DeviceCatalogSession.status
+    val loadFailed = DeviceCatalogSession.loadFailed
     var queryBusy by remember { mutableStateOf(true) }
     var linkingFolder by remember { mutableStateOf(false) }
     val busy = discoveryEnabled && (status.scanning || queryBusy || linkingFolder)
@@ -111,16 +97,8 @@ internal fun DeviceVideosPage(
     }
     val browserPositions = rememberSaveableStateHolder()
     fun saveView() = HubSettingsStore.saveDeviceView(app, foldersMode, listMode, titleOrder)
-    fun refreshCatalog(target: String?) {
-        status = status.copy(scanning = true)
-        refreshSource = target
-        refresh++
-    }
     val requestAccess = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        val access = deviceMediaAccess(app)
-        status = status.copy(access = access,
-            visible = status.visible.filterNot { it.startsWith("media:") }.toSet())
-        refreshCatalog(null)
+        DeviceCatalogSession.checkPermissions(app, selectionMayHaveChanged = true)
     }
     val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) scope.launch {
@@ -129,36 +107,10 @@ internal fun DeviceVideosPage(
                 val id = DeviceVideoCatalog.link(app, uri)
                 closeFolder()
                 source = id
-                refreshCatalog(id)
+                DeviceCatalogSession.refresh(id)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { onMessage("Couldn’t link this folder. Choose it again.") }
             finally { linkingFolder = false }
-        }
-    }
-    LaunchedEffect(lifecycle, discoveryEnabled, autoRescan, refresh, imported, downloads) {
-        if (!discoveryEnabled) return@LaunchedEffect
-        val request = refresh
-        val target = refreshSource
-        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            val access = deviceMediaAccess(app)
-            if (access != DeviceMediaAccess.FULL) {
-                status = status.copy(access = access,
-                    visible = status.visible.filterNot { it.startsWith("media:") }.toSet())
-            }
-            val changes = if (autoRescan) DeviceVideoCatalog.changes(app).debounce(250) else emptyFlow()
-            changes.onStart { emit(Unit) }.conflate().collect {
-                try {
-                    loadFailed = false
-                    val forced = request != finishedRefresh
-                    DeviceVideoCatalog.scan(app, imported, downloads, forced, target.takeIf { forced }, previous = status)
-                        .collect { status = it }
-                    finishedRefresh = request
-                } catch (cancelled: CancellationException) { throw cancelled }
-                catch (_: Exception) {
-                    loadFailed = true
-                    status = status.copy(scanning = false, visible = emptySet())
-                }
-            }
         }
     }
     val reportIdle by rememberUpdatedState(onIdleChanged)
@@ -193,7 +145,7 @@ internal fun DeviceVideosPage(
                     Icon(if (searchVisible) Icons.Rounded.Close else Icons.Rounded.Search,
                         if (searchVisible) "Close device video search" else "Search device videos")
                 }
-                IconButton(onClick = { refreshCatalog(folderSource ?: source) }) {
+                IconButton(onClick = { DeviceCatalogSession.refresh(folderSource ?: source) }) {
                     Icon(Icons.Rounded.Refresh, "Refresh device videos")
                 }
             }
@@ -252,7 +204,7 @@ internal fun DeviceVideosPage(
                     if (issue == DeviceSourceIssue.NEEDS_ACCESS) {
                         MiowserActionButton(style = AppButtonStyle.TEXT, onClick = onOpenDirectories) { Text("Manage folders") }
                     } else {
-                        MiowserActionButton(style = AppButtonStyle.TEXT, onClick = { refreshCatalog(folderSource ?: source) }) {
+                        MiowserActionButton(style = AppButtonStyle.TEXT, onClick = { DeviceCatalogSession.refresh(folderSource ?: source) }) {
                             Text("Retry")
                         }
                     }
