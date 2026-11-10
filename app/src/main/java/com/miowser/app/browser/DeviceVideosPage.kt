@@ -1,7 +1,6 @@
 package com.miowser.app.browser
 
 import android.graphics.Bitmap
-import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -40,6 +39,7 @@ import com.miowser.app.library.LibraryThumbnailStore
 import com.miowser.app.library.LibraryCardId
 import com.miowser.app.library.device.*
 import com.miowser.app.library.videoQualityLabel
+import com.miowser.app.settings.AppSettings
 import com.miowser.app.ui.AppButtonStyle
 import com.miowser.app.ui.ChoiceRow
 import com.miowser.app.ui.ExpressiveEmptyState
@@ -73,7 +73,7 @@ internal fun DeviceVideosPage(
     val loadFailed = DeviceCatalogSession.loadFailed
     var search by rememberSaveable { mutableStateOf("") }
     var searchVisible by rememberSaveable { mutableStateOf(false) }
-    var source by rememberSaveable { mutableStateOf<String?>(null) }
+    val exclusions = AppSettings.current.excludedDeviceFolders
     var titleOrder by rememberSaveable { mutableStateOf(initialView.deviceTitleSort) }
     var listMode by rememberSaveable { mutableStateOf(initialView.deviceList) }
     var foldersMode by rememberSaveable { mutableStateOf(initialView.deviceFolders) }
@@ -98,7 +98,6 @@ internal fun DeviceVideosPage(
             try {
                 val id = DeviceVideoCatalog.link(app, uri)
                 closeFolder()
-                source = id
                 DeviceCatalogSession.refresh(id)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { onMessage("Couldn’t link this folder. Choose it again.") }
@@ -111,8 +110,8 @@ internal fun DeviceVideosPage(
         withFrameNanos { }
         reportIdle(true)
     }
-    LaunchedEffect(status.sources, status.scanning) {
-        if (!status.scanning && source != null && status.sources.none { it.id == source }) source = null
+    LaunchedEffect(status.sources, status.scanning, folderSource) {
+        if (!status.scanning && folderSource != null && status.sources.none { it.id == folderSource }) closeFolder()
     }
 
     Column(Modifier.fillMaxSize().navigationBarsPadding()) {
@@ -136,7 +135,7 @@ internal fun DeviceVideosPage(
                     Icon(if (searchVisible) Icons.Rounded.Close else Icons.Rounded.Search,
                         if (searchVisible) "Close device video search" else "Search device videos")
                 }
-                IconButton(onClick = { DeviceCatalogSession.refresh(folderSource ?: source) }) {
+                IconButton(onClick = { DeviceCatalogSession.refresh(folderSource) }) {
                     Icon(Icons.Rounded.Refresh, "Refresh device videos")
                 }
             }
@@ -181,7 +180,7 @@ internal fun DeviceVideosPage(
             }
             if (!status.scanning && (status.issues.isNotEmpty() || loadFailed)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    val issue = (folderSource ?: source)?.let { status.issues[it] }
+                    val issue = folderSource?.let { status.issues[it] }
                     Text(when (issue) {
                         DeviceSourceIssue.OFFLINE -> "Reconnect this storage to see its videos."
                         DeviceSourceIssue.NEEDS_ACCESS -> "Relink this folder to restore access."
@@ -191,7 +190,7 @@ internal fun DeviceVideosPage(
                     if (issue == DeviceSourceIssue.NEEDS_ACCESS) {
                         MiowserActionButton(style = AppButtonStyle.TEXT, onClick = onOpenDirectories) { Text("Manage folders") }
                     } else {
-                        MiowserActionButton(style = AppButtonStyle.TEXT, onClick = { DeviceCatalogSession.refresh(folderSource ?: source) }) {
+                        MiowserActionButton(style = AppButtonStyle.TEXT, onClick = { DeviceCatalogSession.refresh(folderSource) }) {
                             Text("Retry")
                         }
                     }
@@ -199,27 +198,25 @@ internal fun DeviceVideosPage(
             }
             val term = search.trim()
             val emptyState: @Composable (String) -> Unit = { title ->
-                DeviceLibraryEmptyState(title, status.access, { pickFolder.launch(null) }) {
+                DeviceLibraryEmptyState(title, status.access, { pickFolder.launch(null) }, onOpenDirectories) {
                     requestAccess.launch(deviceVideoPermissions())
                 }
             }
             if (foldersMode && folderPath == null && term.isEmpty()) {
                 browserPositions.SaveableStateProvider("device-folders:$listMode") {
-                    key(source) {
-                        DeviceVideoFolders(status, source, listMode, cache, Modifier.weight(1f), emptyState) { folder ->
-                            browserPositions.removeState("device-open-folder:false")
-                            browserPositions.removeState("device-open-folder:true")
-                            folderSource = folder.sourceId
-                            folderPath = folder.folder
-                        }
+                    DeviceVideoFolders(status, exclusions, listMode, cache, Modifier.weight(1f), emptyState) { folder ->
+                        browserPositions.removeState("device-open-folder:false")
+                        browserPositions.removeState("device-open-folder:true")
+                        folderSource = folder.sourceId
+                        folderPath = folder.folder
                     }
                 }
             } else {
                 val content: @Composable () -> Unit = {
-                    DeviceVideoGrid(status, folderSource ?: source, folderPath, term, titleOrder, listMode, cache,
+                    DeviceVideoGrid(status, folderSource, folderPath, term, titleOrder, listMode, exclusions, cache,
                         onPlay, Modifier.weight(1f), emptyState)
                 }
-                key(foldersMode, folderSource ?: source, folderPath, term, titleOrder, listMode) {
+                key(foldersMode, folderSource, folderPath, term, titleOrder, listMode) {
                     if (term.isEmpty()) {
                         val location = if (folderPath == null) "device-videos" else "device-open-folder"
                         browserPositions.SaveableStateProvider("$location:$listMode", content)
@@ -231,16 +228,6 @@ internal fun DeviceVideosPage(
     if (librarySettingsOpen) {
         LibraryOptionsSheet("Device Videos", onDismissLibrarySettings) {
             if (discoveryEnabled) {
-                LibraryOptionsGroup("Sources", Icons.Rounded.Storage) {
-                    ChoiceRow(listOf(null) + status.sources.map { it.id }, source, { id ->
-                        val item = status.sources.firstOrNull { it.id == id }
-                        if (item == null) "All sources"
-                        else item.label + (status.issues[item.id]?.let { " · ${it.label}" } ?: "")
-                    }) { selected ->
-                        closeFolder()
-                        source = selected
-                    }
-                }
                 LibraryOptionsGroup("Browse by", Icons.Rounded.Folder) {
                     ChoiceRow(listOf(false, true), foldersMode, { if (it) "Folders" else "Videos" }) {
                         if (it != foldersMode) {
@@ -289,12 +276,6 @@ internal fun DeviceVideosPage(
     }
 }
 
-private val DeviceSourceIssue.label: String get() = when (this) {
-    DeviceSourceIssue.OFFLINE -> "Offline"
-    DeviceSourceIssue.NEEDS_ACCESS -> "Needs access"
-    DeviceSourceIssue.SCAN_FAILED -> "Scan failed"
-}
-
 @Composable
 private fun DeviceVideoGrid(
     status: DeviceCatalogStatus,
@@ -303,6 +284,7 @@ private fun DeviceVideoGrid(
     term: String,
     titleOrder: Boolean,
     listMode: Boolean,
+    exclusions: Set<String>,
     cache: HubLibraryCache,
     onPlay: (DevicePlaybackSelection) -> Unit,
     modifier: Modifier,
@@ -312,8 +294,8 @@ private fun DeviceVideoGrid(
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     val foreground = lifecycleState.isAtLeast(Lifecycle.State.STARTED)
     val grid = rememberLazyGridState()
-    val query = remember(status.visible, source, term, titleOrder, folder) {
-        DeviceBrowseQuery(status.visible, source, term, titleOrder, folder)
+    val query = remember(status.visible, status.access, source, term, titleOrder, folder, exclusions) {
+        status.browseQuery(source, term, titleOrder, folder, exclusions)
     }
     val current = rememberDeviceCatalogWindow(query, status.revision, grid, cache.deviceVideos, DeviceVideoCatalog::readWindow)
     LaunchedEffect(current, grid, foreground) {

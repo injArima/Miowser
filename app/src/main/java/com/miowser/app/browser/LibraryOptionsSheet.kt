@@ -99,21 +99,23 @@ internal fun DeviceLibraryEmptyState(
     title: String,
     access: DeviceMediaAccess,
     onLinkFolder: () -> Unit,
+    onManageFolders: () -> Unit,
     onAllowAccess: () -> Unit
 ) {
     Column(Modifier.verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
         ExpressiveEmptyState(
             title = title,
-            description = if (access == DeviceMediaAccess.FULL) "Link another folder to include its videos."
+            description = if (access == DeviceMediaAccess.FULL) "Videos in included folders appear here."
                 else "Link a folder or grant access to device videos.",
             icon = Icons.Rounded.VideoLibrary
         )
-        MiowserActionButton(style = AppButtonStyle.TONAL, onClick = onLinkFolder) {
+        val fullAccess = access == DeviceMediaAccess.FULL
+        MiowserActionButton(style = AppButtonStyle.TONAL, onClick = if (fullAccess) onManageFolders else onLinkFolder) {
             Icon(Icons.Rounded.FolderOpen, contentDescription = null)
-            Text("Link folder", Modifier.padding(start = UiSpacing.s))
+            Text(if (fullAccess) "Manage folders" else "Link folder", Modifier.padding(start = UiSpacing.s))
         }
-        if (access != DeviceMediaAccess.FULL) {
+        if (!fullAccess) {
             MiowserActionButton(style = AppButtonStyle.OUTLINED, onClick = onAllowAccess) {
                 Text("Allow all videos")
             }

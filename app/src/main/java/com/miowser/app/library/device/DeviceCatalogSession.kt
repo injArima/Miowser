@@ -39,6 +39,7 @@ internal object DeviceCatalogSession {
         started = true
         val app = context.applicationContext
         access = deviceMediaAccess(app)
+        status = status.copy(access = access)
         val imported = MediaLibrary.entries.asSequence().filter { it.sourceKind == LibrarySourceKind.LOCAL_FILE }
             .map { it.mediaUri }.filter { "/tree/" in it }.distinct().toList()
 
@@ -88,10 +89,12 @@ internal object DeviceCatalogSession {
         if (!started) return
         val current = deviceMediaAccess(context)
         if (current == access && !(selectionMayHaveChanged && current == DeviceMediaAccess.SELECTED)) return
+        val restoreLinks = access == DeviceMediaAccess.FULL && current != DeviceMediaAccess.FULL
         access = current
         permissionEpoch++
         status = status.copy(access = current, visible = status.visible.filterNot { it.startsWith("media:") }.toSet())
         enqueue(DeviceCatalogRefresh.FORCE, DeviceCatalogScope.Media)
+        if (restoreLinks) enqueue(DeviceCatalogRefresh.MISSING)
     }
 
     private fun enqueue(refresh: DeviceCatalogRefresh, target: DeviceCatalogScope = DeviceCatalogScope.All) {

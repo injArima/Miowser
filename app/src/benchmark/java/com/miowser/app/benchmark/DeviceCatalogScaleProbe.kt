@@ -65,6 +65,13 @@ internal fun verifyDeviceCatalogScale(context: Context) {
         check(dao.count(DeviceBrowseQuery(setOf(media.id, link.id), null, "", false).count()) == 50_000)
         val aliasSearch = DeviceBrowseQuery(setOf(media.id, link.id), null, "Linked folder", false)
         check(dao.rows(aliasSearch.page(0, DEVICE_PAGE_SIZE)).single().canonicalUri == first)
+        val unified = aliasSearch.copy(search = "", unified = true)
+        check(dao.count(unified.folderCount()) == 25)
+        check(dao.rows(unified.copy(source = link.id, folder = "Linked folder").page(0, DEVICE_PAGE_SIZE)).isEmpty())
+        val excluded = unified.copy(exclusions = setOf("${media.id}/Folder 2"))
+        check(dao.count(excluded.count()) == 48_000)
+        check(dao.count(excluded.folderCount()) == 24)
+        check(dao.count(excluded.copy(search = "Folder 24").count()) == 2_000)
     } finally {
         db.close()
     }

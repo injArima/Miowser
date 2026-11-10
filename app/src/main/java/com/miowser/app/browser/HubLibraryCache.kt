@@ -36,7 +36,7 @@ internal class HubLibraryCache {
 
     data class NetworkPage(val revision: LibraryBrowseRevision, val window: LibraryWindow)
     data class DevicePage<T>(val revision: Long, val requestedPage: Int, val window: DeviceCatalogWindow<T>)
-    data class FolderCoverKey(val source: String, val path: String, val revision: Long)
+    data class FolderCoverKey(val source: String, val path: String, val query: DeviceBrowseQuery, val revision: Long)
     data class FolderCounts(val revision: Long, val counts: List<LibraryFolderCount>)
 }
 

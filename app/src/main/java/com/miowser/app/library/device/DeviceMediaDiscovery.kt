@@ -86,6 +86,19 @@ internal fun linkedTree(uri: Uri): Uri? = runCatching {
     else DocumentsContract.buildTreeDocumentUri(requireNotNull(uri.authority), DocumentsContract.getTreeDocumentId(uri))
 }.getOrNull()
 
+/** A shared-storage tree is covered by the MediaStore inventory for its mounted volume. */
+internal fun linkedStorageVolume(sourceId: String): String? {
+    val uri = Uri.parse(sourceId)
+    if (uri.authority != "com.android.externalstorage.documents") return null
+    val id = runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull() ?: return null
+    val volume = id.substringBefore(':', "")
+    return when {
+        volume.equals("primary", ignoreCase = true) ->
+            if (Build.VERSION.SDK_INT >= 29) MediaStore.VOLUME_EXTERNAL_PRIMARY else "external"
+        else -> volume.lowercase().ifEmpty { null }
+    }
+}
+
 internal fun canonicalVideoUri(context: Context, uri: Uri): String {
     val candidate = if (Build.VERSION.SDK_INT >= 29 && uri.authority in setOf(
             "com.android.externalstorage.documents", "com.android.providers.downloads.documents",

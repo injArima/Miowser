@@ -97,6 +97,7 @@ data class Settings(
     val crashDiagnosticsEnabled: Boolean = true,
     val deviceDiscoveryEnabled: Boolean = true,
     val deviceAutoRescanEnabled: Boolean = true,
+    val excludedDeviceFolders: Set<String> = emptySet(),
     val resumeSavedVideos: Boolean = true
 ) {
     val autoDeleteInactiveTabs: Boolean get() = inactiveTabRetention != InactiveTabRetention.NEVER

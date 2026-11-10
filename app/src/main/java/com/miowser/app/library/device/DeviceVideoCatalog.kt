@@ -5,12 +5,16 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
+import android.os.Build
 import android.os.CancellationSignal
+import android.os.Environment
+import android.os.storage.StorageManager
 import android.provider.DocumentsContract
 import androidx.core.content.ContextCompat
 import androidx.room.Room
 import com.miowser.app.library.walkImportedVideoFolder
 import com.miowser.app.persistence.RestoreWriteFence
+import java.io.File
 import java.util.UUID
 import java.util.concurrent.Callable
 import kotlinx.coroutines.CancellationException
@@ -67,7 +71,19 @@ internal data class DeviceCatalogStatus(
     val issues: Map<String, DeviceSourceIssue> = emptyMap(),
     val revision: Long = 0,
     val scanning: Boolean = true
-)
+) {
+    fun browseQuery(
+        source: String? = null,
+        search: String = "",
+        titleOrder: Boolean = false,
+        folder: String? = null,
+        exclusions: Set<String> = emptySet()
+    ) = DeviceBrowseQuery(
+        visible, source, search, titleOrder, folder,
+        unified = access == DeviceMediaAccess.FULL,
+        exclusions = if (access == DeviceMediaAccess.FULL) exclusions else emptySet()
+    )
+}
 
 internal data class DeviceCatalogWindow<T>(val start: Int, val rows: List<T>, val count: Int) {
     operator fun get(index: Int): T? = rows.getOrNull(index - start)
@@ -152,10 +168,48 @@ internal object DeviceVideoCatalog {
             dao.folders(query.folderPage(start, size))
         }
 
-    fun readFolderCover(context: Context, folder: DeviceVideoFolder): List<DeviceVideo> {
-        val query = DeviceBrowseQuery(setOf(folder.sourceId), folder.sourceId, "", false, folder.folder)
-        return database(context).catalog().rows(query.page(0, 4))
-    }
+    fun readFolderCover(context: Context, query: DeviceBrowseQuery, folder: DeviceVideoFolder): List<DeviceVideo> =
+        database(context).catalog().rows(query.copy(source = folder.sourceId, folder = folder.folder).page(0, 4))
+
+    suspend fun childDirectories(context: Context, source: String, parent: String): List<String> =
+        withContext(Dispatchers.IO) {
+            if (deviceMediaAccess(context) != DeviceMediaAccess.FULL) return@withContext emptyList()
+            val volume = source.removePrefix("media:")
+            val legacy = Build.VERSION.SDK_INT < 29
+            @Suppress("DEPRECATION")
+            val root = when {
+                volume == "external_primary" || volume == "external" -> Environment.getExternalStorageDirectory()
+                Build.VERSION.SDK_INT >= 30 -> context.getSystemService(StorageManager::class.java)
+                    ?.storageVolumes?.firstOrNull { it.mediaStoreVolumeName == volume }?.directory
+                else -> null
+            }
+            val prefix = if (parent.isEmpty()) "" else "$parent/"
+            val primaryPrefix = if (legacy && parent.isEmpty() && root != null) "${root.absolutePath}/" else null
+            val paths = database(context).catalog().directoryPaths(source, prefix)
+            val children = paths.mapNotNullTo(mutableSetOf()) { path ->
+                val base = when {
+                    primaryPrefix != null && path.startsWith(primaryPrefix) -> primaryPrefix
+                    legacy && parent.isEmpty() && path.startsWith('/') -> "/"
+                    else -> prefix
+                }
+                path.removePrefix(base).substringBefore('/').takeIf { it.isNotEmpty() }?.let { base + it }
+            }
+            // Read one level on demand so folders without indexed videos can also be excluded.
+            if (root != null) runCatching {
+                val directory = when {
+                    parent.isEmpty() -> root
+                    legacy -> File(parent)
+                    else -> File(root, parent)
+                }.canonicalFile
+                val rootPath = root.canonicalPath
+                if (directory.path == rootPath || directory.path.startsWith("$rootPath/")) {
+                    directory.listFiles()?.filter { it.isDirectory }?.forEach { child ->
+                        children += if (legacy) child.absolutePath else prefix + child.name
+                    }
+                }
+            }
+            children.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.substringAfterLast('/') })
+        }
 
     private fun <T> readCatalogWindow(
         context: Context, index: Int, knownCount: Int?, readCount: (DeviceCatalogDao) -> Int,
@@ -197,7 +251,10 @@ internal object DeviceVideoCatalog {
                 stored[id] ?: DeviceSource(id, DEVICE_MEDIA,
                     if (volume == "external_primary" || volume == "external") "Device storage" else "Storage $volume")
             }
-            val links = stored.values.filter { it.kind == DEVICE_LINK && it.linked }.sortedBy { it.label }
+            val links = stored.values.filter { source ->
+                source.kind == DEVICE_LINK && source.linked &&
+                    (access != DeviceMediaAccess.FULL || linkedStorageVolume(source.id) !in mounted)
+            }.sortedBy { it.label }
             val downloadSource = stored[DOWNLOAD_SOURCE] ?: DeviceSource(DOWNLOAD_SOURCE, DEVICE_DOWNLOADS, "Downloads")
             val offline = if (access == DeviceMediaAccess.NONE) emptyList() else stored.values.filter {
                 it.kind == DEVICE_MEDIA && it.id.removePrefix("media:") !in mounted

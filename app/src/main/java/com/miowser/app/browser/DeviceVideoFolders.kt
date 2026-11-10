@@ -33,7 +33,7 @@ import kotlinx.coroutines.withContext
 @Composable
 internal fun DeviceVideoFolders(
     status: DeviceCatalogStatus,
-    source: String?,
+    exclusions: Set<String>,
     listMode: Boolean,
     cache: HubLibraryCache,
     modifier: Modifier,
@@ -43,7 +43,7 @@ internal fun DeviceVideoFolders(
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     val foreground = lifecycleState.isAtLeast(Lifecycle.State.STARTED)
     val grid = rememberLazyGridState()
-    val query = remember(status.visible, source) { DeviceBrowseQuery(status.visible, source, "", false) }
+    val query = remember(status.visible, status.access, exclusions) { status.browseQuery(exclusions = exclusions) }
     val current = rememberDeviceCatalogWindow(query, status.revision, grid, cache.deviceFolders, DeviceVideoCatalog::readFolders)
     if (current == null || (current.count == 0 && status.scanning)) {
         Spacer(modifier.fillMaxWidth())
@@ -69,7 +69,7 @@ internal fun DeviceVideoFolders(
             val folder = current[index]
             if (folder == null) LibraryCardPlaceholder(listMode)
             else DeviceVideoFolderCard(folder, status.sources.firstOrNull { it.id == folder.sourceId }?.label,
-                status.revision, cache, grid.isScrollInProgress, foreground, listMode) { onOpen(folder) }
+                query, status.revision, cache, grid.isScrollInProgress, foreground, listMode) { onOpen(folder) }
         }
     }
 }
@@ -78,6 +78,7 @@ internal fun DeviceVideoFolders(
 private fun DeviceVideoFolderCard(
     folder: DeviceVideoFolder,
     sourceLabel: String?,
+    query: DeviceBrowseQuery,
     revision: Long,
     cache: HubLibraryCache,
     scrolling: Boolean,
@@ -86,8 +87,8 @@ private fun DeviceVideoFolderCard(
     onOpen: () -> Unit
 ) {
     val app = LocalContext.current.applicationContext
-    val coverKey = remember(folder.sourceId, folder.folder, revision) {
-        HubLibraryCache.FolderCoverKey(folder.sourceId, folder.folder, revision)
+    val coverKey = remember(folder.sourceId, folder.folder, query, revision) {
+        HubLibraryCache.FolderCoverKey(folder.sourceId, folder.folder, query, revision)
     }
     var covers by remember(coverKey) {
         mutableStateOf(cache.folderCovers.get(coverKey).orEmpty().mapNotNull {
@@ -106,7 +107,7 @@ private fun DeviceVideoFolderCard(
         if (cached != null && covers.size == cached.size) return@LaunchedEffect
         delay(220)
         val candidates = try {
-            cached ?: withContext(Dispatchers.IO) { DeviceVideoCatalog.readFolderCover(app, folder) }
+            cached ?: withContext(Dispatchers.IO) { DeviceVideoCatalog.readFolderCover(app, query, folder) }
                 .also { cache.folderCovers.put(coverKey, it) }
         }
         catch (cancelled: CancellationException) { throw cancelled }

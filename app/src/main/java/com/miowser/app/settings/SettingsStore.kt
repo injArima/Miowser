@@ -22,6 +22,7 @@ private const val KEY_REDUCE_MOTION = "reduce_motion"
 private const val KEY_LIBRARY_BEHAVIOR = "library_behavior"
 private const val KEY_DEVICE_DISCOVERY = "device_video_discovery"
 private const val KEY_DEVICE_AUTO_RESCAN = "device_auto_rescan"
+private const val KEY_EXCLUDED_DEVICE_FOLDERS = "excluded_device_folders"
 private const val KEY_RESUME_SAVED_VIDEOS = "resume_saved_videos"
 private const val KEY_BACKGROUND_PLAYBACK_ENABLED = "background_playback_enabled"
 private const val KEY_COMPANION_BROWSING_ENABLED = "companion_browsing_enabled"
@@ -78,6 +79,7 @@ object SettingsStore {
             crashDiagnosticsEnabled = crashDiagnosticsEnabled(context),
             deviceDiscoveryEnabled = prefs.getBoolean(KEY_DEVICE_DISCOVERY, defaults.deviceDiscoveryEnabled),
             deviceAutoRescanEnabled = prefs.getBoolean(KEY_DEVICE_AUTO_RESCAN, defaults.deviceAutoRescanEnabled),
+            excludedDeviceFolders = prefs.getStringSet(KEY_EXCLUDED_DEVICE_FOLDERS, null).orEmpty().toSet(),
             resumeSavedVideos = prefs.getBoolean(KEY_RESUME_SAVED_VIDEOS, defaults.resumeSavedVideos)
         )
     }
@@ -104,6 +106,7 @@ object SettingsStore {
                 .putString(KEY_LIBRARY_BEHAVIOR, settings.libraryBehavior.name)
                 .putBoolean(KEY_DEVICE_DISCOVERY, settings.deviceDiscoveryEnabled)
                 .putBoolean(KEY_DEVICE_AUTO_RESCAN, settings.deviceAutoRescanEnabled)
+                .putStringSet(KEY_EXCLUDED_DEVICE_FOLDERS, settings.excludedDeviceFolders)
                 .putBoolean(KEY_RESUME_SAVED_VIDEOS, settings.resumeSavedVideos)
                 .putBoolean(KEY_BACKGROUND_PLAYBACK_ENABLED, settings.backgroundPlaybackEnabled)
                 .putBoolean(KEY_COMPANION_BROWSING_ENABLED, settings.companionBrowsingEnabled)

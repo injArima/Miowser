@@ -21,6 +21,15 @@ internal const val DEVICE_LINK = 1
 internal const val DEVICE_DOWNLOADS = 2
 internal const val DOWNLOAD_SOURCE = "downloads"
 
+internal fun deviceFolderKey(source: String, folder: String): String = "$source/$folder"
+
+internal fun isDeviceFolderExcluded(exclusions: Set<String>, source: String, folder: String): Boolean {
+    val key = deviceFolderKey(source, folder)
+    return exclusions.any { excluded ->
+        key == excluded || key.startsWith(if (excluded.endsWith('/')) excluded else "$excluded/")
+    }
+}
+
 @Entity(tableName = "device_sources")
 internal data class DeviceSource(
     @PrimaryKey val id: String,
@@ -86,6 +95,13 @@ internal interface DeviceCatalogDao {
     @RawQuery fun rows(query: SupportSQLiteQuery): List<DeviceVideo>
     @RawQuery fun folders(query: SupportSQLiteQuery): List<DeviceVideoFolder>
     @RawQuery fun count(query: SupportSQLiteQuery): Int
+
+    @Query("""
+        SELECT DISTINCT v.folder FROM device_videos v
+        JOIN device_sources s ON s.id = v.sourceId AND s.generation = v.generation
+        WHERE v.sourceId = :source AND (:prefix = '' OR instr(v.folder, :prefix) = 1)
+    """)
+    fun directoryPaths(source: String, prefix: String): List<String>
 }
 
 @Database(
@@ -102,15 +118,19 @@ internal data class DeviceBrowseQuery(
     val source: String?,
     val search: String,
     val titleOrder: Boolean,
-    val folder: String? = null
+    val folder: String? = null,
+    val unified: Boolean = false,
+    val exclusions: Set<String> = emptySet()
 ) {
     private val sources = if (source == null) allowedSources else allowedSources.intersect(setOf(source))
     private val placeholders = sources.joinToString { "?" }.ifBlank { "NULL" }
+    private val aliasSources = if (unified) allowedSources else sources
+    private val aliasPlaceholders = aliasSources.joinToString { "?" }.ifBlank { "NULL" }
     private val term = librarySearchKey(search.trim())
     private val matching = if (term.isEmpty()) "" else " AND (instr(v.nameKey, ?) > 0 OR instr(v.folderKey, ?) > 0)"
-    private val duplicateMatch = if (term.isEmpty()) "" else " AND (instr(d.nameKey, ?) > 0 OR instr(d.folderKey, ?) > 0)"
+    private val duplicateMatch = if (unified || term.isEmpty()) "" else " AND (instr(d.nameKey, ?) > 0 OR instr(d.folderKey, ?) > 0)"
     private val folderMatch = if (folder == null) "" else " AND v.folder = ?"
-    private val duplicateFolder = if (folder == null) "" else " AND d.folder = ?"
+    private val duplicateFolder = if (unified || folder == null) "" else " AND d.folder = ?"
     // MediaStore locators already include the volume and row ID. Only mixed or linked
     // sources can publish multiple locators for the same canonical URI.
     private val deduplicate = sources.any { !it.startsWith("media:") }
@@ -120,10 +140,20 @@ internal data class DeviceBrowseQuery(
         AND NOT EXISTS (
             SELECT 1 FROM device_videos d INDEXED BY index_device_videos_canonicalUri
             CROSS JOIN device_sources ds ON ds.id = d.sourceId AND ds.generation = d.generation
-            WHERE d.sourceId IN ($placeholders)$duplicateMatch$duplicateFolder AND d.canonicalUri = v.canonicalUri AND (
+            WHERE d.sourceId IN ($aliasPlaceholders)$duplicateMatch$duplicateFolder AND d.canonicalUri = v.canonicalUri AND (
                 d.priority < v.priority OR (d.priority = v.priority AND (
                     d.sourceId < v.sourceId OR (d.sourceId = v.sourceId AND d.uri < v.uri)
                 ))
+            )
+        )
+    """.trimIndent()
+    private val excluded: List<Pair<String, String>> = exclusions.map { it.substringBefore('/') to it.substringAfter('/', "") }
+        .filter { (id, _) -> id in sources }
+    private val exclusionsFilter: String = if (excluded.isEmpty()) "" else """
+        AND NOT EXISTS (
+            SELECT 1 FROM (VALUES ${excluded.joinToString { "(?, ?)" }}) e
+            WHERE e.column1 = v.sourceId AND (
+                e.column2 = '' OR e.column2 = v.folder OR instr(v.folder, e.column2 || '/') = 1
             )
         )
     """.trimIndent()
@@ -131,10 +161,13 @@ internal data class DeviceBrowseQuery(
         FROM device_videos v JOIN device_sources s ON s.id = v.sourceId AND s.generation = v.generation
         WHERE v.sourceId IN ($placeholders)$matching$folderMatch
     """.trimIndent()
-    private val filter = "$scopedFilter $aliases"
+    private val filter = "$scopedFilter $exclusionsFilter $aliases"
     private val scopeArgs: List<Any> = (sources.toList() + if (term.isEmpty()) emptyList() else listOf(term, term))
         .let { if (folder == null) it else it + folder }
-    private val args = if (deduplicate) scopeArgs + scopeArgs else scopeArgs
+    private val args: List<Any> = scopeArgs + excluded.flatMap { (id, path) -> listOf(id, path) } +
+        if (!deduplicate) emptyList() else if (unified) aliasSources.toList() else scopeArgs
+    private val folderFilter = if (unified) filter else scopedFilter
+    private val folderArgs = if (unified) args else scopeArgs
 
     fun count() = SimpleSQLiteQuery("SELECT COUNT(*) $filter", args.toTypedArray())
 
@@ -145,12 +178,12 @@ internal data class DeviceBrowseQuery(
     }
 
     fun folderCount() = SimpleSQLiteQuery(
-        "SELECT COUNT(*) FROM (SELECT 1 $scopedFilter GROUP BY v.sourceId, v.folder)", scopeArgs.toTypedArray()
+        "SELECT COUNT(*) FROM (SELECT 1 $folderFilter GROUP BY v.sourceId, v.folder)", folderArgs.toTypedArray()
     )
 
     fun folderPage(start: Int, limit: Int) = SimpleSQLiteQuery(
-        "SELECT v.sourceId, v.folder, COUNT(DISTINCT v.canonicalUri) AS videoCount $scopedFilter " +
+        "SELECT v.sourceId, v.folder, COUNT(DISTINCT v.canonicalUri) AS videoCount $folderFilter " +
             "GROUP BY v.sourceId, v.folder ORDER BY v.folder COLLATE NOCASE, v.folder, v.sourceId LIMIT ? OFFSET ?",
-        (scopeArgs + listOf(limit, start)).toTypedArray()
+        (folderArgs + listOf(limit, start)).toTypedArray()
     )
 }
