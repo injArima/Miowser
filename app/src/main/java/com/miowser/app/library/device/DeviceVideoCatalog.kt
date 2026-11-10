@@ -44,9 +44,13 @@ internal data class DeviceCatalogStatus(
     val checkingSource: String? = null
 )
 
-internal data class DeviceVideoWindow(val start: Int, val rows: List<DeviceVideo>, val count: Int) {
-    operator fun get(index: Int): DeviceVideo? = rows.getOrNull(index - start)
+internal data class DeviceCatalogWindow<T>(val start: Int, val rows: List<T>, val count: Int) {
+    operator fun get(index: Int): T? = rows.getOrNull(index - start)
 }
+
+internal typealias DeviceVideoWindow = DeviceCatalogWindow<DeviceVideo>
+
+internal data class DevicePlaybackSelection(val query: DeviceBrowseQuery, val window: DeviceVideoWindow, val index: Int)
 
 internal object DeviceVideoCatalog {
     private var opened: DeviceCatalogDatabase? = null
@@ -105,14 +109,33 @@ internal object DeviceVideoCatalog {
     }
 
     fun readWindow(context: Context, query: DeviceBrowseQuery, index: Int, knownCount: Int?): DeviceVideoWindow {
+        return readCatalogWindow(context, index, knownCount, { it.count(query.count()) }) { dao, start, size ->
+            dao.rows(query.page(start, size))
+        }
+    }
+
+    fun readFolders(context: Context, query: DeviceBrowseQuery, index: Int, knownCount: Int?): DeviceCatalogWindow<DeviceVideoFolder> =
+        readCatalogWindow(context, index, knownCount, { it.count(query.folderCount()) }) { dao, start, size ->
+            dao.folders(query.folderPage(start, size))
+        }
+
+    fun readFolderCover(context: Context, folder: DeviceVideoFolder): List<DeviceVideo> {
+        val query = DeviceBrowseQuery(setOf(folder.sourceId), folder.sourceId, "", false, folder.folder)
+        return database(context).catalog().rows(query.page(0, 4))
+    }
+
+    private fun <T> readCatalogWindow(
+        context: Context, index: Int, knownCount: Int?, readCount: (DeviceCatalogDao) -> Int,
+        readRows: (DeviceCatalogDao, Int, Int) -> List<T>
+    ): DeviceCatalogWindow<T> {
         val db = database(context)
         return db.runInTransaction(Callable {
             val dao = db.catalog()
-            val count = knownCount ?: dao.count(query.count())
+            val count = knownCount ?: readCount(dao)
             val page = index.coerceIn(0, (count - 1).coerceAtLeast(0)) / DEVICE_PAGE_SIZE
             val start = ((page - 1) * DEVICE_PAGE_SIZE).coerceAtLeast(0)
             val end = ((page + 2) * DEVICE_PAGE_SIZE).coerceAtMost(count)
-            DeviceVideoWindow(start, if (end > start) dao.rows(query.page(start, end - start)) else emptyList(), count)
+            DeviceCatalogWindow(start, if (end > start) readRows(dao, start, end - start) else emptyList(), count)
         })
     }
 

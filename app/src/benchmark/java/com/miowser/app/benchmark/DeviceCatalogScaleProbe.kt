@@ -35,6 +35,12 @@ internal fun verifyDeviceCatalogScale(context: Context) {
             val mixed = DeviceBrowseQuery(setOf(media.id, link.id), null, "", false)
             val search = DeviceBrowseQuery(setOf(media.id), null, "Folder 24", false)
             check(dao.count(search.count()) == size / 25)
+            check(dao.count(mediaOnly.folderCount()) == 25)
+            val folders = dao.folders(mediaOnly.folderPage(0, DEVICE_PAGE_SIZE))
+            check(folders.size == 25 && folders.all { it.videoCount == size / 25 })
+            val firstFolder = mediaOnly.copy(folder = folders.first().folder)
+            check(dao.count(firstFolder.count()) == folders.first().videoCount)
+            check(dao.rows(firstFolder.page(0, DEVICE_PAGE_SIZE)).all { it.folder == folders.first().folder })
             val pageStart = size / 2
             fun measure(query: DeviceBrowseQuery): Pair<List<String>, Double> {
                 val samples = ArrayList<Long>(5)

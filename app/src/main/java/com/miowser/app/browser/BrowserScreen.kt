@@ -151,8 +151,12 @@ import com.miowser.app.library.FailedVideoLog
 import com.miowser.app.library.LibrarySourceKind
 import com.miowser.app.library.LocalInspectionCache
 import com.miowser.app.library.device.DeviceDownload
+import com.miowser.app.library.device.DevicePlaybackSelection
 import com.miowser.app.library.device.DeviceVideo
+import com.miowser.app.library.device.DeviceVideoCatalog
 import com.miowser.app.library.device.openGrantedVideo
+import com.miowser.app.player.PagedPlayerPlaylist
+import com.miowser.app.player.PlayerPlaylistPage
 import com.miowser.app.library.isImportableVideo
 import com.miowser.app.player.PlaybackRequest
 import com.miowser.app.player.LibraryPlaybackQueue
@@ -425,6 +429,7 @@ fun BrowserScreen(
         }
     }
     var libraryPlaybackQueue by remember { mutableStateOf<LibraryPlaybackQueue?>(null) }
+    var devicePlayback by remember { mutableStateOf<Pair<PlaybackRequest, DevicePlaybackSelection>?>(null) }
     var playbackFromLibrary by remember { mutableStateOf(false) }
     var libraryPlayRequestId by remember { mutableIntStateOf(0) }
     var pendingWebPermission by remember { mutableStateOf<PermissionRequest?>(null) }
@@ -1760,32 +1765,52 @@ fun BrowserScreen(
         if (uri != null) coroutineScope.launch { playGrantedVideo(uri) }
     }
 
-    fun playDeviceVideo(video: DeviceVideo) {
+    fun deviceRequest(video: DeviceVideo, uri: String = video.uri) = PlaybackRequest.Local(
+        Uri.parse(uri), video.title, video.folder.ifBlank { "Device video" }, videoName = video.title
+    )
+
+    fun playDeviceVideo(selection: DevicePlaybackSelection, index: Int = selection.index, skipDirection: Int = 0) {
         val requestId = ++libraryPlayRequestId
         coroutineScope.launch {
-            val locators = listOf(video.canonicalUri, video.uri).distinct()
-            val saved = locators.firstNotNullOfOrNull { findLibraryEntry("LOCAL_FILE:$it") }
-            val uri = withContext(Dispatchers.IO) {
-                (listOfNotNull(saved?.mediaUri) + locators).distinct().firstOrNull {
-                    LocalInspectionCache.available(context.applicationContext, it, force = true)
+            var candidate = index
+            var window = selection.window
+            try {
+                while (candidate in 0 until window.count) {
+                    if (window[candidate] == null) window = withContext(Dispatchers.IO) {
+                        DeviceVideoCatalog.readWindow(context.applicationContext, selection.query, candidate, null)
+                    }
+                    val video = window[candidate] ?: break
+                    val locators = listOf(video.canonicalUri, video.uri).distinct()
+                    val saved = locators.firstNotNullOfOrNull { findLibraryEntry("LOCAL_FILE:$it") }
+                    val uri = withContext(Dispatchers.IO) {
+                        (listOfNotNull(saved?.mediaUri) + locators).distinct().firstOrNull {
+                            LocalInspectionCache.available(context.applicationContext, it, force = true)
+                        }
+                    }
+                    if (requestId != libraryPlayRequestId || !showingHub || !deviceVideosSelected) return@launch
+                    if (uri != null) {
+                        libraryPlaybackQueue = null
+                        val entry = findLibraryEntry("LOCAL_FILE:$uri") ?: saved?.let {
+                            if (libraryEnabled && it.mediaUri != uri) MediaLibrary.relinkLocal(context, it.mediaUri, uri)
+                            it.copy(mediaUri = uri)
+                        }
+                        playbackFromLibrary = entry != null
+                        val request = entry?.copy(title = video.title)?.toPlaybackRequest(null, "Miowser")
+                            ?: deviceRequest(video, uri)
+                        devicePlayback = request to DevicePlaybackSelection(selection.query, window, candidate)
+                        playbackRequest = request
+                        return@launch
+                    }
+                    if (skipDirection == 0) break
+                    candidate += skipDirection
                 }
-            }
-            if (requestId != libraryPlayRequestId || !showingHub || !deviceVideosSelected) return@launch
-            if (uri == null) {
-                showActionSnackbar("This video is unavailable. Refresh or check access.")
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                if (requestId == libraryPlayRequestId) showActionSnackbar("Couldn’t open this video.")
                 return@launch
             }
-            libraryPlaybackQueue = null
-            val entry = findLibraryEntry("LOCAL_FILE:$uri") ?: saved?.let {
-                if (libraryEnabled && it.mediaUri != uri) MediaLibrary.relinkLocal(context, it.mediaUri, uri)
-                it.copy(mediaUri = uri)
-            }
-            playbackFromLibrary = entry != null
-            playbackRequest = if (entry != null) {
-                entry.copy(title = video.title).toPlaybackRequest(null, "Miowser")
-            } else {
-                PlaybackRequest.Local(Uri.parse(uri), video.title, video.folder.ifBlank { "Device video" },
-                    videoName = video.title)
+            if (requestId == libraryPlayRequestId) {
+                showActionSnackbar("This video is unavailable. Refresh or check access.")
             }
         }
     }
@@ -2733,11 +2758,12 @@ fun BrowserScreen(
                                 }.distinctBy { it.uri }
                             } }
                             SideEffect { hubBottomBarHeightPx = 0 }
-                            DeviceVideosPage(imported, deviceDownloads, onBrowse = { showingHub = false },
+                            DeviceVideosPage(imported, deviceDownloads, initialView = initialHubSettings,
+                                onBrowse = { showingHub = false },
                                 discoveryEnabled = discoveryEnabled,
                                 onOpenVideo = { openVideoPicker.launch(arrayOf("video/*")) },
                                 onDiscoverySettings = { deviceVideosSelected = false; hubSection = HubSection.MORE },
-                                onPlay = ::playDeviceVideo, onMessage = { showActionSnackbar(it) },
+                                onPlay = { playDeviceVideo(it) }, onMessage = { showActionSnackbar(it) },
                                 onIdleChanged = { libraryIdle = it })
                         } else {
             HubHomePage(
@@ -3041,6 +3067,29 @@ fun BrowserScreen(
                 queue?.entries(::findLibraryEntry).orEmpty()
             }
             val playlistIndex = remember(playlist, currentKey) { playlist.indexOfFirst { it.identityKey == currentKey } }
+            val localQueue = devicePlayback?.takeIf { it.first === request }?.second
+            val devicePlaylist = remember(localQueue) {
+                localQueue?.let { selection ->
+                    fun page(window: com.miowser.app.library.device.DeviceVideoWindow) = PlayerPlaylistPage(
+                        window.start, window.rows.map { deviceRequest(it).toLibraryEntry() }
+                    )
+                    PagedPlayerPlaylist(
+                        total = selection.window.count,
+                        activeIndex = selection.index,
+                        initialPage = page(selection.window),
+                        load = { index ->
+                            try {
+                                withContext(Dispatchers.IO) {
+                                    page(DeviceVideoCatalog.readWindow(context.applicationContext, selection.query,
+                                        index, selection.window.count))
+                                }
+                            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                            catch (_: Exception) { PlayerPlaylistPage(index, emptyList()) }
+                        },
+                        select = { index -> playDeviceVideo(selection, index) }
+                    )
+                }
+            }
             val recordCurrentPlayback = (request !is PlaybackRequest.Local || request.allowLibraryRecording) &&
                 shouldRecordLibraryPlayback(
                     behavior = AppSettings.current.libraryBehavior,
@@ -3051,13 +3100,22 @@ fun BrowserScreen(
                 PlayerScreen(
                     request = request,
                     playlist = playlist,
+                    pagedPlaylist = devicePlaylist,
                     onSelectPlaylistEntry = if (queue != null) ({
                         entry -> findLibraryEntry(entry.identityKey)?.let { playLibraryEntry(it) }
                     }) else null,
-                    onPlayNext = if (playlistIndex >= 0 && playlistIndex < playlist.lastIndex)
-                        ({ playLibraryNeighbor(currentKey, 1) }) else null,
-                    onPlayPrevious = if (playlistIndex > 0)
-                        ({ playLibraryNeighbor(currentKey, -1) }) else null,
+                    onPlayNext = when {
+                        localQueue != null && localQueue.index + 1 < localQueue.window.count ->
+                            ({ playDeviceVideo(localQueue, localQueue.index + 1, skipDirection = 1) })
+                        playlistIndex >= 0 && playlistIndex < playlist.lastIndex -> ({ playLibraryNeighbor(currentKey, 1) })
+                        else -> null
+                    },
+                    onPlayPrevious = when {
+                        localQueue != null && localQueue.index > 0 ->
+                            ({ playDeviceVideo(localQueue, localQueue.index - 1, skipDirection = -1) })
+                        playlistIndex > 0 -> ({ playLibraryNeighbor(currentKey, -1) })
+                        else -> null
+                    },
                     recordInLibrary = recordCurrentPlayback,
                     onOpenSourcePage = if (request is PlaybackRequest.Remote) ({
                         if (recordCurrentPlayback) {
@@ -3105,6 +3163,7 @@ fun BrowserScreen(
                         libraryPlayRequestId++
                         playbackRequest = null
                         libraryPlaybackQueue = null
+                        devicePlayback = null
                         playbackFromLibrary = false
                     }
                 )

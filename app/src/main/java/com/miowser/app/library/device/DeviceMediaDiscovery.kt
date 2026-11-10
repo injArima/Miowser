@@ -55,7 +55,7 @@ internal fun scanMediaVolume(
     val collection = MediaStore.Video.Media.getContentUri(volume)
     val base = arrayOf("_id", "_display_name", "duration", "height", "date_modified", "_size")
     val projection = base +
-        (if (Build.VERSION.SDK_INT >= 29) arrayOf("relative_path") else arrayOf("bucket_display_name")) +
+        (if (Build.VERSION.SDK_INT >= 29) arrayOf("relative_path") else arrayOf("_data")) +
         (if (Build.VERSION.SDK_INT >= 30) arrayOf("generation_modified") else emptyArray())
     val restrictions = buildList {
         if (Build.VERSION.SDK_INT >= 29) add("is_pending = 0")
@@ -72,8 +72,10 @@ internal fun scanMediaVolume(
             val modified = it.getLong(4)
             val revision = if (Build.VERSION.SDK_INT >= 30) "media:${stamp?.version}:${it.getLong(7)}"
                 else "${modified * 1_000}:${it.getLong(5)}"
+            val path = it.getString(6).orEmpty()
+            val folder = if (Build.VERSION.SDK_INT >= 29) path.trimEnd('/') else path.substringBeforeLast('/', "")
             emit(DeviceVideo(source, generation, uri, uri, DEVICE_MEDIA, title,
-                it.getString(6).orEmpty().trimEnd('/'), it.getLong(2).coerceAtLeast(0),
+                folder, it.getLong(2).coerceAtLeast(0),
                 it.getInt(3).takeIf { height -> height > 0 }, modified * 1_000, revision))
         }
     }

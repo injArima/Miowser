@@ -1,5 +1,6 @@
 package com.miowser.app.library.device
 
+import androidx.room.AutoMigration
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -36,7 +37,8 @@ internal data class DeviceSource(
     indices = [
         Index("canonicalUri"),
         Index(value = ["sourceId", "generation", "modifiedAt"]),
-        Index(value = ["sourceId", "generation", "nameKey"])
+        Index(value = ["sourceId", "generation", "nameKey"]),
+        Index(value = ["sourceId", "generation", "folder"])
     ]
 )
 internal data class DeviceVideo(
@@ -54,6 +56,8 @@ internal data class DeviceVideo(
     val nameKey: String = librarySearchKey(title),
     val folderKey: String = librarySearchKey(folder)
 )
+
+internal data class DeviceVideoFolder(val sourceId: String, val folder: String, val videoCount: Int)
 
 @Dao
 internal interface DeviceCatalogDao {
@@ -80,10 +84,15 @@ internal interface DeviceCatalogDao {
     fun discardInterrupted()
 
     @RawQuery fun rows(query: SupportSQLiteQuery): List<DeviceVideo>
+    @RawQuery fun folders(query: SupportSQLiteQuery): List<DeviceVideoFolder>
     @RawQuery fun count(query: SupportSQLiteQuery): Int
 }
 
-@Database(entities = [DeviceSource::class, DeviceVideo::class], version = 1)
+@Database(
+    entities = [DeviceSource::class, DeviceVideo::class],
+    version = 2,
+    autoMigrations = [AutoMigration(from = 1, to = 2)]
+)
 internal abstract class DeviceCatalogDatabase : RoomDatabase() {
     abstract fun catalog(): DeviceCatalogDao
 }
@@ -92,13 +101,16 @@ internal data class DeviceBrowseQuery(
     val allowedSources: Set<String>,
     val source: String?,
     val search: String,
-    val titleOrder: Boolean
+    val titleOrder: Boolean,
+    val folder: String? = null
 ) {
     private val sources = if (source == null) allowedSources else allowedSources.intersect(setOf(source))
     private val placeholders = sources.joinToString { "?" }.ifBlank { "NULL" }
     private val term = librarySearchKey(search.trim())
     private val matching = if (term.isEmpty()) "" else " AND (instr(v.nameKey, ?) > 0 OR instr(v.folderKey, ?) > 0)"
     private val duplicateMatch = if (term.isEmpty()) "" else " AND (instr(d.nameKey, ?) > 0 OR instr(d.folderKey, ?) > 0)"
+    private val folderMatch = if (folder == null) "" else " AND v.folder = ?"
+    private val duplicateFolder = if (folder == null) "" else " AND d.folder = ?"
     // MediaStore locators already include the volume and row ID. Only mixed or linked
     // sources can publish multiple locators for the same canonical URI.
     private val deduplicate = sources.any { !it.startsWith("media:") }
@@ -108,20 +120,21 @@ internal data class DeviceBrowseQuery(
         AND NOT EXISTS (
             SELECT 1 FROM device_videos d INDEXED BY index_device_videos_canonicalUri
             CROSS JOIN device_sources ds ON ds.id = d.sourceId AND ds.generation = d.generation
-            WHERE d.sourceId IN ($placeholders)$duplicateMatch AND d.canonicalUri = v.canonicalUri AND (
+            WHERE d.sourceId IN ($placeholders)$duplicateMatch$duplicateFolder AND d.canonicalUri = v.canonicalUri AND (
                 d.priority < v.priority OR (d.priority = v.priority AND (
                     d.sourceId < v.sourceId OR (d.sourceId = v.sourceId AND d.uri < v.uri)
                 ))
             )
         )
     """.trimIndent()
-    private val filter = """
+    private val scopedFilter = """
         FROM device_videos v JOIN device_sources s ON s.id = v.sourceId AND s.generation = v.generation
-        WHERE v.sourceId IN ($placeholders)$matching
-        $aliases
+        WHERE v.sourceId IN ($placeholders)$matching$folderMatch
     """.trimIndent()
-    private val args: List<Any> = (sources.toList() + if (term.isEmpty()) emptyList() else listOf(term, term))
-        .let { if (deduplicate) it + it else it }
+    private val filter = "$scopedFilter $aliases"
+    private val scopeArgs: List<Any> = (sources.toList() + if (term.isEmpty()) emptyList() else listOf(term, term))
+        .let { if (folder == null) it else it + folder }
+    private val args = if (deduplicate) scopeArgs + scopeArgs else scopeArgs
 
     fun count() = SimpleSQLiteQuery("SELECT COUNT(*) $filter", args.toTypedArray())
 
@@ -130,4 +143,14 @@ internal data class DeviceBrowseQuery(
         return SimpleSQLiteQuery("SELECT v.* $filter ORDER BY $order, v.canonicalUri LIMIT ? OFFSET ?",
             (args + listOf(limit, start)).toTypedArray())
     }
+
+    fun folderCount() = SimpleSQLiteQuery(
+        "SELECT COUNT(*) FROM (SELECT 1 $scopedFilter GROUP BY v.sourceId, v.folder)", scopeArgs.toTypedArray()
+    )
+
+    fun folderPage(start: Int, limit: Int) = SimpleSQLiteQuery(
+        "SELECT v.sourceId, v.folder, COUNT(DISTINCT v.canonicalUri) AS videoCount $scopedFilter " +
+            "GROUP BY v.sourceId, v.folder ORDER BY v.folder COLLATE NOCASE, v.folder, v.sourceId LIMIT ? OFFSET ?",
+        (scopeArgs + listOf(limit, start)).toTypedArray()
+    )
 }

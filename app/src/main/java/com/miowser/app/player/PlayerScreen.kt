@@ -243,19 +243,20 @@ fun PlayerScreen(
     onBrowseSource: (() -> Unit)? = null,
     companionBrowsing: Boolean = false,
     recordInLibrary: Boolean = true,
+    pagedPlaylist: PagedPlayerPlaylist? = null,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     val activity = context.findActivity()
     var orientationMode by rememberSaveable { mutableStateOf(PlayerOrientationMode.AUTOMATIC) }
     val initialLocalPlaylistRequest = remember {
-        (request as? PlaybackRequest.Local)?.takeIf { playlist.isNotEmpty() }
+        (request as? PlaybackRequest.Local)?.takeIf { playlist.isNotEmpty() || pagedPlaylist != null }
     }
     val retainedLocalSession = remember {
         mutableStateOf(initialLocalPlaylistRequest?.let { PlaybackSession.create(context, it, null, false) })
     }
     val localPlaylistRequest = (request as? PlaybackRequest.Local)
-        ?.takeIf { playlist.isNotEmpty() || retainedLocalSession.value != null }
+        ?.takeIf { playlist.isNotEmpty() || pagedPlaylist != null || retainedLocalSession.value != null }
     var activeLocalRequest by remember { mutableStateOf(initialLocalPlaylistRequest) }
     DisposableEffect(Unit) {
         onDispose { retainedLocalSession.value?.close() }
@@ -330,7 +331,7 @@ fun PlayerScreen(
             onDownload, onOpenSourcePage, onBrowseSource, companionBrowsing,
             recordInLibrary, onDismiss, transport, orientationMode,
             { orientationMode = it },
-            retainedLocalSession.value.takeIf { localPlaylistRequest != null })
+            retainedLocalSession.value.takeIf { localPlaylistRequest != null }, pagedPlaylist)
     } else {
         BackHandler(onBack = onDismiss)
         Box(Modifier.fillMaxSize().background(PlayerUiColors.backdrop)) {
@@ -362,7 +363,8 @@ private fun PlayerContent(
     remoteTransport: RemotePlayerTransport?,
     orientationMode: PlayerOrientationMode,
     onOrientationModeSelected: (PlayerOrientationMode) -> Unit,
-    retainedSession: PlaybackSession?
+    retainedSession: PlaybackSession?,
+    pagedPlaylist: PagedPlayerPlaylist?
 ) {
     val context = LocalContext.current
     val activity = context.findActivity()
@@ -404,7 +406,8 @@ private fun PlayerContent(
     val latestOverlays = rememberUpdatedState(overlays)
     val focusScope = rememberCoroutineScope()
     val playlistFocus = remember(request) { FocusRequester() }
-    val playlistTriggerAvailable = rememberUpdatedState(playlist.isNotEmpty() && onSelectPlaylistEntry != null)
+    val hasPlaylist = pagedPlaylist != null || playlist.isNotEmpty()
+    val playlistTriggerAvailable = rememberUpdatedState(pagedPlaylist != null || (hasPlaylist && onSelectPlaylistEntry != null))
     val subtitleFocus = remember(request) { FocusRequester() }
     fun openOverlay(panel: PlayerOverlay) {
         speedMenuExpanded = false
@@ -1156,13 +1159,13 @@ private fun PlayerContent(
                             controlsVisible = true
                             controlsActivity++
                         },
-                        onOpenPlaylist = if (playlist.isNotEmpty() && onSelectPlaylistEntry != null) ({
+                        onOpenPlaylist = if (playlistTriggerAvailable.value) ({
                             trackPanel = null
                             openOverlay(PlayerOverlay.PLAYLIST)
                         }) else null,
                         playlistFocus = playlistFocus,
-                        playlistPosition = playlist.indexOfFirst { it.identityKey == libraryIdentityKey } + 1,
-                        playlistSize = playlist.size,
+                        playlistPosition = (pagedPlaylist?.activeIndex ?: playlist.indexOfFirst { it.identityKey == libraryIdentityKey }) + 1,
+                        playlistSize = pagedPlaylist?.total ?: playlist.size,
                         onLock = { controlsLocked = true },
                         onDismiss = onDismiss,
                         modifier = Modifier.align(Alignment.TopCenter)
@@ -1171,7 +1174,7 @@ private fun PlayerContent(
                     if (controlsVisible) PlayerCenterControls(
                         isPlaying = isPlaying,
                         isBuffering = isBuffering,
-                        playlistActive = playlist.isNotEmpty(),
+                        playlistActive = hasPlaylist,
                         onPreviousVideo = onPlayPrevious,
                         onNextVideo = onPlayNext,
                         onReplay = {
@@ -1399,7 +1402,7 @@ private fun PlayerContent(
                     onSelect = { entry -> overlays.dismiss(); onSelectPlaylistEntry?.invoke(entry) },
                     onPrevious = onPlayPrevious?.let { action -> ({ overlays.dismiss(); action() }) },
                     onNext = onPlayNext?.let { action -> ({ overlays.dismiss(); action() }) },
-                    onDismiss = { overlays.dismiss() }, modifier = panelModifier, initialFocus = initialFocus)
+                    onDismiss = { overlays.dismiss() }, modifier = panelModifier, initialFocus = initialFocus, paged = pagedPlaylist)
                 PlayerOverlay.SUBTITLES -> PlayerSubtitleWorkspaceSheet(
                     trackSnapshot.subtitles, (request as? PlaybackRequest.Remote)?.externalSubtitles.orEmpty(),
                     trackPreferences.subtitles, { selectTrack(PlayerTrackKind.SUBTITLE, it) },

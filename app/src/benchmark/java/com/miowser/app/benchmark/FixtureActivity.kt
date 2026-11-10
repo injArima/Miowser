@@ -177,7 +177,9 @@ class FixtureActivity : ComponentActivity() {
                 val canonical = canonicalVideoUri(this, uri)
                 val revision = checkNotNull(localArtworkRevision(this, uri, Uri.parse(canonical)))
                 val name = thumbnailCacheFileName(localArtworkKey(canonical, revision))
-                val preview = java.io.File(cacheDir, "$LOCAL_ARTWORK_DIRECTORY/$name")
+                val preview = java.io.File(localArtworkDirectory(this), name)
+                val deadline = android.os.SystemClock.elapsedRealtime() + 5_000
+                while (!preview.isFile && android.os.SystemClock.elapsedRealtime() < deadline) Thread.sleep(25)
                 check(preview.isFile && preview.length() > 0) { "Missing cached video artwork" }
             }
             "delete" -> {

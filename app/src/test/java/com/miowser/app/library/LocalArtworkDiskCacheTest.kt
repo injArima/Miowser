@@ -1,6 +1,9 @@
 package com.miowser.app.library
 
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -39,9 +42,40 @@ class LocalArtworkDiskCacheTest {
     @Test fun revisionsSeparatePreviewsAndUnknownFileMetadataCannotPersist() {
         assertNotEquals(localArtworkKey("content://media/video/5", "media:version:2"),
             localArtworkKey("content://media/video/5", "media:version:3"))
+        val revision = "media:version:3"
+        assertNotEquals(localArtworkKey("content://media/video/5", revision),
+            localArtworkKey("content://media/video/5", revision, compact = true))
+        assertNotEquals(localArtworkKey("content://media/video/5", revision),
+            localArtworkKey("content://media/video/5", revision, midpoint = true))
         assertTrue(hasReliableArtworkRevision("media:version:3"))
         assertTrue(hasReliableArtworkRevision("1234:5000"))
         assertFalse(hasReliableArtworkRevision("0:5000"))
         assertFalse(hasReliableArtworkRevision("unversioned"))
+    }
+
+    @Test fun warmReadDoesNotWaitForAnUnrelatedEncode() {
+        val cache = LocalArtworkDiskCache(files.newFolder())
+        cache.write("ready.jpg") { it.write(7); true }
+        val writing = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val writer = executor.submit {
+                cache.write("new.jpg") {
+                    writing.countDown()
+                    check(release.await(5, TimeUnit.SECONDS))
+                    it.write(9)
+                    true
+                }
+            }
+            assertTrue(writing.await(5, TimeUnit.SECONDS))
+            val read = executor.submit<Int?> { cache.read("ready.jpg") { it.readBytes().first().toInt() } }
+            assertEquals(7, read.get(2, TimeUnit.SECONDS))
+            release.countDown()
+            writer.get(5, TimeUnit.SECONDS)
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
+        }
     }
 }

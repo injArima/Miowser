@@ -21,6 +21,19 @@ P4 shares regenerable local previews across Device Videos, Downloads, and local 
 
 P5 adds direct Android video opening, a discovery toggle, and source-level recovery. A benchmark probe compares MediaStore-only and alias-aware queries at 10,000 and 50,000 rows. [P5 release notes](G:/Projects/Miowser/docs/RELEASE_NOTES_0.1.57.md)
 
+## Follow-up implementation
+
+| Phase | Comparison and Miowser implementation |
+| --- | --- |
+| P0 | The existing benchmark harness now also checks grouped folder counts and scoped pages at 10,000 and 50,000 rows. Device measurements are separate from the code review. |
+| P1 | Next Player stores durable media state separately from its MediaStore inventory. Miowser preserves its separate saved Library database and backup format. The device catalog adds a folder index through a non-destructive migration. |
+| P2 | VLC pages folder and video queries and Next Player uses stable lazy items. Miowser pages both views and the active playlist, with only the current window and its neighbors in memory. |
+| P3 | Next Player coalesces MediaStore notifications. Miowser also finishes the current inventory before handling a queued change, with the existing grant and volume checks at publication time. |
+| P4 | VLC checks its width-qualified bitmap cache and app-specific external JPEG store before requesting artwork, and its folder covers draw from up to four videos. Next Player keeps its Coil JPEG cache under private `filesDir/thumbnails`. Miowser uses private `filesDir/local_video_artwork`, 320 × 180 and 640 × 360 preview sizes, and a separate bounded JPEG writer. Android supplies the first thumbnail attempt, with a scaled retriever frame at 40% as fallback. Saved Library midpoint capture keeps its own cache key and behavior. |
+| P5 | Source recovery and direct Android opening keep their existing paths. Device folder and playlist browsing work with the currently authorized catalog rows. |
+
+The shipped VLC method and tagged folder-cover implementation were checked again. The supplied Next Player APK's obfuscated decoder was checked against the retained tagged source. Miowser keeps its existing platform decoder and cache budgets. Next Player’s bundled FFmpeg fallback and VLC’s native media library remain specific to those apps. [VLC thumbnail provider](https://github.com/videolan/vlc-android/blob/3.7.2/application/vlc-android/src/org/videolan/vlc/util/ThumbnailsProvider.kt) · [Next Player decoder](https://github.com/anilbeesetti/nextplayer/blob/v0.20.0/app/src/main/java/dev/anilbeesetti/nextplayer/VideoThumbnailDecoder.kt) · [Miowser 0.1.58](G:/Projects/Miowser/docs/RELEASE_NOTES_0.1.58.md)
+
 ## Evidence and scope
 
 I inspected the supplied packages with REA/JADX, matched Next Player’s obfuscated classes to DEX instructions and database declarations, and inspected symbols and selected ARM64 instructions in VLC’s native media library. I used the two matching release tags to clarify the control flow and UI. The native VideoLAN source endpoint returned a challenge page, so the findings about the shipped native scanner below come from the binary. These are static findings. Launch time, frame pacing, native memory peaks, and actual cache hit rates require device measurements.
@@ -126,3 +139,4 @@ Use the existing benchmark module as the starting point. On a fixed device, defi
 | VLC reload dispatch | `ev_b6770a339696c4047e2c87cb6ee542f1f0a1e076a92ad6ee6e0d30d3ef36ec30` |
 | VLC video query to native paging | `ev_3f0e2ec7e855b8eb7c3ff6f538fb829cfde3dad4263fba4bd1841d8b1dbf4b63`, `ev_ade18f0b30e06433d8625602af99f0e960d7ba86e8b70be339da1ac78e13cdf0` |
 | VLC thumbnail loading and memory budget | `ev_42b4f8ba8a581271e98f4ab4f5d04b5198d213bf6e039f428a64c82bf76d4917`, `ev_a487e863530787e11428af660ba528758b7b0311cddaf216e54ba3db752b2` |
+| Follow-up APK thumbnail method verification | VLC `ev_de0065545d20b926ba7d1ee2ed11c656434eeba7dbfcd0bc04cb791a120e9d19`, Next Player `ev_e1ad1acdfa3a43eb3da1f7461d20bfec38b02fc86885da867ba8a5dccfb3f87b` |

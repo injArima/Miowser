@@ -7,10 +7,16 @@ private const val PREFS_NAME = "hub_settings"
 private const val KEY_LIBRARY_SORT = "library_sort"
 private const val KEY_FOLDER_LIBRARY_SORT_PREFIX = "library_sort_folder:"
 private const val KEY_DOWNLOAD_SECTION = "download_section"
+private const val KEY_DEVICE_FOLDERS = "device_folders"
+private const val KEY_DEVICE_LIST = "device_list"
+private const val KEY_DEVICE_TITLE_SORT = "device_title_sort"
 
 data class HubSettings(
     val librarySort: HubLibrarySort = HubLibrarySort.RECENT,
-    val defaultDownloadSection: HubDownloadSection = HubDownloadSection.DOWNLOADING
+    val defaultDownloadSection: HubDownloadSection = HubDownloadSection.DOWNLOADING,
+    val deviceFolders: Boolean = false,
+    val deviceList: Boolean = false,
+    val deviceTitleSort: Boolean = false
 )
 
 internal fun decodeLibrarySort(value: String?, fallback: HubLibrarySort = HubLibrarySort.RECENT): HubLibrarySort =
@@ -34,7 +40,23 @@ object HubSettingsStore {
         return decodeHubSettings(
             librarySort = prefs.getString(KEY_LIBRARY_SORT, null),
             downloadSection = prefs.getString(KEY_DOWNLOAD_SECTION, null)
+        ).copy(
+            deviceFolders = prefs.getBoolean(KEY_DEVICE_FOLDERS, false),
+            deviceList = prefs.getBoolean(KEY_DEVICE_LIST, false),
+            deviceTitleSort = prefs.getBoolean(KEY_DEVICE_TITLE_SORT, false)
         )
+    }
+
+    internal fun saveDeviceView(context: Context, folders: Boolean, list: Boolean, titleSort: Boolean) {
+        Persistence.requireOwner()
+        val app = context.applicationContext
+        Persistence.submitSnapshot("device-library-view") {
+            app.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putBoolean(KEY_DEVICE_FOLDERS, folders)
+                .putBoolean(KEY_DEVICE_LIST, list)
+                .putBoolean(KEY_DEVICE_TITLE_SORT, titleSort)
+                .commit()
+        }
     }
 
     fun save(context: Context, settings: HubSettings) {
