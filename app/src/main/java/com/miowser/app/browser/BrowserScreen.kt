@@ -181,9 +181,12 @@ import com.miowser.app.ui.MiowserSnackbarVisuals
 import com.miowser.app.ui.OverflowMenuSheet
 import com.miowser.app.ui.Screen
 import com.miowser.app.ui.SettingsPage
-import com.miowser.app.ui.MediaSettingsPage
+import com.miowser.app.ui.MediaAdvancedSettingsPage
 import com.miowser.app.ui.MediaDirectoriesPage
+import com.miowser.app.ui.MediaInterfaceSettingsPage
+import com.miowser.app.ui.MediaSettingsPage
 import com.miowser.app.ui.MediaSubtitleSettingsPage
+import com.miowser.app.ui.MediaVideoSettingsPage
 import com.miowser.app.ui.SitePermissionsPage
 import com.miowser.app.ui.TabNavigationEntry
 import com.miowser.app.ui.ConfirmationAction
@@ -340,7 +343,9 @@ fun BrowserScreen(
         mutableStateOf<Screen?>(if (OnboardingStore.shouldShow(context)) Screen.ONBOARDING else null)
     }
     var mediaSettingsReturn by rememberSaveable { mutableStateOf<Screen?>(null) }
+    val mediaSettingsState = rememberSaveableStateHolder()
     fun openMediaSettings(returnTo: Screen? = null) {
+        mediaSettingsState.removeState(Screen.MEDIA_SETTINGS.name)
         mediaSettingsReturn = returnTo
         activeScreen = Screen.MEDIA_SETTINGS
     }
@@ -2017,7 +2022,9 @@ fun BrowserScreen(
                 } else {
                     activeScreen = when (activeScreen) {
                         Screen.MEDIA_SETTINGS -> mediaSettingsReturn
-                        Screen.MEDIA_DIRECTORIES, Screen.MEDIA_SUBTITLES, Screen.CRASH_DIAGNOSTICS -> Screen.MEDIA_SETTINGS
+                        Screen.MEDIA_DIRECTORIES, Screen.MEDIA_INTERFACE, Screen.MEDIA_VIDEO,
+                        Screen.MEDIA_SUBTITLES, Screen.MEDIA_ADVANCED -> Screen.MEDIA_SETTINGS
+                        Screen.CRASH_DIAGNOSTICS -> Screen.MEDIA_ADVANCED
                         Screen.CLEAR_DATA, Screen.SITE_PERMISSIONS, Screen.ELEMENT_RULES -> Screen.SETTINGS
                         else -> null
                     }
@@ -2699,18 +2706,28 @@ fun BrowserScreen(
                 },
                 onBack = { activeScreen = Screen.SETTINGS }
             )
-            Screen.MEDIA_SETTINGS -> MediaSettingsPage(
-                hasSavedMedia = MediaLibrary.entries.isNotEmpty() || MediaLibrary.opaqueRecords.isNotEmpty(),
-                onClearLibrary = ::clearSavedLibrary,
-                onOpenDirectories = { activeScreen = Screen.MEDIA_DIRECTORIES },
-                onOpenSubtitles = { activeScreen = Screen.MEDIA_SUBTITLES },
-                onOpenCrashReports = { activeScreen = Screen.CRASH_DIAGNOSTICS },
-                onBack = { activeScreen = mediaSettingsReturn }
-            )
+            Screen.MEDIA_SETTINGS -> mediaSettingsState.SaveableStateProvider(Screen.MEDIA_SETTINGS.name) {
+                MediaSettingsPage(
+                    hasSavedMedia = MediaLibrary.entries.isNotEmpty() || MediaLibrary.opaqueRecords.isNotEmpty(),
+                    onClearLibrary = ::clearSavedLibrary,
+                    onOpenDirectories = { activeScreen = Screen.MEDIA_DIRECTORIES },
+                    onOpenInterface = { activeScreen = Screen.MEDIA_INTERFACE },
+                    onOpenVideo = { activeScreen = Screen.MEDIA_VIDEO },
+                    onOpenSubtitles = { activeScreen = Screen.MEDIA_SUBTITLES },
+                    onOpenAdvanced = { activeScreen = Screen.MEDIA_ADVANCED },
+                    onBack = { activeScreen = mediaSettingsReturn }
+                )
+            }
             Screen.MEDIA_DIRECTORIES -> MediaDirectoriesPage(onBack = { activeScreen = Screen.MEDIA_SETTINGS })
+            Screen.MEDIA_INTERFACE -> MediaInterfaceSettingsPage(onBack = { activeScreen = Screen.MEDIA_SETTINGS })
+            Screen.MEDIA_VIDEO -> MediaVideoSettingsPage(onBack = { activeScreen = Screen.MEDIA_SETTINGS })
             Screen.MEDIA_SUBTITLES -> MediaSubtitleSettingsPage(onBack = { activeScreen = Screen.MEDIA_SETTINGS })
-            Screen.CRASH_DIAGNOSTICS -> CrashDiagnosticsPage(
+            Screen.MEDIA_ADVANCED -> MediaAdvancedSettingsPage(
+                onOpenCrashReports = { activeScreen = Screen.CRASH_DIAGNOSTICS },
                 onBack = { activeScreen = Screen.MEDIA_SETTINGS }
+            )
+            Screen.CRASH_DIAGNOSTICS -> CrashDiagnosticsPage(
+                onBack = { activeScreen = Screen.MEDIA_ADVANCED }
             )
             Screen.ELEMENT_RULES -> {
                 SiteElementRules.revision
