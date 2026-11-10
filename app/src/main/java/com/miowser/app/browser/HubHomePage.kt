@@ -83,9 +83,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.FloatingActionButtonDefaults
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.State
@@ -206,6 +205,7 @@ private enum class HubLibraryView { GRID, LIST }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun HubHomePage(
+    destinationTabs: @Composable () -> Unit,
     selectedSection: HubSection,
     onSectionSelected: (HubSection) -> Unit,
     selectedDownloadSection: HubDownloadSection,
@@ -385,11 +385,12 @@ internal fun HubHomePage(
         },
         topBar = {
             Column {
-                TopAppBar(
+                LibraryHubTopBar(
+                    branded = selectedSection == HubSection.LIBRARY,
                     title = {
                         if (selectedSection == HubSection.LIBRARY) {
                             Column {
-                                Text(stringResource(R.string.nav_library))
+                                Text(stringResource(R.string.nav_library), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(
                                     pluralStringResource(R.plurals.library_video_count, selectedFolderVideoCount, selectedFolderVideoCount),
                                     style = MaterialTheme.typography.bodySmall,
@@ -404,7 +405,7 @@ internal fun HubHomePage(
                     },
                     actions = {
                         if (selectedSection == HubSection.LIBRARY) {
-                            IconButton(onClick = {
+                            FilledTonalIconButton(onClick = {
                                 librarySearchVisible = !librarySearchVisible
                                 if (!librarySearchVisible) librarySearchQuery = ""
                             }) {
@@ -492,12 +493,9 @@ internal fun HubHomePage(
                                 }
                             }
                         }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                        titleContentColor = MaterialTheme.colorScheme.onSurface
-                    )
+                    }
                 )
+                destinationTabs()
                 if (selectedSection == HubSection.LIBRARY && librarySearchVisible) {
                     OutlinedTextField(
                         value = librarySearchQuery,

@@ -52,8 +52,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SecondaryTabRow
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Surface
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -2781,14 +2779,11 @@ fun BrowserScreen(
 
         if (showingHub && playbackRequest == null && activeScreen == null && !showBackupRestore &&
             shortcutRequest?.localVideo == null) {
-            Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding()) {
-                SecondaryTabRow(selectedTabIndex = if (deviceVideosSelected) 0 else 1) {
-                    Tab(selected = deviceVideosSelected, onClick = { deviceVideosSelected = true },
-                        modifier = Modifier.testTag("hub_destination_device"), text = { Text("Device Videos") })
-                    Tab(selected = !deviceVideosSelected, onClick = { deviceVideosSelected = false },
-                        modifier = Modifier.testTag("hub_destination_saved"), text = { Text("Miowser Hub") })
-                }
-                Box(Modifier.weight(1f)) {
+            val destinationTabs: @Composable () -> Unit = {
+                LibraryHubTabs(deviceVideosSelected) { deviceVideosSelected = it }
+            }
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainerLow).statusBarsPadding()) {
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                     hubDestinations.SaveableStateProvider(if (deviceVideosSelected) "device" else "saved") {
                         if (deviceVideosSelected) {
                             val discoveryEnabled = AppSettings.current.deviceDiscoveryEnabled
@@ -2807,6 +2802,7 @@ fun BrowserScreen(
                             } }
                             SideEffect { hubBottomBarHeightPx = 0 }
                             DeviceVideosPage(imported, deviceDownloads, initialView = initialHubSettings,
+                                destinationTabs = destinationTabs,
                                 onBrowse = { showingHub = false },
                                 discoveryEnabled = discoveryEnabled,
                                 autoRescan = AppSettings.current.deviceAutoRescanEnabled,
@@ -2816,6 +2812,7 @@ fun BrowserScreen(
                                 onIdleChanged = { libraryIdle = it })
                         } else {
             HubHomePage(
+                destinationTabs = destinationTabs,
                 onBottomBarHeightChanged = { hubBottomBarHeightPx = it },
                 onLibraryIdleChanged = { libraryIdle = it },
                 onOpenMediaSettings = { openMediaSettings() },

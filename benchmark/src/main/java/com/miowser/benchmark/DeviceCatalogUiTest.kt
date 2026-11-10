@@ -70,6 +70,7 @@ class DeviceCatalogUiTest {
             openDeviceVideos()
             val oldTitle = By.text(title)
             fun awaitFixtureArtwork() {
+                device.findObject(By.desc("Search device videos"))?.click()
                 device.requireNode(By.res("device_video_search")).text = title
                 device.requireNode(By.res("device_video_grid").hasDescendant(By.res("video_card_artwork")))
             }

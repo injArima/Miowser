@@ -8,14 +8,19 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,7 +29,10 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
@@ -40,6 +48,8 @@ import com.miowser.app.ui.ExpressiveEmptyState
 import com.miowser.app.ui.MiowserActionButton
 import com.miowser.app.ui.MiowserConfirmationDialog
 import com.miowser.app.ui.MiowserLoadingIndicator
+import com.miowser.app.ui.MiowserDropdownMenu
+import com.miowser.app.ui.MiowserMenuItem
 import com.miowser.app.ui.theme.HubLibraryTokens
 import com.miowser.app.ui.theme.UiSpacing
 import kotlinx.coroutines.CancellationException
@@ -60,6 +70,7 @@ internal fun DeviceVideosPage(
     imported: List<String>,
     downloads: List<DeviceDownload>,
     initialView: HubSettings,
+    destinationTabs: @Composable () -> Unit,
     discoveryEnabled: Boolean,
     autoRescan: Boolean,
     onOpenVideo: () -> Unit,
@@ -70,6 +81,7 @@ internal fun DeviceVideosPage(
     onIdleChanged: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     val app = context.applicationContext
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val scope = rememberCoroutineScope()
@@ -79,6 +91,8 @@ internal fun DeviceVideosPage(
     var status by remember { mutableStateOf(DeviceCatalogStatus(access = deviceMediaAccess(app))) }
     var loadFailed by remember { mutableStateOf(false) }
     var search by rememberSaveable { mutableStateOf("") }
+    var searchVisible by rememberSaveable { mutableStateOf(false) }
+    var headerMenu by remember { mutableStateOf(false) }
     var source by rememberSaveable { mutableStateOf<String?>(null) }
     var titleOrder by rememberSaveable { mutableStateOf(initialView.deviceTitleSort) }
     var listMode by rememberSaveable { mutableStateOf(initialView.deviceList) }
@@ -86,7 +100,14 @@ internal fun DeviceVideosPage(
     var folderPath by rememberSaveable { mutableStateOf<String?>(null) }
     var folderSource by rememberSaveable { mutableStateOf<String?>(null) }
     fun closeFolder() { folderPath = null; folderSource = null }
-    BackHandler(enabled = discoveryEnabled && folderPath != null) { closeFolder() }
+    fun closeSearch() {
+        searchVisible = false
+        search = ""
+        focusManager.clearFocus()
+    }
+    BackHandler(enabled = discoveryEnabled && (searchVisible || folderPath != null)) {
+        if (searchVisible) closeSearch() else closeFolder()
+    }
     val browserPositions = rememberSaveableStateHolder()
     fun saveView() = HubSettingsStore.saveDeviceView(app, foldersMode, listMode, titleOrder)
     var menu by remember { mutableStateOf(false) }
@@ -152,124 +173,173 @@ internal fun DeviceVideosPage(
         if (!status.scanning && source != null && status.sources.none { it.id == source }) source = null
     }
 
-    Column(Modifier.fillMaxSize().navigationBarsPadding().padding(horizontal = UiSpacing.m)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            if (folderPath != null) {
-                IconButton(onClick = ::closeFolder) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back to video folders") }
-            }
-            Text(folderPath?.substringAfterLast('/')?.ifBlank { "Storage root" } ?: "Device Videos",
-                Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+    Column(Modifier.fillMaxSize().navigationBarsPadding()) {
+        LibraryHubTopBar(
+            title = {
+                Text(folderPath?.substringAfterLast('/')?.ifBlank { "Storage root" } ?: "Library",
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            },
+            navigation = if (folderPath != null) {
+                {
+                    IconButton(onClick = ::closeFolder) {
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back to video folders")
+                    }
+                }
+            } else null
+        ) {
             if (discoveryEnabled) {
-                IconButton(onClick = { refreshCatalog(folderSource ?: source) }) { Icon(Icons.Rounded.Refresh, "Refresh device videos") }
-            }
-            IconButton(onClick = onOpenVideo) { Icon(Icons.Rounded.FolderOpen, "Open video file") }
-            IconButton(onClick = onBrowse) { Icon(Icons.Rounded.Language, "Browse") }
-        }
-        if (!discoveryEnabled) {
-            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally) {
-                ExpressiveEmptyState(
-                    title = "Device discovery is off",
-                    description = "Open a video directly or turn discovery back on in Media settings.",
-                    icon = Icons.Rounded.VideoLibrary
-                )
-                MiowserActionButton(style = AppButtonStyle.TONAL, onClick = onOpenVideo) { Text("Open video") }
-                MiowserActionButton(style = AppButtonStyle.TEXT, onClick = onDiscoverySettings) { Text("Media settings") }
-            }
-            return@Column
-        }
-        OutlinedTextField(
-            value = search, onValueChange = { search = it }, singleLine = true,
-            modifier = Modifier.fillMaxWidth().testTag("device_video_search"),
-            placeholder = { Text("Search videos and folders") }
-        )
-        Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
-            Box {
-                FilterChip(selected = source != null, onClick = { menu = true }, label = {
-                    Text(status.sources.firstOrNull { it.id == source }?.label ?: "All sources",
-                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                }, modifier = Modifier.widthIn(max = HubLibraryTokens.gridMinCell))
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text("All sources") }, onClick = { closeFolder(); source = null; menu = false })
-                    status.sources.forEach { item ->
-                        DropdownMenuItem(text = {
-                            Text(item.label + (status.issues[item.id]?.let { " · ${it.label}" } ?: ""))
-                        }, onClick = { closeFolder(); source = item.id; menu = false })
-                    }
-                }
-            }
-            FilterChip(selected = foldersMode, onClick = {
-                closeFolder()
-                foldersMode = !foldersMode
-                saveView()
-            }, label = { Text("Folders") })
-            FilterChip(selected = titleOrder, onClick = { titleOrder = !titleOrder; saveView() },
-                label = { Text(if (titleOrder) "Title" else "Recently modified") })
-            FilterChip(selected = listMode, onClick = { listMode = !listMode; saveView() },
-                label = { Text(if (listMode) "List" else "Grid") })
-        }
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
-            if (status.access != DeviceMediaAccess.FULL) {
-                MiowserActionButton(style = AppButtonStyle.TONAL, onClick = { requestAccess.launch(deviceVideoPermissions()) }) {
-                    Text(if (status.access == DeviceMediaAccess.SELECTED) "Change video access" else "Allow video access")
-                }
-            }
-            MiowserActionButton(style = AppButtonStyle.TEXT, onClick = {
-                replacingLink = null
-                pickFolder.launch(null)
-            }) { Text("Link folder") }
-            status.sources.firstOrNull { it.id == (folderSource ?: source) && it.kind == DEVICE_LINK }?.let { linked ->
-                MiowserActionButton(style = AppButtonStyle.TEXT, onClick = {
-                    replacingLink = linked.id
-                    pickFolder.launch(Uri.parse(linked.id))
+                FilledTonalIconButton(onClick = {
+                    if (searchVisible) closeSearch() else searchVisible = true
                 }) {
-                    Text("Relink folder")
+                    Icon(if (searchVisible) Icons.Rounded.Close else Icons.Rounded.Search,
+                        if (searchVisible) "Close device video search" else "Search device videos")
                 }
-                MiowserActionButton(style = AppButtonStyle.TEXT, onClick = { removeLink = linked }) { Text("Unlink folder") }
-            }
-        }
-        if (status.scanning) {
-            Text(status.checkingSource?.let { "Checking $it…" } ?: "Checking videos…",
-                Modifier.testTag("device_scan_status"), style = MaterialTheme.typography.labelMedium)
-        }
-        if (!status.scanning && (status.issues.isNotEmpty() || loadFailed)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val issue = (folderSource ?: source)?.let { status.issues[it] }
-                Text(when (issue) {
-                    DeviceSourceIssue.OFFLINE -> "Reconnect this storage to see its videos."
-                    DeviceSourceIssue.NEEDS_ACCESS -> "Relink this folder to restore access."
-                    DeviceSourceIssue.SCAN_FAILED -> "Couldn’t check this source."
-                    null -> if (loadFailed) "Couldn’t load Device Videos." else "Some video sources are unavailable."
-                }, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                MiowserActionButton(style = AppButtonStyle.TEXT, onClick = { refreshCatalog(folderSource ?: source) }) {
-                    Text("Retry")
+                IconButton(onClick = { refreshCatalog(folderSource ?: source) }) {
+                    Icon(Icons.Rounded.Refresh, "Refresh device videos")
                 }
             }
+            Box {
+                IconButton(onClick = { headerMenu = true }) {
+                    Icon(Icons.Rounded.MoreVert, "Device Videos menu")
+                }
+                MiowserDropdownMenu(expanded = headerMenu, onDismissRequest = { headerMenu = false }) {
+                    MiowserMenuItem(
+                        text = { Text("Open video file") },
+                        leadingIcon = { Icon(Icons.Rounded.FolderOpen, contentDescription = null) },
+                        onClick = { headerMenu = false; onOpenVideo() }
+                    )
+                    MiowserMenuItem(
+                        text = { Text("Browse") },
+                        leadingIcon = { Icon(Icons.Rounded.Language, contentDescription = null) },
+                        onClick = { headerMenu = false; onBrowse() }
+                    )
+                }
+            }
         }
-        val term = search.trim()
-        if (foldersMode && folderPath == null && term.isEmpty()) {
-            browserPositions.SaveableStateProvider("device-folders:$listMode") {
-                key(source) {
-                    DeviceVideoFolders(status, source, listMode, Modifier.weight(1f)) { folder ->
-                        browserPositions.removeState("device-open-folder:false")
-                        browserPositions.removeState("device-open-folder:true")
-                        folderSource = folder.sourceId
-                        folderPath = folder.folder
+        destinationTabs()
+        Column(Modifier.fillMaxSize().padding(horizontal = UiSpacing.m)) content@ {
+            if (!discoveryEnabled) {
+                Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    ExpressiveEmptyState(
+                        title = "Device discovery is off",
+                        description = "Open a video directly or turn discovery back on in Media settings.",
+                        icon = Icons.Rounded.VideoLibrary
+                    )
+                    MiowserActionButton(style = AppButtonStyle.TONAL, onClick = onOpenVideo) { Text("Open video") }
+                    MiowserActionButton(style = AppButtonStyle.TEXT, onClick = onDiscoverySettings) { Text("Media settings") }
+                }
+                return@content
+            }
+            if (searchVisible) {
+                OutlinedTextField(
+                    value = search,
+                    onValueChange = { search = it },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = UiSpacing.s).testTag("device_video_search"),
+                    shape = MaterialTheme.shapes.extraLarge,
+                    placeholder = { Text("Search videos and folders") },
+                    leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                    trailingIcon = {
+                        SearchFieldActions(
+                            showClear = search.isNotEmpty(),
+                            onClear = { search = "" },
+                            onSubmit = { focusManager.clearFocus() },
+                            submitEnabled = search.isNotBlank(),
+                            submitDescription = "Finish device video search"
+                        )
+                    },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
+                )
+            }
+            Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
+                Box {
+                    FilterChip(selected = source != null, onClick = { menu = true }, label = {
+                        Text(status.sources.firstOrNull { it.id == source }?.label ?: "All sources",
+                            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    }, modifier = Modifier.widthIn(max = HubLibraryTokens.gridMinCell))
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(text = { Text("All sources") }, onClick = { closeFolder(); source = null; menu = false })
+                        status.sources.forEach { item ->
+                            DropdownMenuItem(text = {
+                                Text(item.label + (status.issues[item.id]?.let { " · ${it.label}" } ?: ""))
+                            }, onClick = { closeFolder(); source = item.id; menu = false })
+                        }
+                    }
+                }
+                FilterChip(selected = foldersMode, onClick = {
+                    closeFolder()
+                    foldersMode = !foldersMode
+                    saveView()
+                }, label = { Text("Folders") })
+                FilterChip(selected = titleOrder, onClick = { titleOrder = !titleOrder; saveView() },
+                    label = { Text(if (titleOrder) "Title" else "Recently modified") })
+                FilterChip(selected = listMode, onClick = { listMode = !listMode; saveView() },
+                    label = { Text(if (listMode) "List" else "Grid") })
+            }
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
+                if (status.access != DeviceMediaAccess.FULL) {
+                    MiowserActionButton(style = AppButtonStyle.TONAL, onClick = { requestAccess.launch(deviceVideoPermissions()) }) {
+                        Text(if (status.access == DeviceMediaAccess.SELECTED) "Change video access" else "Allow video access")
+                    }
+                }
+                MiowserActionButton(style = AppButtonStyle.TEXT, onClick = {
+                    replacingLink = null
+                    pickFolder.launch(null)
+                }) { Text("Link folder") }
+                status.sources.firstOrNull { it.id == (folderSource ?: source) && it.kind == DEVICE_LINK }?.let { linked ->
+                    MiowserActionButton(style = AppButtonStyle.TEXT, onClick = {
+                        replacingLink = linked.id
+                        pickFolder.launch(Uri.parse(linked.id))
+                    }) {
+                        Text("Relink folder")
+                    }
+                    MiowserActionButton(style = AppButtonStyle.TEXT, onClick = { removeLink = linked }) { Text("Unlink folder") }
+                }
+            }
+            if (status.scanning) {
+                Text(status.checkingSource?.let { "Checking $it…" } ?: "Checking videos…",
+                    Modifier.testTag("device_scan_status"), style = MaterialTheme.typography.labelMedium)
+            }
+            if (!status.scanning && (status.issues.isNotEmpty() || loadFailed)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val issue = (folderSource ?: source)?.let { status.issues[it] }
+                    Text(when (issue) {
+                        DeviceSourceIssue.OFFLINE -> "Reconnect this storage to see its videos."
+                        DeviceSourceIssue.NEEDS_ACCESS -> "Relink this folder to restore access."
+                        DeviceSourceIssue.SCAN_FAILED -> "Couldn’t check this source."
+                        null -> if (loadFailed) "Couldn’t load Device Videos." else "Some video sources are unavailable."
+                    }, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                    MiowserActionButton(style = AppButtonStyle.TEXT, onClick = { refreshCatalog(folderSource ?: source) }) {
+                        Text("Retry")
                     }
                 }
             }
-        } else {
-            val content: @Composable () -> Unit = {
-                DeviceVideoGrid(status, folderSource ?: source, folderPath, term, titleOrder, listMode, onPlay,
-                    Modifier.weight(1f))
-            }
-            key(foldersMode, folderSource ?: source, folderPath, term, titleOrder, listMode) {
-                if (term.isEmpty()) {
-                    val location = if (folderPath == null) "device-videos" else "device-open-folder"
-                    browserPositions.SaveableStateProvider("$location:$listMode", content)
-                } else content()
+            val term = search.trim()
+            if (foldersMode && folderPath == null && term.isEmpty()) {
+                browserPositions.SaveableStateProvider("device-folders:$listMode") {
+                    key(source) {
+                        DeviceVideoFolders(status, source, listMode, Modifier.weight(1f)) { folder ->
+                            browserPositions.removeState("device-open-folder:false")
+                            browserPositions.removeState("device-open-folder:true")
+                            folderSource = folder.sourceId
+                            folderPath = folder.folder
+                        }
+                    }
+                }
+            } else {
+                val content: @Composable () -> Unit = {
+                    DeviceVideoGrid(status, folderSource ?: source, folderPath, term, titleOrder, listMode, onPlay,
+                        Modifier.weight(1f))
+                }
+                key(foldersMode, folderSource ?: source, folderPath, term, titleOrder, listMode) {
+                    if (term.isEmpty()) {
+                        val location = if (folderPath == null) "device-videos" else "device-open-folder"
+                        browserPositions.SaveableStateProvider("$location:$listMode", content)
+                    } else content()
+                }
             }
         }
     }
