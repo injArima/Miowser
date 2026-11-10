@@ -215,7 +215,9 @@ internal fun DeviceVideosPage(
             }
         }
         destinationTabs()
-        Column(Modifier.fillMaxSize().padding(horizontal = UiSpacing.m)) content@ {
+        Column(
+            Modifier.fillMaxSize().padding(start = UiSpacing.m, top = UiSpacing.m, end = UiSpacing.m)
+        ) content@ {
             if (!discoveryEnabled) {
                 Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally) {
@@ -234,7 +236,7 @@ internal fun DeviceVideosPage(
                     value = search,
                     onValueChange = { search = it },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = UiSpacing.s).testTag("device_video_search"),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = UiSpacing.s).testTag("device_video_search"),
                     shape = MaterialTheme.shapes.extraLarge,
                     placeholder = { Text("Search videos and folders") },
                     leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
