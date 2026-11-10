@@ -17,7 +17,9 @@
     <string name="nav_downloads">Downloads</string>
     <string name="nav_focus_address">Focus search or address bar</string>
     <string name="nav_open_new_tab">Open new tab</string>
-    <string name="nav_open_library_settings">Open Library settings</string>
+    <string name="nav_device">Device</string>
+    <string name="nav_network">Network</string>
+    <string name="nav_open_section_settings">Open %1$s settings</string>
     <string name="download_section_downloading">Downloading (%1$d)</string>
     <string name="download_section_downloaded">Downloaded (%1$d)</string>
 </resources>

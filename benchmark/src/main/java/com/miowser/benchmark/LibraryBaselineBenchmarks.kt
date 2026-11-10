@@ -142,7 +142,7 @@ class LibraryBaselineBenchmarks {
 
     private fun MacrobenchmarkScope.launchAndAwaitRows() {
         device.executeShellCommand("am start -n $PACKAGE/com.miowser.app.MainActivity")
-        device.requireNode(By.res("hub_destination_saved")).click()
+        device.requireNode(By.res("hub_nav_network")).click()
         device.requireNode(By.text("Fixture video 000"))
     }
 
@@ -155,7 +155,7 @@ class LibraryBaselineBenchmarks {
     }
 
     private fun MacrobenchmarkScope.returnToLibrary() {
-        device.requireNode(By.res("hub_nav_library")).click()
+        device.requireNode(By.res("hub_nav_network")).click()
         device.requireNode(By.text("Fixture video 000"))
     }
 

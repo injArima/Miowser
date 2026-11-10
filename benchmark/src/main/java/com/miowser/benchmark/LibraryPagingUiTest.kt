@@ -14,7 +14,7 @@ class LibraryPagingUiTest {
         val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         seed(libraryBaseline = true)
         device.executeShellCommand("am start -W -n $PACKAGE/com.miowser.app.MainActivity")
-        device.requireNode(By.res("hub_destination_saved")).click()
+        device.requireNode(By.res("hub_nav_network")).click()
         device.requireNode(By.text("Fixture video 000"))
         device.requireNode(By.desc("Search Library")).click()
         val search = device.requireNode(By.res("library_search"))
@@ -41,7 +41,7 @@ class LibraryPagingUiTest {
         val title = checkNotNull(deepTitle) { "The fling never reached a video beyond the initial window" }
         device.requireNode(By.res("hub_nav_downloads")).click()
         device.requireNode(By.res("downloads_list"))
-        device.requireNode(By.res("hub_nav_library")).click()
+        device.requireNode(By.res("hub_nav_network")).click()
         device.requireNode(By.text(title)).click()
         device.requireNode(By.res("player_first_frame"))
         val fixtureSize = InstrumentationRegistry.getArguments().getString("library")?.toInt() ?: 500

@@ -123,6 +123,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
@@ -190,7 +191,7 @@ import com.miowser.app.ui.theme.HubLibraryTokens
 import com.miowser.app.ui.AppButtonStyle
 import com.miowser.app.ui.MiowserActionButton
 
-enum class HubSection { LIBRARY, DOWNLOADS, MORE }
+enum class HubSection { DEVICE, LIBRARY, DOWNLOADS, MORE }
 enum class HubDownloadSection { DOWNLOADING, DOWNLOADED }
 enum class HubLibrarySort(val label: String) {
     RECENT("Recently played"),
@@ -203,7 +204,6 @@ private enum class HubLibraryView { GRID, LIST }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun HubHomePage(
-    destinationTabs: @Composable () -> Unit,
     selectedSection: HubSection,
     librarySettingsOpen: Boolean,
     onDismissLibrarySettings: () -> Unit,
@@ -374,7 +374,7 @@ internal fun HubHomePage(
         topBar = {
             Column {
                 LibraryHubTopBar(
-                    branded = selectedSection == HubSection.LIBRARY,
+                    branded = selectedSection != HubSection.MORE,
                     title = {
                         if (selectedSection == HubSection.LIBRARY) {
                             Column {
@@ -405,7 +405,6 @@ internal fun HubHomePage(
                         }
                     }
                 )
-                destinationTabs()
                 if (selectedSection == HubSection.LIBRARY && librarySearchVisible) {
                     OutlinedTextField(
                         value = librarySearchQuery,
@@ -453,6 +452,7 @@ internal fun HubHomePage(
             if (uiVisible) destinations.SaveableStateProvider(selectedSection.name) {
                 key(inspectionEpoch) {
                     when (selectedSection) {
+                        HubSection.DEVICE -> Unit
                         HubSection.LIBRARY -> LibraryViewState(
                             libraryViews, "${libraryView.name}:${librarySort.name}:$activeFolderId", librarySearchQuery
                         ) { HubLibraryContent(
@@ -652,7 +652,8 @@ internal fun HubHomePage(
 internal fun HubBottomNavigation(
     selectedSection: HubSection,
     activeDownloadCount: Int,
-    onOpenLibrarySettings: () -> Unit,
+    networkAvailable: Boolean,
+    onOpenLibrarySettings: (HubSection) -> Unit,
     selectedDownloadSection: HubDownloadSection,
     onDownloadSectionSelected: (HubDownloadSection) -> Unit,
     downloadDirectory: DownloadDirectory?,
@@ -667,12 +668,14 @@ internal fun HubBottomNavigation(
     var downloadSettingsExpanded by remember { mutableStateOf(false) }
     val view = LocalView.current
     val labels = mapOf(
-        HubSection.LIBRARY to stringResource(R.string.nav_library),
+        HubSection.DEVICE to stringResource(R.string.nav_device),
+        HubSection.LIBRARY to stringResource(R.string.nav_network),
         HubSection.DOWNLOADS to stringResource(R.string.nav_downloads),
         HubSection.MORE to stringResource(R.string.nav_more)
     )
-    val sections = HubSection.entries
-    val openLibrarySettings = stringResource(R.string.nav_open_library_settings)
+    val sections = remember(networkAvailable) {
+        HubSection.entries.filter { networkAvailable || it != HubSection.LIBRARY }
+    }
     // The Scaffold content inset keeps this overlay clear of gesture and three-button navigation.
     BoxWithConstraints(
         modifier = modifier
@@ -740,11 +743,6 @@ internal fun HubBottomNavigation(
                     ) {
                         sections.forEach { section ->
                             val label = labels.getValue(section)
-                            val icon = when (section) {
-                                HubSection.LIBRARY -> Icons.Rounded.VideoLibrary
-                                HubSection.DOWNLOADS -> Icons.Rounded.Download
-                                HubSection.MORE -> Icons.Rounded.MoreHoriz
-                            }
                             val itemWidth = selection.animateDp(
                                 transitionSpec = { motion.spec(MotionTokens.selection) },
                                 label = "${label} width"
@@ -754,7 +752,8 @@ internal fun HubBottomNavigation(
                                 label = "${label} label"
                             ) { active -> if (section == active) 1f else 0f }
                             HubNavigationItem(
-                                testTag = "hub_nav_${section.name.lowercase()}",
+                                testTag = if (section == HubSection.LIBRARY) "hub_nav_network"
+                                    else "hub_nav_${section.name.lowercase()}",
                                 selected = selectedSection == section,
                                 width = itemWidth,
                                 labelAlpha = labelAlpha,
@@ -765,9 +764,9 @@ internal fun HubBottomNavigation(
                                     onSectionSelected(section)
                                 },
                                 onLongClick = when (section) {
-                                    HubSection.LIBRARY -> ({
+                                    HubSection.DEVICE, HubSection.LIBRARY -> ({
                                         view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                                        onOpenLibrarySettings()
+                                        onOpenLibrarySettings(section)
                                     })
                                     HubSection.DOWNLOADS -> ({
                                         view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
@@ -776,7 +775,8 @@ internal fun HubBottomNavigation(
                                     HubSection.MORE -> null
                                 },
                                 longClickLabel = when (section) {
-                                    HubSection.LIBRARY -> openLibrarySettings
+                                    HubSection.DEVICE, HubSection.LIBRARY ->
+                                        stringResource(R.string.nav_open_section_settings, label)
                                     HubSection.DOWNLOADS -> "Open Downloads settings"
                                     HubSection.MORE -> null
                                 },
@@ -791,10 +791,13 @@ internal fun HubBottomNavigation(
                                                 Text(activeDownloadCount.coerceAtMost(99).toString())
                                             } }
                                         ) {
-                                            Icon(icon, contentDescription = null)
+                                            Icon(Icons.Rounded.Download, contentDescription = null)
                                         }
-                                    } else {
-                                        Icon(icon, contentDescription = null)
+                                    } else when (section) {
+                                        HubSection.DEVICE -> Icon(painterResource(R.drawable.ic_hexagon_symbol_rounded), null)
+                                        HubSection.LIBRARY -> Icon(painterResource(R.drawable.ic_blur_on_symbol_rounded), null)
+                                        HubSection.DOWNLOADS -> Icon(Icons.Rounded.Download, null)
+                                        HubSection.MORE -> Icon(Icons.Rounded.MoreHoriz, null)
                                     }
                                 }
                             )

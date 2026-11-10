@@ -59,7 +59,7 @@ class StartupTest {
         device.executeShellCommand("am force-stop $target")
         val start = android.os.SystemClock.elapsedRealtime()
         device.executeShellCommand("am start -W -n $target/com.miowser.app.MainActivity")
-        device.requireNode(By.res("hub_destination_saved")).click()
+        device.requireNode(By.res("hub_nav_network")).click()
         waitText("Fixture video 000")
         android.util.Log.i("Step5Timing", "Hub launch through shell and UI wait: ${android.os.SystemClock.elapsedRealtime() - start} ms")
         device.pressHome()

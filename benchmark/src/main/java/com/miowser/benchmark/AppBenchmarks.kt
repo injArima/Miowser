@@ -52,7 +52,7 @@ internal fun seed(libraryBaseline: Boolean = false, resetLibraryOnly: Boolean = 
 
 internal fun MacrobenchmarkScope.openHub() {
     startActivityAndWait(Intent().setClassName(PACKAGE, "com.miowser.app.MainActivity"))
-    device.requireNode(By.res("hub_destination_saved")).click()
+    device.requireNode(By.res("hub_nav_network")).click()
     device.requireNode(By.res("library_grid"))
     device.requireNode(By.text("Fixture video 000"))
 }
@@ -71,7 +71,7 @@ private fun androidx.test.uiautomator.UiDevice.switchHubDestinations(repetitions
         requireNode(By.res("downloads_list"))
         requireNode(By.res("hub_nav_more")).click()
         requireNode(By.res("hub_more"))
-        requireNode(By.res("hub_nav_library")).click()
+        requireNode(By.res("hub_nav_network")).click()
         requireNode(By.res("library_grid"))
     }
 }
@@ -84,7 +84,7 @@ private fun androidx.test.uiautomator.UiDevice.switchDownloadLists(repetitions: 
         requireNode(By.res("hub_downloads_downloading")).click()
         requireNode(By.res("downloads_list"))
     }
-    requireNode(By.res("hub_nav_library")).click()
+    requireNode(By.res("hub_nav_network")).click()
     requireNode(By.res("library_grid"))
 }
 

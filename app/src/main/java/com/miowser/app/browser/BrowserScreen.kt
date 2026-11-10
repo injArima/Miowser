@@ -358,17 +358,20 @@ fun BrowserScreen(
     // A launcher browser action must enter the browser on the first rendered frame.
     // The shortcut's tab operation can still wait for saved tabs to restore below.
     var showingHub by rememberSaveable { mutableStateOf(shortcutRequest == null || shortcutRequest.localVideo != null) }
-    var deviceVideosSelected by rememberSaveable { mutableStateOf(true) }
-    var returnToDeviceLibrary by rememberSaveable { mutableStateOf(true) }
     val hubDestinations = rememberSaveableStateHolder()
     val libraryEnabled = AppSettings.current.libraryBehavior.isAvailable
-    var hubSection by rememberSaveable {
-        mutableStateOf(if (libraryEnabled) HubSection.LIBRARY else HubSection.DOWNLOADS)
-    }
+    var hubSection by rememberSaveable { mutableStateOf(HubSection.DEVICE) }
+    var lastLibrarySection by rememberSaveable { mutableStateOf(HubSection.DEVICE) }
+    val selectedHubSection = if (!libraryEnabled && hubSection == HubSection.LIBRARY) {
+        HubSection.DOWNLOADS
+    } else hubSection
+    val deviceVideosSelected = selectedHubSection == HubSection.DEVICE
     LaunchedEffect(libraryEnabled) {
-        if (!libraryEnabled && hubSection == HubSection.LIBRARY) {
-            hubSection = HubSection.DOWNLOADS
-        }
+        if (!libraryEnabled && hubSection == HubSection.LIBRARY) hubSection = HubSection.DOWNLOADS
+    }
+    fun selectHubSection(section: HubSection) {
+        if (section == HubSection.DEVICE || section == HubSection.LIBRARY) lastLibrarySection = section
+        hubSection = section
     }
     var hubDownloadSection by rememberSaveable { mutableStateOf(initialHubSettings.defaultDownloadSection) }
     var hubLibrarySort by rememberSaveable { mutableStateOf(initialHubSettings.librarySort) }
@@ -2034,8 +2037,10 @@ fun BrowserScreen(
             BrowserBackAction.CLOSE_CHILD_TAB -> activeTab?.let { closeTab(it.id) }
             BrowserBackAction.SHOW_HUB -> showingHub = true
             BrowserBackAction.SHOW_HUB_LIBRARY -> {
-                deviceVideosSelected = hubSection == HubSection.LIBRARY || returnToDeviceLibrary || !libraryEnabled
-                hubSection = HubSection.LIBRARY
+                selectHubSection(
+                    if (selectedHubSection == HubSection.LIBRARY || !libraryEnabled) HubSection.DEVICE
+                    else lastLibrarySection
+                )
             }
             BrowserBackAction.EXIT_APP -> Unit
         }
@@ -2783,22 +2788,6 @@ fun BrowserScreen(
             shortcutRequest?.localVideo == null) {
             var librarySettingsOpen by remember { mutableStateOf(false) }
             var libraryHealthVisible by rememberSaveable { mutableStateOf(false) }
-            val selectedHubSection = when {
-                deviceVideosSelected -> HubSection.LIBRARY
-                !libraryEnabled && hubSection == HubSection.LIBRARY -> HubSection.DOWNLOADS
-                else -> hubSection
-            }
-            fun selectHubSection(section: HubSection) {
-                if (section == HubSection.LIBRARY) {
-                    if (selectedHubSection != HubSection.LIBRARY) {
-                        deviceVideosSelected = returnToDeviceLibrary || !libraryEnabled
-                    }
-                } else {
-                    if (selectedHubSection == HubSection.LIBRARY) returnToDeviceLibrary = deviceVideosSelected
-                    deviceVideosSelected = false
-                }
-                hubSection = section
-            }
             fun selectDownloadSection(section: HubDownloadSection) {
                 hubDownloadSection = section
                 HubSettingsStore.save(context, HubSettings(
@@ -2813,12 +2802,6 @@ fun BrowserScreen(
                     showingHub = false
                     activeScreen = null
                     if (startupReady) openUrlInActiveTab(target) else pendingStartupUrl = target
-                }
-            }
-            val destinationTabs: @Composable () -> Unit = {
-                LibraryHubTabs(deviceVideosSelected) {
-                    deviceVideosSelected = it
-                    returnToDeviceLibrary = it
                 }
             }
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainerLow).statusBarsPadding()) {
@@ -2840,7 +2823,6 @@ fun BrowserScreen(
                                 }.distinctBy { it.uri }
                             } }
                             DeviceVideosPage(imported, deviceDownloads, initialView = initialHubSettings,
-                                destinationTabs = destinationTabs,
                                 librarySettingsOpen = librarySettingsOpen,
                                 onDismissLibrarySettings = { librarySettingsOpen = false },
                                 onOpenDirectories = {
@@ -2856,7 +2838,6 @@ fun BrowserScreen(
                                 onIdleChanged = { libraryIdle = it })
                         } else {
             HubHomePage(
-                destinationTabs = destinationTabs,
                 bottomBarHeight = with(density) { hubBottomBarHeightPx.toDp() },
                 onLibraryIdleChanged = { libraryIdle = it },
                 onOpenMediaSettings = { openMediaSettings() },
@@ -2959,8 +2940,9 @@ fun BrowserScreen(
                             activeDownloadCount = DownloadQueue.downloads.count {
                                 it.id !in pendingDownloadDeletes && it.status.isHubActiveDownload()
                             },
-                            onOpenLibrarySettings = {
-                                if (!libraryEnabled && !deviceVideosSelected) selectHubSection(HubSection.LIBRARY)
+                            networkAvailable = libraryEnabled,
+                            onOpenLibrarySettings = { section ->
+                                selectHubSection(section)
                                 librarySettingsOpen = true
                             },
                             selectedDownloadSection = hubDownloadSection,
@@ -3062,8 +3044,7 @@ fun BrowserScreen(
                         activeScreen = null
                         showBrowserDownloads = true
                     } else if (screen == Screen.HUB) {
-                        deviceVideosSelected = false
-                        hubSection = if (libraryEnabled) HubSection.LIBRARY else HubSection.DOWNLOADS
+                        selectHubSection(if (libraryEnabled) HubSection.LIBRARY else HubSection.DOWNLOADS)
                         activeScreen = null
                         showingHub = true
                     } else {
@@ -3132,8 +3113,7 @@ fun BrowserScreen(
                 },
                 onOpenHubDownloads = {
                     showBrowserDownloads = false
-                    deviceVideosSelected = false
-                    hubSection = HubSection.DOWNLOADS
+                    selectHubSection(HubSection.DOWNLOADS)
                     hubDownloadSection = HubDownloadSection.DOWNLOADING
                     activeScreen = null
                     showingHub = true

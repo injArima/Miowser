@@ -58,7 +58,7 @@ class DeviceCatalogUiTest {
     @Test fun primaryCatalogReconcilesMediaStoreAndOpensThePlayer() {
         fun openDeviceVideos() {
             device.executeShellCommand("am start -W -n $PACKAGE/com.miowser.app.MainActivity")
-            device.requireNode(By.res("hub_destination_device"))
+            device.requireNode(By.res("hub_nav_device"))
         }
         seed(libraryBaseline = true)
         val permission = if (Build.VERSION.SDK_INT >= 33) "READ_MEDIA_VIDEO" else "READ_EXTERNAL_STORAGE"
@@ -97,7 +97,7 @@ class DeviceCatalogUiTest {
             openDeviceVideos()
             check(device.wait(Until.gone(newTitle), 10_000)) { "Deleted video is still visible" }
             device.requireNode(By.textStartsWith("Fixture download "))
-            device.requireNode(By.res("hub_destination_saved")).click()
+            device.requireNode(By.res("hub_nav_network")).click()
             device.requireNode(By.text("Fixture video 000"))
             device.requireNode(By.res("hub_nav_downloads")).click()
             device.requireNode(By.res("downloads_list"))

@@ -70,7 +70,6 @@ internal fun DeviceVideosPage(
     imported: List<String>,
     downloads: List<DeviceDownload>,
     initialView: HubSettings,
-    destinationTabs: @Composable () -> Unit,
     librarySettingsOpen: Boolean,
     onDismissLibrarySettings: () -> Unit,
     onOpenDirectories: () -> Unit,
@@ -214,7 +213,6 @@ internal fun DeviceVideosPage(
                 }
             }
         }
-        destinationTabs()
         Column(
             Modifier.fillMaxSize().padding(start = UiSpacing.m, top = UiSpacing.m, end = UiSpacing.m)
         ) content@ {
