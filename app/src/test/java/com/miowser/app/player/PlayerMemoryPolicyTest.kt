@@ -1,5 +1,11 @@
 package com.miowser.app.player
 
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.LoadControl
+import androidx.media3.exoplayer.analytics.PlayerId
+import androidx.media3.exoplayer.source.MediaSource.MediaPeriodId
+import androidx.media3.exoplayer.source.SinglePeriodTimeline
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -27,16 +33,15 @@ class PlayerMemoryPolicyTest {
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     @Test fun `full sample budget starts playback and released samples permit loading again`() {
         val control = playerLoadControl(8 * 1024 * 1024)
-        val player = androidx.media3.exoplayer.analytics.PlayerId.UNSET
+        val player = PlayerId.UNSET
         control.onPrepared(player)
         assertEquals(0L, control.getBackBufferDurationUs(player))
         assertFalse(control.retainBackBufferFromKeyframe(player))
-        val parameters = androidx.media3.exoplayer.LoadControl.Parameters(player,
-            androidx.media3.common.Timeline.EMPTY,
-            androidx.media3.exoplayer.source.MediaSource.MediaPeriodId("video"),
-            30_000_000, 1_000_000, 1f, true, true, androidx.media3.common.C.TIME_UNSET)
+        val timeline = SinglePeriodTimeline(90_000_000L, true, false, false, null, MediaItem.EMPTY)
+        val parameters = LoadControl.Parameters(player, timeline, MediaPeriodId(timeline.getUidOfPeriod(0)),
+            30_000_000, 1_000_000, 1f, true, true, C.TIME_UNSET, C.TIME_UNSET)
         assertTrue(control.shouldContinueLoading(parameters))
-        val allocator = control.allocator
+        val allocator = control.getAllocator(player)
         val allocations = (0 until 128).map { allocator.allocate() }
         try {
             assertFalse(control.shouldContinueLoading(parameters))

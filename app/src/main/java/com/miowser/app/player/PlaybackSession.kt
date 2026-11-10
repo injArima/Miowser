@@ -23,7 +23,8 @@ internal class PlaybackSession private constructor(val player: ExoPlayer, privat
         cleanups.clear()
         player.pause()
         player.setPlaybackSpeed(1f)
-        player.trackSelectionParameters = TrackSelectionParameters.Builder(context).build()
+        player.trackSelectionParameters = TrackSelectionParameters.Builder()
+            .configureLocalSubtitles(context, request).build()
         player.setMediaItem(MediaItem.fromUri(request.uri), request.startPositionMs.coerceAtLeast(0L))
         player.playWhenReady = true
         player.prepare()
@@ -59,8 +60,13 @@ internal class PlaybackSession private constructor(val player: ExoPlayer, privat
                 .build()
             try {
                 player.setMediaItem(item)
-                if (externalCaptions) player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
+                if (request is PlaybackRequest.Local) {
+                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                        .configureLocalSubtitles(context, request).build()
+                } else if (externalCaptions) {
+                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
+                }
                 if (request.startPositionMs > 0) player.seekTo(request.startPositionMs)
                 player.playWhenReady = true
                 player.prepare()
@@ -70,4 +76,13 @@ internal class PlaybackSession private constructor(val player: ExoPlayer, privat
             }
         }
     }
+}
+
+@androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+private fun TrackSelectionParameters.Builder.configureLocalSubtitles(
+    context: Context,
+    request: PlaybackRequest.Local
+): TrackSelectionParameters.Builder {
+    val preference = PlayerTrackPreferenceStore.load(context, request.toLibraryEntry().identityKey).subtitles
+    return setSelectTextByDefault(true).setTrackTypeDisabled(C.TRACK_TYPE_TEXT, preference.mode == PlayerTrackMode.OFF)
 }

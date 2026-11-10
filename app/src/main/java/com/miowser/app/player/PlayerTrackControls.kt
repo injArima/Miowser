@@ -108,7 +108,8 @@ internal fun buildPlayerTrackSnapshot(tracks: Tracks): PlayerTrackSnapshot {
         repeat(group.length) { trackIndex ->
             if (!group.isTrackSupported(trackIndex)) return@repeat
             val format = group.getTrackFormat(trackIndex)
-            val (label, detail) = describeTrack(kind, format, trackIndex)
+            val ordinal = if (kind == PlayerTrackKind.SUBTITLE) subtitles.size else trackIndex
+            val (label, detail) = describeTrack(kind, format, ordinal)
             val option = PlayerTrackOption(
                 key = format.id?.takeIf {
                     kind == PlayerTrackKind.SUBTITLE && it.startsWith(DETECTED_VTT_TRACK_ID)
