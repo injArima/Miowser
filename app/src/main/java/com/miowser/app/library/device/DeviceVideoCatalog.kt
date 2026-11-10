@@ -66,8 +66,7 @@ internal data class DeviceCatalogStatus(
     val visible: Set<String> = emptySet(),
     val issues: Map<String, DeviceSourceIssue> = emptyMap(),
     val revision: Long = 0,
-    val scanning: Boolean = true,
-    val checkingSource: String? = null
+    val scanning: Boolean = true
 )
 
 internal data class DeviceCatalogWindow<T>(val start: Int, val rows: List<T>, val count: Int) {
@@ -237,8 +236,8 @@ internal object DeviceVideoCatalog {
                     visible -= id
                 }
             }
-            suspend fun report(scanning: Boolean, checkingSource: String? = null) = emit(DeviceCatalogStatus(
-                access, sources.values.toList(), visible.toSet(), issues.toMap(), revision, scanning, checkingSource
+            suspend fun report(scanning: Boolean) = emit(DeviceCatalogStatus(
+                access, sources.values.toList(), visible.toSet(), issues.toMap(), revision, scanning
             ))
             if (targets.isNotEmpty()) report(true)
             for (source in targets) {
@@ -253,7 +252,6 @@ internal object DeviceVideoCatalog {
                     }
                     if (refresh != DeviceCatalogRefresh.FORCE && key != null &&
                         source.generation != null && source.stamp == key) continue
-                    report(true, source.label)
                     val published = publish(db, source, key) { generation, signal, add ->
                         when (source.kind) {
                             DEVICE_MEDIA -> {

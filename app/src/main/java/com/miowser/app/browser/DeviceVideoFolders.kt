@@ -1,6 +1,5 @@
 package com.miowser.app.browser
 
-import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -24,13 +23,11 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 import com.miowser.app.library.LibraryThumbnailStore
 import com.miowser.app.library.device.*
-import com.miowser.app.ui.MiowserLoadingIndicator
 import com.miowser.app.ui.theme.HubLibraryTokens
 import com.miowser.app.ui.theme.UiSpacing
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -38,38 +35,23 @@ internal fun DeviceVideoFolders(
     status: DeviceCatalogStatus,
     source: String?,
     listMode: Boolean,
+    cache: HubLibraryCache,
     modifier: Modifier,
     emptyState: @Composable (String) -> Unit,
-    onBusyChanged: (Boolean) -> Unit,
     onOpen: (DeviceVideoFolder) -> Unit
 ) {
-    val app = LocalContext.current.applicationContext
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     val foreground = lifecycleState.isAtLeast(Lifecycle.State.STARTED)
     val grid = rememberLazyGridState()
     val query = remember(status.visible, source) { DeviceBrowseQuery(status.visible, source, "", false) }
-    var window by remember(query) { mutableStateOf<DeviceCatalogWindow<DeviceVideoFolder>?>(null) }
-    var loadedRevision by remember(query) { mutableLongStateOf(-1) }
-    var loading by remember(query, status.revision) { mutableStateOf(true) }
-    val busy = loading
-    SideEffect { onBusyChanged(busy) }
-    LaunchedEffect(query, status.revision) {
-        snapshotFlow { grid.firstVisibleItemIndex / DEVICE_PAGE_SIZE }.collectLatest { page ->
-            val count = window?.count?.takeIf { loadedRevision == status.revision }
-            loading = true
-            try {
-                window = withContext(Dispatchers.IO) { DeviceVideoCatalog.readFolders(app, query, page * DEVICE_PAGE_SIZE, count) }
-                loadedRevision = status.revision
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { window = DeviceCatalogWindow(0, emptyList(), 0) }
-            finally { loading = false }
-        }
+    val current = rememberDeviceCatalogWindow(query, status.revision, grid, cache.deviceFolders, DeviceVideoCatalog::readFolders)
+    if (current == null || (current.count == 0 && status.scanning)) {
+        Spacer(modifier.fillMaxWidth())
+        return
     }
-    val current = window
-    if (current == null || current.count == 0) {
+    if (current.count == 0) {
         Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            if (status.scanning || current == null) MiowserLoadingIndicator(description = "Checking video folders")
-            else emptyState("No video folders")
+            emptyState("No video folders")
         }
         return
     }
@@ -87,7 +69,7 @@ internal fun DeviceVideoFolders(
             val folder = current[index]
             if (folder == null) LibraryCardPlaceholder(listMode)
             else DeviceVideoFolderCard(folder, status.sources.firstOrNull { it.id == folder.sourceId }?.label,
-                status.revision, grid.isScrollInProgress, foreground, listMode) { onOpen(folder) }
+                status.revision, cache, grid.isScrollInProgress, foreground, listMode) { onOpen(folder) }
         }
     }
 }
@@ -97,21 +79,36 @@ private fun DeviceVideoFolderCard(
     folder: DeviceVideoFolder,
     sourceLabel: String?,
     revision: Long,
+    cache: HubLibraryCache,
     scrolling: Boolean,
     foreground: Boolean,
     listMode: Boolean,
     onOpen: () -> Unit
 ) {
     val app = LocalContext.current.applicationContext
-    var covers by remember(folder.sourceId, folder.folder, revision) { mutableStateOf<List<Bitmap>>(emptyList()) }
-    LaunchedEffect(folder.sourceId, folder.folder, revision, scrolling, foreground) {
+    val coverKey = remember(folder.sourceId, folder.folder, revision) {
+        HubLibraryCache.FolderCoverKey(folder.sourceId, folder.folder, revision)
+    }
+    var covers by remember(coverKey) {
+        mutableStateOf(cache.folderCovers.get(coverKey).orEmpty().mapNotNull {
+            LibraryThumbnailStore.peekDeviceFrame(it, compact = true)
+        })
+    }
+    var resolved by remember(coverKey) { mutableStateOf(false) }
+    LaunchedEffect(coverKey, scrolling, foreground) {
         if (!foreground) {
             covers = emptyList()
+            resolved = false
             return@LaunchedEffect
         }
-        if (scrolling || covers.isNotEmpty()) return@LaunchedEffect
+        if (scrolling || resolved) return@LaunchedEffect
+        val cached = cache.folderCovers.get(coverKey)
+        if (cached != null && covers.size == cached.size) return@LaunchedEffect
         delay(220)
-        val candidates = try { withContext(Dispatchers.IO) { DeviceVideoCatalog.readFolderCover(app, folder) } }
+        val candidates = try {
+            cached ?: withContext(Dispatchers.IO) { DeviceVideoCatalog.readFolderCover(app, folder) }
+                .also { cache.folderCovers.put(coverKey, it) }
+        }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { emptyList() }
         covers = candidates.mapNotNull {
@@ -121,6 +118,7 @@ private fun DeviceVideoFolderCard(
                 LibraryThumbnailStore.loadDeviceFrame(app, it, compact = true)
             })
         }
+        resolved = covers.isNotEmpty()
     }
     val name = folder.folder.substringAfterLast('/').ifBlank { sourceLabel ?: "Storage root" }
     val cover: @Composable () -> Unit = {

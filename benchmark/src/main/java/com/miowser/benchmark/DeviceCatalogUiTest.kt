@@ -43,7 +43,7 @@ class DeviceCatalogUiTest {
             device.requireNode(By.res("player_first_frame"))
             android.util.Log.i("DeviceCatalogScale",
                 "Android open to first frame ms=${android.os.SystemClock.elapsedRealtime() - started}")
-            check(!device.hasObject(By.res("device_scan_status")))
+            check(!device.hasObject(By.desc("Library loading")))
         } finally {
             device.executeShellCommand("am force-stop $PACKAGE")
             fixture("delete")
@@ -98,8 +98,16 @@ class DeviceCatalogUiTest {
             device.requireNode(By.desc("Refresh device videos")).click()
             check(device.wait(Until.gone(newTitle), 10_000)) { "Deleted video is still visible" }
             device.requireNode(By.textStartsWith("Fixture download "))
+            check(device.wait(Until.gone(By.desc("Library loading")), 10_000))
             device.requireNode(By.res("hub_nav_network")).click()
             device.requireNode(By.text("Fixture video 000"))
+            check(!device.hasObject(By.desc("Library loading")))
+            device.requireNode(By.res("hub_nav_device")).click()
+            device.requireNode(By.textStartsWith("Fixture download "))
+            check(!device.hasObject(By.desc("Library loading")))
+            device.requireNode(By.res("hub_nav_network")).click()
+            device.requireNode(By.text("Fixture video 000"))
+            check(!device.hasObject(By.desc("Library loading")))
             device.requireNode(By.res("hub_nav_downloads")).click()
             device.requireNode(By.res("downloads_list"))
         } finally {

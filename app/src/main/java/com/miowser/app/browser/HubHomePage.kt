@@ -83,10 +83,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -166,14 +164,10 @@ import com.miowser.app.ui.MiowserConfirmationDialog
 import com.miowser.app.ui.MiowserSnackbarHost
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.repeatOnLifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.awaitCancellation
 import com.miowser.app.library.LocalInspectionCache
 import java.net.URI
 import com.miowser.app.ui.theme.ExpressiveTokens
@@ -200,6 +194,8 @@ private enum class HubLibraryView { GRID, LIST }
 @Composable
 internal fun HubHomePage(
     selectedSection: HubSection,
+    libraryCache: HubLibraryCache,
+    inspectionEpoch: Long,
     librarySettingsOpen: Boolean,
     onDismissLibrarySettings: () -> Unit,
     libraryHealthVisible: Boolean,
@@ -226,21 +222,12 @@ internal fun HubHomePage(
     onOpenRecordInBrowser: (String, Boolean) -> Unit,
     bottomBarHeight: Dp,
     uiVisible: Boolean = true,
-    onLibraryIdleChanged: (Boolean) -> Unit = {},
-    onLibraryBusyChanged: (Boolean) -> Unit
+    onLibraryIdleChanged: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     val libraryEnabled = com.miowser.app.settings.AppSettings.current.libraryBehavior.isAvailable
     val focusManager = LocalFocusManager.current
     val view = LocalView.current
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
-    var inspectionEpoch by remember { mutableLongStateOf(LocalInspectionCache.epoch) }
-    LaunchedEffect(lifecycle, uiVisible) {
-        if (uiVisible) lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            inspectionEpoch = withContext(Dispatchers.IO) { LocalInspectionCache.prepare(context.applicationContext) }
-            awaitCancellation()
-        }
-    }
     var librarySearchVisible by rememberSaveable { mutableStateOf(false) }
     var librarySearchQuery by rememberSaveable { mutableStateOf("") }
     var showClearLibraryConfirmation by remember { mutableStateOf(false) }
@@ -285,7 +272,7 @@ internal fun HubHomePage(
             it.id == activeFolderId
         }?.parentId ?: UNFILED_FOLDER_ID
     }
-    val directCounts = rememberLibraryFolderCounts(uiVisible && selectedSection == HubSection.LIBRARY)
+    val directCounts = rememberLibraryFolderCounts(uiVisible && selectedSection == HubSection.LIBRARY, libraryCache)
     val foldersForCounts = LibraryFolders.entries.toList()
     val folderVideoCounts = remember(directCounts, foldersForCounts) { countLibraryBranches(directCounts, foldersForCounts) }
     val selectedFolderVideoCount = folderVideoCounts[activeFolderId.takeIf { it.isNotEmpty() }] ?: 0
@@ -375,8 +362,8 @@ internal fun HubHomePage(
                         HubSection.LIBRARY -> LibraryViewState(
                             libraryViews, "${libraryView.name}:${librarySort.name}:$activeFolderId", librarySearchQuery
                         ) { HubLibraryContent(
+                            cache = libraryCache,
                             onIdleChanged = onLibraryIdleChanged,
-                            onBusyChanged = onLibraryBusyChanged,
                             hasEntries = libraryHasEntries,
                             folderVideoCounts = folderVideoCounts,
                             onPlay = onPlayLibraryEntry,
@@ -1198,8 +1185,8 @@ private fun LibraryViewState(
 
 @Composable
 private fun HubLibraryContent(
+    cache: HubLibraryCache,
     onIdleChanged: (Boolean) -> Unit,
-    onBusyChanged: (Boolean) -> Unit,
     hasEntries: Boolean,
     folderVideoCounts: Map<String?, Int>,
     onPlay: (LibraryEntry, LibraryBrowseQuery) -> Unit,
@@ -1226,10 +1213,8 @@ private fun HubLibraryContent(
     val query = remember(selectedFolderId, sort, searchQuery.trim()) {
         LibraryBrowseQuery(selectedFolderId.takeIf { it.isNotEmpty() }, sort, searchQuery.trim())
     }
-    val pages = rememberHubLibraryPages(query, gridState, childFolders.size)
+    val pages = rememberHubLibraryPages(query, gridState, childFolders.size, cache)
     val window = pages.window
-    val loading = pages.loading
-    SideEffect { onBusyChanged(loading) }
     val artworkContext = LocalContext.current.applicationContext
     LaunchedEffect(window, childFolders.size, gridState) {
         snapshotFlow {
@@ -1298,9 +1283,7 @@ private fun HubLibraryContent(
                 )
             }
         } else if (window == null) {
-            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                Text("Loading library…")
-            }
+            Spacer(Modifier.weight(1f))
         } else if (window.count == 0 && childFolders.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxWidth().weight(1f).padding(UiSpacing.xxl),
@@ -1388,7 +1371,7 @@ private fun HubLibraryContent(
 
 @Composable
 internal fun observeLibraryCard(id: LibraryCardId): LibraryEntry? {
-    var entry by remember(id) { mutableStateOf<LibraryEntry?>(null) }
+    var entry by remember(id) { mutableStateOf(MediaLibrary.entryForCard(id)) }
     DisposableEffect(id) {
         val stop = MediaLibrary.observeCard(id) { entry = it }
         onDispose(stop)

@@ -44,19 +44,17 @@ import com.miowser.app.ui.AppButtonStyle
 import com.miowser.app.ui.ChoiceRow
 import com.miowser.app.ui.ExpressiveEmptyState
 import com.miowser.app.ui.MiowserActionButton
-import com.miowser.app.ui.MiowserLoadingIndicator
 import com.miowser.app.ui.theme.HubLibraryTokens
 import com.miowser.app.ui.theme.UiSpacing
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @Composable
 internal fun DeviceVideosPage(
     initialView: HubSettings,
+    cache: HubLibraryCache,
     librarySettingsOpen: Boolean,
     onDismissLibrarySettings: () -> Unit,
     onOpenDirectories: () -> Unit,
@@ -65,8 +63,7 @@ internal fun DeviceVideosPage(
     onDiscoverySettings: () -> Unit,
     onPlay: (DevicePlaybackSelection) -> Unit,
     onMessage: (String) -> Unit,
-    onIdleChanged: (Boolean) -> Unit,
-    onBusyChanged: (Boolean) -> Unit
+    onIdleChanged: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
@@ -74,10 +71,6 @@ internal fun DeviceVideosPage(
     val scope = rememberCoroutineScope()
     val status = DeviceCatalogSession.status
     val loadFailed = DeviceCatalogSession.loadFailed
-    var queryBusy by remember { mutableStateOf(true) }
-    var linkingFolder by remember { mutableStateOf(false) }
-    val busy = discoveryEnabled && (status.scanning || queryBusy || linkingFolder)
-    SideEffect { onBusyChanged(busy) }
     var search by rememberSaveable { mutableStateOf("") }
     var searchVisible by rememberSaveable { mutableStateOf(false) }
     var source by rememberSaveable { mutableStateOf<String?>(null) }
@@ -102,7 +95,6 @@ internal fun DeviceVideosPage(
     }
     val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) scope.launch {
-            linkingFolder = true
             try {
                 val id = DeviceVideoCatalog.link(app, uri)
                 closeFolder()
@@ -110,7 +102,6 @@ internal fun DeviceVideosPage(
                 DeviceCatalogSession.refresh(id)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { onMessage("Couldn’t link this folder. Choose it again.") }
-            finally { linkingFolder = false }
         }
     }
     val reportIdle by rememberUpdatedState(onIdleChanged)
@@ -188,10 +179,6 @@ internal fun DeviceVideosPage(
                     keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
                 )
             }
-            if (status.scanning) {
-                Text(status.checkingSource?.let { "Checking $it…" } ?: "Checking videos…",
-                    Modifier.testTag("device_scan_status"), style = MaterialTheme.typography.labelMedium)
-            }
             if (!status.scanning && (status.issues.isNotEmpty() || loadFailed)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val issue = (folderSource ?: source)?.let { status.issues[it] }
@@ -219,8 +206,7 @@ internal fun DeviceVideosPage(
             if (foldersMode && folderPath == null && term.isEmpty()) {
                 browserPositions.SaveableStateProvider("device-folders:$listMode") {
                     key(source) {
-                        DeviceVideoFolders(status, source, listMode, Modifier.weight(1f), emptyState,
-                            onBusyChanged = { queryBusy = it }) { folder ->
+                        DeviceVideoFolders(status, source, listMode, cache, Modifier.weight(1f), emptyState) { folder ->
                             browserPositions.removeState("device-open-folder:false")
                             browserPositions.removeState("device-open-folder:true")
                             folderSource = folder.sourceId
@@ -230,8 +216,8 @@ internal fun DeviceVideosPage(
                 }
             } else {
                 val content: @Composable () -> Unit = {
-                    DeviceVideoGrid(status, folderSource ?: source, folderPath, term, titleOrder, listMode, onPlay,
-                        Modifier.weight(1f), emptyState, onBusyChanged = { queryBusy = it })
+                    DeviceVideoGrid(status, folderSource ?: source, folderPath, term, titleOrder, listMode, cache,
+                        onPlay, Modifier.weight(1f), emptyState)
                 }
                 key(foldersMode, folderSource ?: source, folderPath, term, titleOrder, listMode) {
                     if (term.isEmpty()) {
@@ -317,10 +303,10 @@ private fun DeviceVideoGrid(
     term: String,
     titleOrder: Boolean,
     listMode: Boolean,
+    cache: HubLibraryCache,
     onPlay: (DevicePlaybackSelection) -> Unit,
     modifier: Modifier,
-    emptyState: @Composable (String) -> Unit,
-    onBusyChanged: (Boolean) -> Unit
+    emptyState: @Composable (String) -> Unit
 ) {
     val app = LocalContext.current.applicationContext
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
@@ -329,28 +315,7 @@ private fun DeviceVideoGrid(
     val query = remember(status.visible, source, term, titleOrder, folder) {
         DeviceBrowseQuery(status.visible, source, term, titleOrder, folder)
     }
-    var window by remember { mutableStateOf<DeviceVideoWindow?>(null) }
-    var loadedQuery by remember { mutableStateOf<DeviceBrowseQuery?>(null) }
-    var windowRevision by remember { mutableLongStateOf(-1L) }
-    var loading by remember(query, status.revision) { mutableStateOf(true) }
-    val busy = loading
-    SideEffect { onBusyChanged(busy) }
-    LaunchedEffect(query, status.revision) {
-        snapshotFlow { grid.firstVisibleItemIndex / DEVICE_PAGE_SIZE }.collectLatest { page ->
-            val index = page * DEVICE_PAGE_SIZE
-            val count = window?.count?.takeIf { loadedQuery == query && windowRevision == status.revision }
-            loading = true
-            try {
-                window = withContext(Dispatchers.IO) { DeviceVideoCatalog.readWindow(app, query, index, count) }
-                loadedQuery = query
-                windowRevision = status.revision
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { window = DeviceVideoWindow(0, emptyList(), 0) }
-            finally { loading = false }
-        }
-    }
-    val windowQuery = loadedQuery
-    val current = window?.takeIf { windowQuery != null && query.allowedSources.containsAll(windowQuery.allowedSources) }
+    val current = rememberDeviceCatalogWindow(query, status.revision, grid, cache.deviceVideos, DeviceVideoCatalog::readWindow)
     LaunchedEffect(current, grid, foreground) {
         if (!foreground) return@LaunchedEffect
         snapshotFlow {
@@ -364,10 +329,13 @@ private fun DeviceVideoGrid(
             }
         }
     }
-    if (current == null || current.count == 0) {
+    if (current == null || (current.count == 0 && status.scanning)) {
+        Spacer(modifier.fillMaxWidth())
+        return
+    }
+    if (current.count == 0) {
         Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            if (status.scanning || window == null) MiowserLoadingIndicator(description = "Checking device videos")
-            else if (term.isNotEmpty()) ExpressiveEmptyState(
+            if (term.isNotEmpty()) ExpressiveEmptyState(
                 title = "No matching videos",
                 description = "Try a different search.",
                 icon = Icons.Rounded.VideoLibrary
@@ -407,7 +375,7 @@ private fun DeviceVideoGrid(
                 }, positionMs = saved?.positionMs ?: 0, durationMs = video.durationMs.takeIf { it > 0 }
                     ?: saved?.durationMs ?: 0, listMode = listMode,
                     qualityLabel = videoQualityLabel(video.height),
-                    onClick = { onPlay(DevicePlaybackSelection(checkNotNull(windowQuery), current, index)) }, localPreview = preview)
+                    onClick = { onPlay(DevicePlaybackSelection(query, current, index)) }, localPreview = preview)
             }
         }
     }

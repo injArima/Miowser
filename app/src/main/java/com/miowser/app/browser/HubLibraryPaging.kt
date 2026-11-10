@@ -17,12 +17,10 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.miowser.app.library.LIBRARY_PAGE_SIZE
 import com.miowser.app.library.LibraryBrowseQuery
-import com.miowser.app.library.LibraryBrowseRevision
 import com.miowser.app.library.LibraryCardId
 import com.miowser.app.library.LibraryFolder
 import com.miowser.app.library.LibraryFolderCount
 import com.miowser.app.library.LibraryRepository
-import com.miowser.app.library.LibraryWindow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
@@ -31,23 +29,23 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
-internal class HubLibraryPages {
-    var window by mutableStateOf<LibraryWindow?>(null)
+internal class HubLibraryPages(cached: HubLibraryCache.NetworkPage?) {
+    var window by mutableStateOf(cached?.window)
     var failed by mutableStateOf(false)
-    var loading by mutableStateOf(true)
     var retry by mutableIntStateOf(0)
-    var revision: LibraryBrowseRevision? = null
+    var revision = cached?.revision
 }
 
 @Composable
 internal fun rememberHubLibraryPages(
     query: LibraryBrowseQuery,
     grid: LazyGridState,
-    folderCards: Int
+    folderCards: Int,
+    cache: HubLibraryCache
 ): HubLibraryPages {
     val app = LocalContext.current.applicationContext
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val pages = remember(query, grid) { HubLibraryPages() }
+    val pages = remember(query, grid) { HubLibraryPages(cache.network.get(query)) }
     var savedIdentity by rememberSaveable { mutableStateOf<String?>(null) }
     var savedOccurrence by rememberSaveable { mutableIntStateOf(0) }
     LaunchedEffect(pages, grid, folderCards) {
@@ -80,7 +78,6 @@ internal fun rememberHubLibraryPages(
                     if (previous == null) savedIdentity?.let { LibraryCardId(it, savedOccurrence) }
                     else previous[index - folderCards]
                 } else null
-                pages.loading = true
                 try {
                     val next = withContext(Dispatchers.IO) {
                         LibraryRepository.readWindow(
@@ -92,6 +89,7 @@ internal fun rememberHubLibraryPages(
                     pages.revision = revision
                     pages.failed = false
                     pages.window = next
+                    cache.network.put(query, HubLibraryCache.NetworkPage(revision, next))
                     val anchorIndex = next.anchorIndex?.plus(folderCards)
                     if (anchorIndex != null && anchorIndex != index && !grid.isScrollInProgress &&
                         grid.firstVisibleItemIndex == index && grid.firstVisibleItemScrollOffset == offset) {
@@ -102,8 +100,6 @@ internal fun rememberHubLibraryPages(
                 } catch (failure: Exception) {
                     android.util.Log.w("HubLibrary", "Could not read Library page", failure)
                     pages.failed = true
-                } finally {
-                    pages.loading = false
                 }
             }
         }
@@ -112,15 +108,22 @@ internal fun rememberHubLibraryPages(
 }
 
 @Composable
-internal fun rememberLibraryFolderCounts(active: Boolean): List<LibraryFolderCount> {
+internal fun rememberLibraryFolderCounts(active: Boolean, cache: HubLibraryCache): List<LibraryFolderCount> {
     val app = LocalContext.current.applicationContext
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val counts by produceState(emptyList<LibraryFolderCount>(), active, lifecycle, app) {
+    val counts by produceState(cache.folderCounts?.counts.orEmpty(), active, lifecycle, app) {
         if (!active) return@produceState
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            LibraryRepository.browseRevisions.map { it.layout }.distinctUntilChanged().collectLatest {
+            LibraryRepository.browseRevisions.map { it.layout }.distinctUntilChanged().collectLatest { revision ->
                 try {
-                    value = withContext(Dispatchers.IO) { LibraryRepository.readFolderCounts(app) }
+                    val saved = cache.folderCounts
+                    if (saved?.revision == revision) {
+                        value = saved.counts
+                    } else {
+                        val fresh = withContext(Dispatchers.IO) { LibraryRepository.readFolderCounts(app) }
+                        cache.folderCounts = HubLibraryCache.FolderCounts(revision, fresh)
+                        value = fresh
+                    }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {

@@ -152,6 +152,7 @@ import com.miowser.app.library.LibrarySourceKind
 import com.miowser.app.library.LocalInspectionCache
 import com.miowser.app.library.device.DevicePlaybackSelection
 import com.miowser.app.library.device.DeviceVideo
+import com.miowser.app.library.device.DeviceCatalogSession
 import com.miowser.app.library.device.DeviceVideoCatalog
 import com.miowser.app.library.device.openGrantedVideo
 import com.miowser.app.player.PagedPlayerPlaylist
@@ -358,6 +359,14 @@ fun BrowserScreen(
     // The shortcut's tab operation can still wait for saved tabs to restore below.
     var showingHub by rememberSaveable { mutableStateOf(shortcutRequest == null || shortcutRequest.localVideo != null) }
     val hubDestinations = rememberSaveableStateHolder()
+    val hubLibraryCache = remember { HubLibraryCache() }
+    var inspectionEpoch by remember { mutableStateOf(LocalInspectionCache.epoch) }
+    LaunchedEffect(lifecycleOwner, showingHub) {
+        if (showingHub) lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            inspectionEpoch = withContext(Dispatchers.IO) { LocalInspectionCache.prepare(context.applicationContext) }
+            kotlinx.coroutines.awaitCancellation()
+        }
+    }
     val libraryEnabled = AppSettings.current.libraryBehavior.isAvailable
     var hubSection by rememberSaveable { mutableStateOf(HubSection.DEVICE) }
     var lastLibrarySection by rememberSaveable { mutableStateOf(HubSection.DEVICE) }
@@ -2788,7 +2797,6 @@ fun BrowserScreen(
             var librarySettingsOpen by remember { mutableStateOf(false) }
             var libraryHealthVisible by rememberSaveable { mutableStateOf(false) }
             val showingLibraryHealth = libraryHealthVisible && libraryEnabled && !deviceVideosSelected
-            var libraryBusy by remember { mutableStateOf(true) }
             val hubSections = remember(libraryEnabled) {
                 HubSection.entries.filter { libraryEnabled || it != HubSection.LIBRARY }
             }
@@ -2817,6 +2825,7 @@ fun BrowserScreen(
                         if (deviceVideosSelected) {
                             val discoveryEnabled = AppSettings.current.deviceDiscoveryEnabled
                             DeviceVideosPage(initialView = initialHubSettings,
+                                cache = hubLibraryCache,
                                 librarySettingsOpen = librarySettingsOpen,
                                 onDismissLibrarySettings = { librarySettingsOpen = false },
                                 onOpenDirectories = {
@@ -2827,13 +2836,13 @@ fun BrowserScreen(
                                 onOpenVideo = { openVideoPicker.launch(arrayOf("video/*")) },
                                 onDiscoverySettings = { openMediaSettings() },
                                 onPlay = { playDeviceVideo(it) }, onMessage = { showActionSnackbar(it) },
-                                onIdleChanged = { libraryIdle = it },
-                                onBusyChanged = { libraryBusy = it })
+                                onIdleChanged = { libraryIdle = it })
                         } else {
             HubHomePage(
                 bottomBarHeight = with(density) { hubBottomBarHeightPx.toDp() },
                 onLibraryIdleChanged = { libraryIdle = it },
-                onLibraryBusyChanged = { libraryBusy = it },
+                libraryCache = hubLibraryCache,
+                inspectionEpoch = inspectionEpoch,
                 onOpenMediaSettings = { openMediaSettings() },
                 uiVisible = playbackRequest == null && activeScreen == null && !showBackupRestore,
                 selectedSection = selectedHubSection,
@@ -2934,8 +2943,8 @@ fun BrowserScreen(
                                 it.id !in pendingDownloadDeletes && it.status.isHubActiveDownload()
                             },
                             sections = hubSections,
-                            libraryBusy = libraryBusy &&
-                                (deviceVideosSelected || selectedHubSection == HubSection.LIBRARY),
+                            libraryBusy = deviceVideosSelected && AppSettings.current.deviceDiscoveryEnabled &&
+                                DeviceCatalogSession.status.scanning,
                             onOpenLibrarySettings = { section ->
                                 selectHubSection(section)
                                 librarySettingsOpen = true

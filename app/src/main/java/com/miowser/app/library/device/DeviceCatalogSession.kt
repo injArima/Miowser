@@ -75,7 +75,7 @@ internal object DeviceCatalogSession {
         if (enabled) enqueue(DeviceCatalogRefresh.CHECK)
         else {
             activeScan?.cancel()
-            status = status.copy(scanning = false, checkingSource = null)
+            status = status.copy(scanning = false)
         }
     }
 
@@ -119,7 +119,7 @@ internal object DeviceCatalogSession {
             Log.w("DeviceCatalogSession", "Could not read the device catalog", failure)
             loadFailed = true
         } finally {
-            if (status.scanning) status = status.copy(scanning = false, checkingSource = null)
+            if (status.scanning) status = status.copy(scanning = false)
         }
     }
 
