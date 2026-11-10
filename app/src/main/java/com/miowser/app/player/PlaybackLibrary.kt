@@ -53,7 +53,8 @@ internal fun PlaybackRequest.toLibraryEntry(
 /** Rebuilds a player request from a persisted card using fresh session cookies. */
 internal fun LibraryEntry.toPlaybackRequest(
     freshCookies: String?,
-    fallbackUserAgent: String
+    fallbackUserAgent: String,
+    resume: Boolean = true
 ): PlaybackRequest = when (sourceKind) {
     LibrarySourceKind.REMOTE_STREAM -> PlaybackRequest.Remote(
         url = mediaUri,
@@ -69,7 +70,7 @@ internal fun LibraryEntry.toPlaybackRequest(
         videoName = videoName,
         posterUrl = null,
         posterCookies = null,
-        startPositionMs = libraryResumePosition(positionMs, durationMs),
+        startPositionMs = if (resume) libraryResumePosition(positionMs, durationMs) else 0L,
         externalSubtitles = selectedSubtitle?.let { listOf(it.toDetectedMedia(pageTitle)) }.orEmpty(),
         preferredSubtitleUrl = selectedSubtitle?.url,
         hlsRenditions = hlsRenditions
@@ -82,7 +83,7 @@ internal fun LibraryEntry.toPlaybackRequest(
         pageUrl = pageUrl,
         pageTitle = pageTitle,
         videoName = videoName,
-        startPositionMs = libraryResumePosition(positionMs, durationMs)
+        startPositionMs = if (resume) libraryResumePosition(positionMs, durationMs) else 0L
     )
 }
 

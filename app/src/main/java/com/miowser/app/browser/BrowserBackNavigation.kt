@@ -24,8 +24,8 @@ internal fun resolveBrowserBackAction(
     hubOnLibrary: Boolean = true
 ): BrowserBackAction = when {
     playerOpen -> BrowserBackAction.CLOSE_PLAYER
-    showingHub -> if (hubOnLibrary) BrowserBackAction.EXIT_APP else BrowserBackAction.SHOW_HUB_LIBRARY
     internalPageOpen -> BrowserBackAction.CLOSE_INTERNAL_PAGE
+    showingHub -> if (hubOnLibrary) BrowserBackAction.EXIT_APP else BrowserBackAction.SHOW_HUB_LIBRARY
     webViewCanGoBack -> BrowserBackAction.WEB_HISTORY
     activeTabHasOpener -> BrowserBackAction.CLOSE_CHILD_TAB
     else -> BrowserBackAction.SHOW_HUB

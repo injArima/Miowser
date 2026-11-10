@@ -32,6 +32,8 @@ import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
+internal data class LinkedDeviceFolder(val source: DeviceSource, val hasReadAccess: Boolean)
+
 internal enum class DeviceSourceIssue { OFFLINE, NEEDS_ACCESS, SCAN_FAILED }
 
 internal data class DeviceCatalogStatus(
@@ -65,8 +67,16 @@ internal object DeviceVideoCatalog {
                 opened = db
             }
 
+    suspend fun linkedSources(context: Context): List<LinkedDeviceFolder> = withContext(Dispatchers.IO) {
+        val grants = readTreeGrants(context)
+        database(context).catalog().sources()
+            .filter { it.kind == DEVICE_LINK && it.linked }
+            .map { LinkedDeviceFolder(it, it.id in grants) }
+    }
+
     suspend fun link(context: Context, tree: Uri, replaceId: String? = null): String = withContext(Dispatchers.IO) {
         val root = requireNotNull(linkedTree(tree))
+        context.contentResolver.takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         val rootDocument = DocumentsContract.buildDocumentUriUsingTree(root, DocumentsContract.getTreeDocumentId(root))
         val label = context.contentResolver.query(rootDocument, arrayOf(
             DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE

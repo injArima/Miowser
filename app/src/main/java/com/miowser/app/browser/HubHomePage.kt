@@ -159,7 +159,11 @@ import com.miowser.app.library.LibrarySourceKind
 import com.miowser.app.library.isLibraryEntryAvailable
 import com.miowser.app.ui.ExpressiveEmptyState
 import com.miowser.app.ui.ExpressiveBottomSheet
+import com.miowser.app.ui.ClearLibraryConfirmationDialog
 import com.miowser.app.ui.ExpressiveChoiceSetting
+import com.miowser.app.ui.SettingsSection
+import com.miowser.app.ui.SectionDivider
+import com.miowser.app.ui.NavigationRow
 import com.miowser.app.ui.ExpressiveSectionCard
 import com.miowser.app.ui.ExpressiveSheetHeading
 import com.miowser.app.ui.ConfirmationAction
@@ -167,8 +171,6 @@ import com.miowser.app.ui.ConfirmationTone
 import com.miowser.app.ui.MiowserConfirmationDialog
 import com.miowser.app.ui.MiowserSnackbarHost
 import com.miowser.app.ui.sheetVerticalEdgeFade
-import com.miowser.app.settings.AppSettings
-import com.miowser.app.settings.LibraryBehavior
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.lifecycle.Lifecycle
@@ -181,8 +183,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.awaitCancellation
 import com.miowser.app.library.LocalInspectionCache
 import java.net.URI
-import com.miowser.app.ui.theme.AppThemeMode
-import com.miowser.app.ui.theme.AppThemePreference
 import com.miowser.app.ui.theme.ExpressiveTokens
 import com.miowser.app.ui.theme.LocalMotionPolicy
 import com.miowser.app.ui.theme.MotionTokens
@@ -226,6 +226,7 @@ internal fun HubHomePage(
     onOpenLocalDownload: (Download) -> Unit,
     onRelinkDownload: (Download) -> Unit,
     onOpenBrowser: () -> Unit,
+    onOpenMediaSettings: () -> Unit,
     onOpenBackupRestore: () -> Unit,
     downloadDirectory: DownloadDirectory?,
     customDownloadDirectoryAccessible: Boolean,
@@ -626,6 +627,7 @@ internal fun HubHomePage(
                             modifier = Modifier.fillMaxSize()
                         )
                         HubSection.MORE -> HubMoreContent(
+                            onOpenMediaSettings = onOpenMediaSettings,
                             onOpenBackupRestore = onOpenBackupRestore,
                             modifier = Modifier.fillMaxSize()
                         )
@@ -713,17 +715,9 @@ internal fun HubHomePage(
     }
 
     if (showClearLibraryConfirmation) {
-        MiowserConfirmationDialog(
-            title = "Clear Library?",
-            message = "This removes all playback records from the Library. Downloaded files will not be deleted.",
+        ClearLibraryConfirmationDialog(
             onDismiss = { showClearLibraryConfirmation = false },
-            actions = listOf(
-                ConfirmationAction("Cancel", { showClearLibraryConfirmation = false }, ConfirmationTone.CAUTION),
-                ConfirmationAction("Clear", {
-                    showClearLibraryConfirmation = false
-                    onClearLibrary()
-                }, ConfirmationTone.CAUTION)
-            )
+            onClear = onClearLibrary
         )
     }
 }
@@ -1113,11 +1107,10 @@ private fun HubNavigationLabel(label: String, opacity: State<Float>, color: Stat
 
 @Composable
 private fun HubMoreContent(
+    onOpenMediaSettings: () -> Unit,
     onOpenBackupRestore: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val libraryBehavior = AppSettings.current.libraryBehavior
     Column(
         modifier = modifier.testTag("hub_more").verticalScroll(rememberScrollState())
             .padding(start = UiSpacing.xl, end = UiSpacing.xl, top = UiSpacing.xl, bottom = 88.dp),
@@ -1137,7 +1130,7 @@ private fun HubMoreContent(
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text("Hub settings", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Choose Hub defaults and shared accessibility preferences. Browser settings are in the browser menu.",
+                        "Manage media, playback, and app preferences.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1145,66 +1138,12 @@ private fun HubMoreContent(
             }
         }
 
-        ExpressiveChoiceSetting(
-            title = "Library",
-            description = when (libraryBehavior) {
-                LibraryBehavior.AUTOMATIC -> "Played media and progress are saved automatically."
-                LibraryBehavior.MANUAL_ONLY ->
-                    "Only media you add or import is kept. Saved videos still update their progress."
-                LibraryBehavior.DISABLED ->
-                    "The Library is hidden. Your existing entries are kept for later."
-            }
-        ) {
-            LibraryBehavior.entries.forEach { behavior ->
-                FilterChip(
-                    selected = behavior == libraryBehavior,
-                    onClick = { AppSettings.update(context) { it.copy(libraryBehavior = behavior) } },
-                    label = { Text(behavior.label) }
-                )
-            }
-        }
-
-        ExpressiveChoiceSetting(
-            title = "Device video discovery",
-            description = "Scan device storage and linked folders for videos. You can still open individual files when discovery is off."
-        ) {
-            val enabled = AppSettings.current.deviceDiscoveryEnabled
-            listOf(true, false).forEach { option ->
-                FilterChip(selected = option == enabled,
-                    onClick = { AppSettings.update(context) { it.copy(deviceDiscoveryEnabled = option) } },
-                    label = { Text(if (option) "On" else "Off") })
-            }
-        }
-
-        ExpressiveChoiceSetting(
-            title = "Appearance",
-            description = "Choose the theme for the Hub and browser."
-        ) {
-            val context = LocalContext.current
-            AppThemeMode.entries.forEach { mode ->
-                FilterChip(
-                    selected = AppThemePreference.mode == mode,
-                    onClick = { AppThemePreference.set(context, mode) },
-                    label = { Text(mode.label) }
-                )
-            }
-        }
-
-        ExpressiveChoiceSetting(
-            title = "Reduce motion",
-            description = "Use simpler transitions in the browser and player."
-        ) {
-            val context = LocalContext.current
-            val reduced = com.miowser.app.settings.AppSettings.current.reduceMotion
-            listOf(false to "Follow system", true to "Reduce").forEach { (enabled, label) ->
-                FilterChip(selected = reduced == enabled,
-                    onClick = { com.miowser.app.settings.AppSettings.update(context) { it.copy(reduceMotion = enabled) } },
-                    label = { Text(label) })
-            }
-        }
-
-        androidx.compose.material3.OutlinedButton(onClick = onOpenBackupRestore) {
-            Text("Backup & restore")
+        SettingsSection("Settings") {
+            NavigationRow("Media settings", "Manage device folders, playback, downloads, and appearance.",
+                onClick = onOpenMediaSettings)
+            SectionDivider()
+            NavigationRow("Backup & restore", "Save app data or restore a previous backup.",
+                onClick = onOpenBackupRestore)
         }
     }
 }

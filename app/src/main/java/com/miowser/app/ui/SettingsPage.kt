@@ -42,7 +42,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.miowser.app.BuildConfig
-import com.miowser.app.settings.DownloadThreadCount
 import com.miowser.app.settings.HomePageMode
 import com.miowser.app.settings.InactiveTabRetention
 import com.miowser.app.settings.NewTabConfirmation
@@ -63,7 +62,7 @@ fun SettingsPage(
     onOpenBrowsingData: () -> Unit,
     onOpenSitePermissions: () -> Unit,
     onOpenBackupRestore: () -> Unit,
-    onOpenCrashReports: () -> Unit,
+    onOpenMediaSettings: () -> Unit,
     onOpenOnboarding: () -> Unit,
     onOpenElementRules: () -> Unit,
     onBack: () -> Unit
@@ -219,30 +218,11 @@ fun SettingsPage(
                     )
                     Description("Fine tune from Off to 30 minutes in 5-second increments.")
                 }
-                SectionDivider()
-                OptionBlock("Simultaneous download connections", "More connections may help large files on fast servers, but can slow or strain other servers.") {
-                    ChoiceRow(DownloadThreadCount.entries, settings.downloadThreadCount, { it.label }) {
-                        onUpdate(settings.copy(downloadThreadCount = it))
-                    }
-                }
             }
 
             SettingsSection("Media") {
-                SettingRow(
-                    "Browse source while playing",
-                    "Keep the player open and paused while you browse its source page.",
-                    settings.companionBrowsingEnabled
-                ) {
-                    onUpdate(settings.copy(companionBrowsingEnabled = it))
-                }
-                SectionDivider()
-                SettingRow(
-                    "Background playback",
-                    "Allow headphone mode to keep playing when Miowser is minimized or the screen is off.",
-                    settings.backgroundPlaybackEnabled
-                ) {
-                    onUpdate(settings.copy(backgroundPlaybackEnabled = it))
-                }
+                NavigationRow("Media settings", "Manage the media library, player preferences, and download connections.",
+                    onClick = onOpenMediaSettings)
             }
 
             SettingsSection("Advanced") {
@@ -254,27 +234,6 @@ fun SettingsPage(
             SettingsSection("Data") {
                 NavigationRow("Backup & restore", "Save your browser data or restore a previous backup.",
                     onClick = onOpenBackupRestore)
-            }
-            SettingsSection("Diagnostics") {
-                SettingRow(
-                    "Save crash diagnostics",
-                    "On by default. Keep redacted crash reports locally; nothing is uploaded automatically.",
-                    settings.crashDiagnosticsEnabled
-                ) {
-                    onUpdate(settings.copy(crashDiagnosticsEnabled = it))
-                }
-                SectionDivider()
-                NavigationRow(
-                    "Crash reports",
-                    "View, copy, share, or clear reports stored on this device.",
-                    onClick = onOpenCrashReports
-                )
-            }
-            SettingsSection("Accessibility") {
-                SettingRow("Reduce motion", "Use simpler transitions. Android's remove-animations setting is always respected.",
-                    settings.reduceMotion) {
-                    onUpdate(settings.copy(reduceMotion = it))
-                }
             }
             SettingsSection("About") {
                 NavigationRow(
@@ -314,7 +273,7 @@ private fun formatDuration(totalSeconds: Int): String {
 }
 
 @Composable
-private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+internal fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
         Text(title.uppercase(), style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -328,7 +287,7 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
 }
 
 @Composable
-private fun SectionDivider() {
+internal fun SectionDivider() {
     HorizontalDivider(modifier = Modifier.padding(horizontal = UiSpacing.l),
         color = MaterialTheme.colorScheme.outlineVariant)
 }
@@ -340,7 +299,7 @@ private fun Description(text: String) {
 }
 
 @Composable
-private fun OptionBlock(title: String, description: String, content: @Composable ColumnScope.() -> Unit) {
+internal fun OptionBlock(title: String, description: String, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxWidth().padding(horizontal = UiSpacing.l, vertical = UiSpacing.comfortable),
         verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
         Text(title, style = MaterialTheme.typography.bodyLarge)
@@ -350,7 +309,7 @@ private fun OptionBlock(title: String, description: String, content: @Composable
 }
 
 @Composable
-private fun <T> ChoiceRow(options: List<T>, selected: T, label: (T) -> String, onSelect: (T) -> Unit) {
+internal fun <T> ChoiceRow(options: List<T>, selected: T, label: (T) -> String, onSelect: (T) -> Unit) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
         options.forEach { option ->
             FilterChip(selected = selected == option, onClick = { onSelect(option) },
@@ -360,7 +319,7 @@ private fun <T> ChoiceRow(options: List<T>, selected: T, label: (T) -> String, o
 }
 
 @Composable
-private fun SettingRow(label: String, description: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
+internal fun SettingRow(label: String, description: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().toggleable(value = checked, role = Role.Switch, onValueChange = onChecked)
             .padding(horizontal = UiSpacing.l, vertical = UiSpacing.comfortable),
@@ -376,7 +335,7 @@ private fun SettingRow(label: String, description: String, checked: Boolean, onC
 }
 
 @Composable
-private fun NavigationRow(label: String, description: String, destructive: Boolean = false, onClick: () -> Unit) {
+internal fun NavigationRow(label: String, description: String, destructive: Boolean = false, onClick: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = UiSpacing.l, vertical = UiSpacing.l),

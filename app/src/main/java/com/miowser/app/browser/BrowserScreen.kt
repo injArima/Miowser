@@ -181,6 +181,9 @@ import com.miowser.app.ui.MiowserSnackbarVisuals
 import com.miowser.app.ui.OverflowMenuSheet
 import com.miowser.app.ui.Screen
 import com.miowser.app.ui.SettingsPage
+import com.miowser.app.ui.MediaSettingsPage
+import com.miowser.app.ui.MediaDirectoriesPage
+import com.miowser.app.ui.MediaSubtitleSettingsPage
 import com.miowser.app.ui.SitePermissionsPage
 import com.miowser.app.ui.TabNavigationEntry
 import com.miowser.app.ui.ConfirmationAction
@@ -333,10 +336,15 @@ fun BrowserScreen(
     var elementPickerSelection by remember { mutableStateOf<ElementPickerSelection?>(null) }
     var showBrowserDownloads by remember { mutableStateOf(false) }
     var showBackupRestore by remember { mutableStateOf(false) }
-    var activeScreen by remember {
+    var activeScreen by rememberSaveable {
         mutableStateOf<Screen?>(if (OnboardingStore.shouldShow(context)) Screen.ONBOARDING else null)
     }
-    var onboardingReturnToSettings by remember { mutableStateOf(false) }
+    var mediaSettingsReturn by rememberSaveable { mutableStateOf<Screen?>(null) }
+    fun openMediaSettings(returnTo: Screen? = null) {
+        mediaSettingsReturn = returnTo
+        activeScreen = Screen.MEDIA_SETTINGS
+    }
+    var onboardingReturnToSettings by rememberSaveable { mutableStateOf(false) }
     fun closeOnboarding() {
         OnboardingStore.complete(context)
         activeScreen = if (onboardingReturnToSettings) Screen.SETTINGS else null
@@ -1711,6 +1719,15 @@ fun BrowserScreen(
         playbackRequest = detectedPlaybackRequest(item, tab)
     }
 
+    fun clearSavedLibrary() {
+        val removed = MediaLibrary.entries.toList()
+        val unsupported = MediaLibrary.opaqueRecords
+        MediaLibrary.clear(context)
+        showSavedSnackbar("Library cleared", "Undo") {
+            MediaLibrary.restoreRemoved(context, removed, unsupported)
+        }
+    }
+
     suspend fun prepareLibraryPlayback(entry: LibraryEntry): PlaybackRequest {
         if (entry.sourceKind == LibrarySourceKind.LOCAL_FILE && !withContext(Dispatchers.IO) {
                 isLibraryEntryAvailable(context.applicationContext, entry)
@@ -1722,7 +1739,8 @@ fun BrowserScreen(
             freshCookies = if (entry.sourceKind == LibrarySourceKind.REMOTE_STREAM) {
                 runCatching { CookieManager.getInstance().getCookie(entry.mediaUri) }.getOrNull()
             } else null,
-            fallbackUserAgent = activeTab?.liveWebView?.settings?.userAgentString ?: "Miowser"
+            fallbackUserAgent = activeTab?.liveWebView?.settings?.userAgentString ?: "Miowser",
+            resume = AppSettings.current.resumeSavedVideos
         )
         val pageTab = activeTab?.takeIf { tab ->
             tab.url == entry.pageUrl && entry.sourceKind == LibrarySourceKind.REMOTE_STREAM
@@ -1787,7 +1805,7 @@ fun BrowserScreen(
                             LocalInspectionCache.available(context.applicationContext, it, force = true)
                         }
                     }
-                    if (requestId != libraryPlayRequestId || !showingHub || !deviceVideosSelected) return@launch
+                    if (requestId != libraryPlayRequestId || !showingHub || !deviceVideosSelected || activeScreen != null) return@launch
                     if (uri != null) {
                         libraryPlaybackQueue = null
                         val entry = findLibraryEntry("LOCAL_FILE:$uri") ?: saved?.let {
@@ -1795,8 +1813,9 @@ fun BrowserScreen(
                             it.copy(mediaUri = uri)
                         }
                         playbackFromLibrary = entry != null
-                        val request = entry?.copy(title = video.title)?.toPlaybackRequest(null, "Miowser")
-                            ?: deviceRequest(video, uri)
+                        val request = entry?.copy(title = video.title)?.toPlaybackRequest(
+                            null, "Miowser", resume = AppSettings.current.resumeSavedVideos
+                        ) ?: deviceRequest(video, uri)
                         devicePlayback = request to DevicePlaybackSelection(selection.query, window, candidate)
                         playbackRequest = request
                         return@launch
@@ -1996,10 +2015,12 @@ fun BrowserScreen(
                 if (activeScreen == Screen.ONBOARDING) {
                     closeOnboarding()
                 } else {
-                    activeScreen = if (activeScreen == Screen.CLEAR_DATA ||
-                        activeScreen == Screen.SITE_PERMISSIONS ||
-                        activeScreen == Screen.CRASH_DIAGNOSTICS ||
-                        activeScreen == Screen.ELEMENT_RULES) Screen.SETTINGS else null
+                    activeScreen = when (activeScreen) {
+                        Screen.MEDIA_SETTINGS -> mediaSettingsReturn
+                        Screen.MEDIA_DIRECTORIES, Screen.MEDIA_SUBTITLES, Screen.CRASH_DIAGNOSTICS -> Screen.MEDIA_SETTINGS
+                        Screen.CLEAR_DATA, Screen.SITE_PERMISSIONS, Screen.ELEMENT_RULES -> Screen.SETTINGS
+                        else -> null
+                    }
                 }
             }
             BrowserBackAction.WEB_HISTORY -> goBack()
@@ -2653,7 +2674,7 @@ fun BrowserScreen(
                 onOpenBrowsingData = { activeScreen = Screen.CLEAR_DATA },
                 onOpenSitePermissions = { activeScreen = Screen.SITE_PERMISSIONS },
                 onOpenBackupRestore = { showBackupRestore = true },
-                onOpenCrashReports = { activeScreen = Screen.CRASH_DIAGNOSTICS },
+                onOpenMediaSettings = { openMediaSettings(Screen.SETTINGS) },
                 onOpenOnboarding = {
                     onboardingReturnToSettings = true
                     activeScreen = Screen.ONBOARDING
@@ -2678,8 +2699,18 @@ fun BrowserScreen(
                 },
                 onBack = { activeScreen = Screen.SETTINGS }
             )
+            Screen.MEDIA_SETTINGS -> MediaSettingsPage(
+                hasSavedMedia = MediaLibrary.entries.isNotEmpty() || MediaLibrary.opaqueRecords.isNotEmpty(),
+                onClearLibrary = ::clearSavedLibrary,
+                onOpenDirectories = { activeScreen = Screen.MEDIA_DIRECTORIES },
+                onOpenSubtitles = { activeScreen = Screen.MEDIA_SUBTITLES },
+                onOpenCrashReports = { activeScreen = Screen.CRASH_DIAGNOSTICS },
+                onBack = { activeScreen = mediaSettingsReturn }
+            )
+            Screen.MEDIA_DIRECTORIES -> MediaDirectoriesPage(onBack = { activeScreen = Screen.MEDIA_SETTINGS })
+            Screen.MEDIA_SUBTITLES -> MediaSubtitleSettingsPage(onBack = { activeScreen = Screen.MEDIA_SETTINGS })
             Screen.CRASH_DIAGNOSTICS -> CrashDiagnosticsPage(
-                onBack = { activeScreen = Screen.SETTINGS }
+                onBack = { activeScreen = Screen.MEDIA_SETTINGS }
             )
             Screen.ELEMENT_RULES -> {
                 SiteElementRules.revision
@@ -2761,14 +2792,16 @@ fun BrowserScreen(
                             DeviceVideosPage(imported, deviceDownloads, initialView = initialHubSettings,
                                 onBrowse = { showingHub = false },
                                 discoveryEnabled = discoveryEnabled,
+                                autoRescan = AppSettings.current.deviceAutoRescanEnabled,
                                 onOpenVideo = { openVideoPicker.launch(arrayOf("video/*")) },
-                                onDiscoverySettings = { deviceVideosSelected = false; hubSection = HubSection.MORE },
+                                onDiscoverySettings = { openMediaSettings() },
                                 onPlay = { playDeviceVideo(it) }, onMessage = { showActionSnackbar(it) },
                                 onIdleChanged = { libraryIdle = it })
                         } else {
             HubHomePage(
                 onBottomBarHeightChanged = { hubBottomBarHeightPx = it },
                 onLibraryIdleChanged = { libraryIdle = it },
+                onOpenMediaSettings = { openMediaSettings() },
                 uiVisible = playbackRequest == null && activeScreen == null && !showBackupRestore,
                 selectedSection = if (!libraryEnabled && hubSection == HubSection.LIBRARY) {
                     HubSection.DOWNLOADS
@@ -2805,14 +2838,7 @@ fun BrowserScreen(
                         showActionSnackbar(if (saved) "Video details saved" else "Video details already saved")
                     }
                 },
-                onClearLibrary = {
-                    val removed = MediaLibrary.entries.toList()
-                    val unsupported = MediaLibrary.opaqueRecords
-                    MediaLibrary.clear(context)
-                    showSavedSnackbar("Library cleared", "Undo") {
-                        MediaLibrary.restoreRemoved(context, removed, unsupported)
-                    }
-                },
+                onClearLibrary = ::clearSavedLibrary,
                 downloads = DownloadQueue.downloads.filterNot { it.id in pendingDownloadDeletes },
                 onPauseDownload = { download -> DownloadQueue.pause(context, download) },
                 onResumeDownload = { download ->

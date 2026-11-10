@@ -21,6 +21,8 @@ private const val KEY_INACTIVE_TAB_RETENTION = "inactive_tab_retention"
 private const val KEY_REDUCE_MOTION = "reduce_motion"
 private const val KEY_LIBRARY_BEHAVIOR = "library_behavior"
 private const val KEY_DEVICE_DISCOVERY = "device_video_discovery"
+private const val KEY_DEVICE_AUTO_RESCAN = "device_auto_rescan"
+private const val KEY_RESUME_SAVED_VIDEOS = "resume_saved_videos"
 private const val KEY_BACKGROUND_PLAYBACK_ENABLED = "background_playback_enabled"
 private const val KEY_COMPANION_BROWSING_ENABLED = "companion_browsing_enabled"
 private const val KEY_CRASH_DIAGNOSTICS_ENABLED = "crash_diagnostics_enabled"
@@ -74,7 +76,9 @@ object SettingsStore {
                 KEY_COMPANION_BROWSING_ENABLED, defaults.companionBrowsingEnabled
             ),
             crashDiagnosticsEnabled = crashDiagnosticsEnabled(context),
-            deviceDiscoveryEnabled = prefs.getBoolean(KEY_DEVICE_DISCOVERY, defaults.deviceDiscoveryEnabled)
+            deviceDiscoveryEnabled = prefs.getBoolean(KEY_DEVICE_DISCOVERY, defaults.deviceDiscoveryEnabled),
+            deviceAutoRescanEnabled = prefs.getBoolean(KEY_DEVICE_AUTO_RESCAN, defaults.deviceAutoRescanEnabled),
+            resumeSavedVideos = prefs.getBoolean(KEY_RESUME_SAVED_VIDEOS, defaults.resumeSavedVideos)
         )
     }
 
@@ -99,6 +103,8 @@ object SettingsStore {
                 .putBoolean(KEY_REDUCE_MOTION, settings.reduceMotion)
                 .putString(KEY_LIBRARY_BEHAVIOR, settings.libraryBehavior.name)
                 .putBoolean(KEY_DEVICE_DISCOVERY, settings.deviceDiscoveryEnabled)
+                .putBoolean(KEY_DEVICE_AUTO_RESCAN, settings.deviceAutoRescanEnabled)
+                .putBoolean(KEY_RESUME_SAVED_VIDEOS, settings.resumeSavedVideos)
                 .putBoolean(KEY_BACKGROUND_PLAYBACK_ENABLED, settings.backgroundPlaybackEnabled)
                 .putBoolean(KEY_COMPANION_BROWSING_ENABLED, settings.companionBrowsingEnabled)
                 .putBoolean(KEY_CRASH_DIAGNOSTICS_ENABLED, settings.crashDiagnosticsEnabled)

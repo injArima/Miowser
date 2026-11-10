@@ -6,6 +6,7 @@ import android.content.Context
 internal object PlayerDisplayPreferenceStore {
     private const val PREFS = "player_display_preferences"
     private const val SCALE_MODE = "scale_mode"
+    private const val ORIENTATION = "orientation"
     private const val BRIGHTNESS = "brightness"
 
     fun scaleMode(context: Context): String? =
@@ -19,15 +20,29 @@ internal object PlayerDisplayPreferenceStore {
         }
     }
 
+    fun orientation(context: Context): PlayerOrientationMode {
+        val name = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(ORIENTATION, null)
+        return PlayerOrientationMode.entries.firstOrNull { it.name == name } ?: PlayerOrientationMode.AUTOMATIC
+    }
+
+    fun saveOrientation(context: Context, mode: PlayerOrientationMode) {
+        val app = context.applicationContext
+        com.miowser.app.persistence.Persistence.submit("player-display") {
+            app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(ORIENTATION, mode.name).commit()
+        }
+    }
+
     fun brightness(context: Context): Float? =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getFloat(BRIGHTNESS, -1f).takeIf { it in 0.01f..1f }
 
-    fun saveBrightness(context: Context, value: Float) {
+    fun saveBrightness(context: Context, value: Float?) {
         val app = context.applicationContext
         com.miowser.app.persistence.Persistence.submit("player-display") {
-        app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putFloat(BRIGHTNESS, value.coerceIn(0.01f, 1f)).commit()
+            val editor = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            if (value == null) editor.remove(BRIGHTNESS)
+            else editor.putFloat(BRIGHTNESS, value.coerceIn(0.01f, 1f))
+            editor.commit()
         }
     }
 }

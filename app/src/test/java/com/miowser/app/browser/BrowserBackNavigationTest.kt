@@ -43,6 +43,21 @@ class BrowserBackNavigationTest {
     }
 
     @Test
+    fun settingsOpenedFromHubClosesBeforeNavigatingTheHub() {
+        assertEquals(
+            BrowserBackAction.CLOSE_INTERNAL_PAGE,
+            resolveBrowserBackAction(
+                showingHub = true,
+                playerOpen = false,
+                internalPageOpen = true,
+                webViewCanGoBack = false,
+                activeTabHasOpener = false,
+                hubOnLibrary = false
+            )
+        )
+    }
+
+    @Test
     fun webpageHistoryPrecedesClosingChildTab() {
         assertEquals(
             BrowserBackAction.WEB_HISTORY,

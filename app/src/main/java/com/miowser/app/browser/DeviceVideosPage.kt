@@ -1,6 +1,5 @@
 package com.miowser.app.browser
 
-import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -50,6 +49,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -61,6 +61,7 @@ internal fun DeviceVideosPage(
     downloads: List<DeviceDownload>,
     initialView: HubSettings,
     discoveryEnabled: Boolean,
+    autoRescan: Boolean,
     onOpenVideo: () -> Unit,
     onDiscoverySettings: () -> Unit,
     onBrowse: () -> Unit,
@@ -106,10 +107,7 @@ internal fun DeviceVideosPage(
         replacingLink = null
         if (uri != null) scope.launch {
             try {
-                val id = withContext(Dispatchers.IO) {
-                    app.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    DeviceVideoCatalog.link(app, uri, replaceId)
-                }
+                val id = DeviceVideoCatalog.link(app, uri, replaceId)
                 closeFolder()
                 source = id
                 refreshCatalog(id)
@@ -117,7 +115,7 @@ internal fun DeviceVideosPage(
             catch (_: Exception) { onMessage("Couldn’t link this folder. Choose it again.") }
         }
     }
-    LaunchedEffect(lifecycle, discoveryEnabled, refresh, imported, downloads) {
+    LaunchedEffect(lifecycle, discoveryEnabled, autoRescan, refresh, imported, downloads) {
         if (!discoveryEnabled) return@LaunchedEffect
         val request = refresh
         val target = refreshSource
@@ -127,7 +125,8 @@ internal fun DeviceVideosPage(
                 status = status.copy(access = access,
                     visible = status.visible.filterNot { it.startsWith("media:") }.toSet())
             }
-            DeviceVideoCatalog.changes(app).debounce(250).onStart { emit(Unit) }.conflate().collect {
+            val changes = if (autoRescan) DeviceVideoCatalog.changes(app).debounce(250) else emptyFlow()
+            changes.onStart { emit(Unit) }.conflate().collect {
                 try {
                     loadFailed = false
                     val forced = request != finishedRefresh
@@ -172,11 +171,11 @@ internal fun DeviceVideosPage(
                 horizontalAlignment = Alignment.CenterHorizontally) {
                 ExpressiveEmptyState(
                     title = "Device discovery is off",
-                    description = "Open a video directly or turn discovery back on in Hub settings.",
+                    description = "Open a video directly or turn discovery back on in Media settings.",
                     icon = Icons.Rounded.VideoLibrary
                 )
                 MiowserActionButton(style = AppButtonStyle.TONAL, onClick = onOpenVideo) { Text("Open video") }
-                MiowserActionButton(style = AppButtonStyle.TEXT, onClick = onDiscoverySettings) { Text("Hub settings") }
+                MiowserActionButton(style = AppButtonStyle.TEXT, onClick = onDiscoverySettings) { Text("Media settings") }
             }
             return@Column
         }

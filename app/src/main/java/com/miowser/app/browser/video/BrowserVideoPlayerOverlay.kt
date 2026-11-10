@@ -153,7 +153,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
     val timeline = remember { BrowserVideoTimelineInteraction() }
     var scrubbing by remember { mutableStateOf(false) }
     var interaction by remember { mutableIntStateOf(0) }
-    val orientationMode = preferences.orientation ?: PlayerOrientationMode.AUTOMATIC
+    val orientationMode = preferences.orientation ?: PlayerDisplayPreferenceStore.orientation(context)
     SideEffect {
         if (preferences.orientation == null) preferences.orientation = orientationMode
     }
