@@ -95,6 +95,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
@@ -2788,6 +2789,14 @@ fun BrowserScreen(
             shortcutRequest?.localVideo == null) {
             var librarySettingsOpen by remember { mutableStateOf(false) }
             var libraryHealthVisible by rememberSaveable { mutableStateOf(false) }
+            val showingLibraryHealth = libraryHealthVisible && libraryEnabled && !deviceVideosSelected
+            var libraryBusy by remember { mutableStateOf(true) }
+            val hubSections = remember(libraryEnabled) {
+                HubSection.entries.filter { libraryEnabled || it != HubSection.LIBRARY }
+            }
+            val layoutDirection = LocalLayoutDirection.current
+            val swipe = if (showingLibraryHealth) Modifier else
+                Modifier.swipeHubSections(hubSections, selectedHubSection, layoutDirection, ::selectHubSection)
             fun selectDownloadSection(section: HubDownloadSection) {
                 hubDownloadSection = section
                 HubSettingsStore.save(context, HubSettings(
@@ -2805,7 +2814,7 @@ fun BrowserScreen(
                 }
             }
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainerLow).statusBarsPadding()) {
-                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).then(swipe)) {
                     hubDestinations.SaveableStateProvider(if (deviceVideosSelected) "device" else "saved") {
                         if (deviceVideosSelected) {
                             val discoveryEnabled = AppSettings.current.deviceDiscoveryEnabled
@@ -2834,11 +2843,13 @@ fun BrowserScreen(
                                 onOpenVideo = { openVideoPicker.launch(arrayOf("video/*")) },
                                 onDiscoverySettings = { openMediaSettings() },
                                 onPlay = { playDeviceVideo(it) }, onMessage = { showActionSnackbar(it) },
-                                onIdleChanged = { libraryIdle = it })
+                                onIdleChanged = { libraryIdle = it },
+                                onBusyChanged = { libraryBusy = it })
                         } else {
             HubHomePage(
                 bottomBarHeight = with(density) { hubBottomBarHeightPx.toDp() },
                 onLibraryIdleChanged = { libraryIdle = it },
+                onLibraryBusyChanged = { libraryBusy = it },
                 onOpenMediaSettings = { openMediaSettings() },
                 uiVisible = playbackRequest == null && activeScreen == null && !showBackupRestore,
                 selectedSection = selectedHubSection,
@@ -2930,7 +2941,7 @@ fun BrowserScreen(
             )
                         }
                     }
-                    if (libraryHealthVisible && libraryEnabled && !deviceVideosSelected) {
+                    if (showingLibraryHealth) {
                         SideEffect { hubBottomBarHeightPx = 0 }
                     } else {
                         HubBottomNavigation(
@@ -2938,7 +2949,9 @@ fun BrowserScreen(
                             activeDownloadCount = DownloadQueue.downloads.count {
                                 it.id !in pendingDownloadDeletes && it.status.isHubActiveDownload()
                             },
-                            networkAvailable = libraryEnabled,
+                            sections = hubSections,
+                            libraryBusy = libraryBusy &&
+                                (deviceVideosSelected || selectedHubSection == HubSection.LIBRARY),
                             onOpenLibrarySettings = { section ->
                                 selectHubSection(section)
                                 librarySettingsOpen = true

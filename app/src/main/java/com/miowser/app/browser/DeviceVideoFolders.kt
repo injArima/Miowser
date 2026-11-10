@@ -40,6 +40,7 @@ internal fun DeviceVideoFolders(
     listMode: Boolean,
     modifier: Modifier,
     emptyState: @Composable (String) -> Unit,
+    onBusyChanged: (Boolean) -> Unit,
     onOpen: (DeviceVideoFolder) -> Unit
 ) {
     val app = LocalContext.current.applicationContext
@@ -49,14 +50,19 @@ internal fun DeviceVideoFolders(
     val query = remember(status.visible, source) { DeviceBrowseQuery(status.visible, source, "", false) }
     var window by remember(query) { mutableStateOf<DeviceCatalogWindow<DeviceVideoFolder>?>(null) }
     var loadedRevision by remember(query) { mutableLongStateOf(-1) }
+    var loading by remember(query, status.revision) { mutableStateOf(true) }
+    val busy = loading
+    SideEffect { onBusyChanged(busy) }
     LaunchedEffect(query, status.revision) {
         snapshotFlow { grid.firstVisibleItemIndex / DEVICE_PAGE_SIZE }.collectLatest { page ->
             val count = window?.count?.takeIf { loadedRevision == status.revision }
+            loading = true
             try {
                 window = withContext(Dispatchers.IO) { DeviceVideoCatalog.readFolders(app, query, page * DEVICE_PAGE_SIZE, count) }
                 loadedRevision = status.revision
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { window = DeviceCatalogWindow(0, emptyList(), 0) }
+            finally { loading = false }
         }
     }
     val current = window

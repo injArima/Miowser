@@ -75,7 +75,8 @@ internal fun DeviceVideosPage(
     onDiscoverySettings: () -> Unit,
     onPlay: (DevicePlaybackSelection) -> Unit,
     onMessage: (String) -> Unit,
-    onIdleChanged: (Boolean) -> Unit
+    onIdleChanged: (Boolean) -> Unit,
+    onBusyChanged: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
@@ -87,6 +88,10 @@ internal fun DeviceVideosPage(
     var refreshSource by remember { mutableStateOf<String?>(null) }
     var status by remember { mutableStateOf(DeviceCatalogStatus(access = deviceMediaAccess(app))) }
     var loadFailed by remember { mutableStateOf(false) }
+    var queryBusy by remember { mutableStateOf(true) }
+    var linkingFolder by remember { mutableStateOf(false) }
+    val busy = discoveryEnabled && (status.scanning || queryBusy || linkingFolder)
+    SideEffect { onBusyChanged(busy) }
     var search by rememberSaveable { mutableStateOf("") }
     var searchVisible by rememberSaveable { mutableStateOf(false) }
     var source by rememberSaveable { mutableStateOf<String?>(null) }
@@ -107,6 +112,7 @@ internal fun DeviceVideosPage(
     val browserPositions = rememberSaveableStateHolder()
     fun saveView() = HubSettingsStore.saveDeviceView(app, foldersMode, listMode, titleOrder)
     fun refreshCatalog(target: String?) {
+        status = status.copy(scanning = true)
         refreshSource = target
         refresh++
     }
@@ -118,6 +124,7 @@ internal fun DeviceVideosPage(
     }
     val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) scope.launch {
+            linkingFolder = true
             try {
                 val id = DeviceVideoCatalog.link(app, uri)
                 closeFolder()
@@ -125,6 +132,7 @@ internal fun DeviceVideosPage(
                 refreshCatalog(id)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { onMessage("Couldn’t link this folder. Choose it again.") }
+            finally { linkingFolder = false }
         }
     }
     LaunchedEffect(lifecycle, discoveryEnabled, autoRescan, refresh, imported, downloads) {
@@ -259,7 +267,8 @@ internal fun DeviceVideosPage(
             if (foldersMode && folderPath == null && term.isEmpty()) {
                 browserPositions.SaveableStateProvider("device-folders:$listMode") {
                     key(source) {
-                        DeviceVideoFolders(status, source, listMode, Modifier.weight(1f), emptyState) { folder ->
+                        DeviceVideoFolders(status, source, listMode, Modifier.weight(1f), emptyState,
+                            onBusyChanged = { queryBusy = it }) { folder ->
                             browserPositions.removeState("device-open-folder:false")
                             browserPositions.removeState("device-open-folder:true")
                             folderSource = folder.sourceId
@@ -270,7 +279,7 @@ internal fun DeviceVideosPage(
             } else {
                 val content: @Composable () -> Unit = {
                     DeviceVideoGrid(status, folderSource ?: source, folderPath, term, titleOrder, listMode, onPlay,
-                        Modifier.weight(1f), emptyState)
+                        Modifier.weight(1f), emptyState, onBusyChanged = { queryBusy = it })
                 }
                 key(foldersMode, folderSource ?: source, folderPath, term, titleOrder, listMode) {
                     if (term.isEmpty()) {
@@ -358,7 +367,8 @@ private fun DeviceVideoGrid(
     listMode: Boolean,
     onPlay: (DevicePlaybackSelection) -> Unit,
     modifier: Modifier,
-    emptyState: @Composable (String) -> Unit
+    emptyState: @Composable (String) -> Unit,
+    onBusyChanged: (Boolean) -> Unit
 ) {
     val app = LocalContext.current.applicationContext
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
@@ -370,16 +380,21 @@ private fun DeviceVideoGrid(
     var window by remember { mutableStateOf<DeviceVideoWindow?>(null) }
     var loadedQuery by remember { mutableStateOf<DeviceBrowseQuery?>(null) }
     var windowRevision by remember { mutableLongStateOf(-1L) }
+    var loading by remember(query, status.revision) { mutableStateOf(true) }
+    val busy = loading
+    SideEffect { onBusyChanged(busy) }
     LaunchedEffect(query, status.revision) {
         snapshotFlow { grid.firstVisibleItemIndex / DEVICE_PAGE_SIZE }.collectLatest { page ->
             val index = page * DEVICE_PAGE_SIZE
             val count = window?.count?.takeIf { loadedQuery == query && windowRevision == status.revision }
+            loading = true
             try {
                 window = withContext(Dispatchers.IO) { DeviceVideoCatalog.readWindow(app, query, index, count) }
                 loadedQuery = query
                 windowRevision = status.revision
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { window = DeviceVideoWindow(0, emptyList(), 0) }
+            finally { loading = false }
         }
     }
     val windowQuery = loadedQuery

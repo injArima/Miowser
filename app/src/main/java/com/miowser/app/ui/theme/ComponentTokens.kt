@@ -96,6 +96,10 @@ object HubLibraryTokens {
     val gridPadding = UiSpacing.m
     val gridBottomClearance = 80.dp
     val railHeight = 56.dp
+    val tabSwipeDistance = 40.dp
+    val busyOutlineWidth = 2.dp
+    const val busyOutlineCycleMillis = 1_400
+    const val busyOutlineFraction = 0.24f
 }
 
 object HubVideoCardTokens {

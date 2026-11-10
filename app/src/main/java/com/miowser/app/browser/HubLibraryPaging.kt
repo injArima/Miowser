@@ -34,6 +34,7 @@ import kotlinx.coroutines.withContext
 internal class HubLibraryPages {
     var window by mutableStateOf<LibraryWindow?>(null)
     var failed by mutableStateOf(false)
+    var loading by mutableStateOf(true)
     var retry by mutableIntStateOf(0)
     var revision: LibraryBrowseRevision? = null
 }
@@ -79,6 +80,7 @@ internal fun rememberHubLibraryPages(
                     if (previous == null) savedIdentity?.let { LibraryCardId(it, savedOccurrence) }
                     else previous[index - folderCards]
                 } else null
+                pages.loading = true
                 try {
                     val next = withContext(Dispatchers.IO) {
                         LibraryRepository.readWindow(
@@ -100,6 +102,8 @@ internal fun rememberHubLibraryPages(
                 } catch (failure: Exception) {
                     android.util.Log.w("HubLibrary", "Could not read Library page", failure)
                     pages.failed = true
+                } finally {
+                    pages.loading = false
                 }
             }
         }

@@ -83,6 +83,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -225,7 +226,8 @@ internal fun HubHomePage(
     onOpenRecordInBrowser: (String, Boolean) -> Unit,
     bottomBarHeight: Dp,
     uiVisible: Boolean = true,
-    onLibraryIdleChanged: (Boolean) -> Unit = {}
+    onLibraryIdleChanged: (Boolean) -> Unit = {},
+    onLibraryBusyChanged: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
     val libraryEnabled = com.miowser.app.settings.AppSettings.current.libraryBehavior.isAvailable
@@ -374,6 +376,7 @@ internal fun HubHomePage(
                             libraryViews, "${libraryView.name}:${librarySort.name}:$activeFolderId", librarySearchQuery
                         ) { HubLibraryContent(
                             onIdleChanged = onLibraryIdleChanged,
+                            onBusyChanged = onLibraryBusyChanged,
                             hasEntries = libraryHasEntries,
                             folderVideoCounts = folderVideoCounts,
                             onPlay = onPlayLibraryEntry,
@@ -509,7 +512,8 @@ internal fun HubHomePage(
 internal fun HubBottomNavigation(
     selectedSection: HubSection,
     activeDownloadCount: Int,
-    networkAvailable: Boolean,
+    sections: List<HubSection>,
+    libraryBusy: Boolean,
     onOpenLibrarySettings: (HubSection) -> Unit,
     selectedDownloadSection: HubDownloadSection,
     onDownloadSectionSelected: (HubDownloadSection) -> Unit,
@@ -531,9 +535,6 @@ internal fun HubBottomNavigation(
         HubSection.DOWNLOADS to stringResource(R.string.nav_downloads),
         HubSection.MORE to stringResource(R.string.nav_more)
     )
-    val sections = remember(networkAvailable) {
-        HubSection.entries.filter { networkAvailable || it != HubSection.LIBRARY }
-    }
     // The Scaffold content inset keeps this overlay clear of gesture and three-button navigation.
     BoxWithConstraints(
         modifier = modifier
@@ -551,7 +552,7 @@ internal fun HubBottomNavigation(
                 56.dp + with(density) { textMeasurer.measure(label, style = textStyle).size.width.toDp() }
             }
         }
-        val segmentSpace = (maxWidth - HubLibraryTokens.railHeight - UiSpacing.s -
+        val segmentSpace = (maxWidth - UiControlSize.touchTarget - UiSpacing.s -
             UiSpacing.xs * 2 - UiSpacing.xxs * (sections.size - 1)).coerceAtLeast(0.dp)
         val iconWidth = UiControlSize.touchTarget.coerceAtMost(segmentSpace / sections.size)
         fun segmentWidth(section: HubSection, active: HubSection): Dp =
@@ -586,6 +587,7 @@ internal fun HubBottomNavigation(
                 horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)
             ) {
                 Surface(
+                    modifier = if (libraryBusy) libraryBusyOutline() else Modifier,
                     shape = RoundedCornerShape(30.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     shadowElevation = UiElevation.raised
@@ -670,14 +672,14 @@ internal fun HubBottomNavigation(
                 }
                 FloatingActionButton(
                     onClick = onOpenBrowser,
-                    modifier = Modifier.size(HubLibraryTokens.railHeight),
+                    modifier = Modifier.size(UiControlSize.touchTarget),
                     shape = MaterialTheme.shapes.large,
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     elevation = FloatingActionButtonDefaults.elevation(defaultElevation = UiElevation.raised)
                 ) {
                     Icon(Icons.Rounded.Language, contentDescription = "Browse",
-                        modifier = Modifier.size(UiIconSize.featured))
+                        modifier = Modifier.size(UiIconSize.standard))
                 }
             }
         }
@@ -1197,6 +1199,7 @@ private fun LibraryViewState(
 @Composable
 private fun HubLibraryContent(
     onIdleChanged: (Boolean) -> Unit,
+    onBusyChanged: (Boolean) -> Unit,
     hasEntries: Boolean,
     folderVideoCounts: Map<String?, Int>,
     onPlay: (LibraryEntry, LibraryBrowseQuery) -> Unit,
@@ -1225,6 +1228,8 @@ private fun HubLibraryContent(
     }
     val pages = rememberHubLibraryPages(query, gridState, childFolders.size)
     val window = pages.window
+    val loading = pages.loading
+    SideEffect { onBusyChanged(loading) }
     val artworkContext = LocalContext.current.applicationContext
     LaunchedEffect(window, childFolders.size, gridState) {
         snapshotFlow {
