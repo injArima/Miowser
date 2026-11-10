@@ -51,19 +51,17 @@ import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.InstallMobile
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.MoreHoriz
-import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.HealthAndSafety
+import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
-import com.miowser.app.ui.MiowserDropdownMenu
-import com.miowser.app.ui.MiowserMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -120,7 +118,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -159,6 +156,7 @@ import com.miowser.app.library.isLibraryEntryAvailable
 import com.miowser.app.ui.ExpressiveEmptyState
 import com.miowser.app.ui.ExpressiveBottomSheet
 import com.miowser.app.ui.ClearLibraryConfirmationDialog
+import com.miowser.app.ui.ChoiceRow
 import com.miowser.app.ui.ExpressiveChoiceSetting
 import com.miowser.app.ui.SettingsSection
 import com.miowser.app.ui.SectionDivider
@@ -207,7 +205,10 @@ private enum class HubLibraryView { GRID, LIST }
 internal fun HubHomePage(
     destinationTabs: @Composable () -> Unit,
     selectedSection: HubSection,
-    onSectionSelected: (HubSection) -> Unit,
+    librarySettingsOpen: Boolean,
+    onDismissLibrarySettings: () -> Unit,
+    libraryHealthVisible: Boolean,
+    onLibraryHealthVisibilityChanged: (Boolean) -> Unit,
     selectedDownloadSection: HubDownloadSection,
     onDownloadSectionSelected: (HubDownloadSection) -> Unit,
     libraryEntries: List<LibraryEntry>,
@@ -228,15 +229,10 @@ internal fun HubHomePage(
     onOpenBrowser: () -> Unit,
     onOpenMediaSettings: () -> Unit,
     onOpenBackupRestore: () -> Unit,
-    downloadDirectory: DownloadDirectory?,
-    customDownloadDirectoryAccessible: Boolean,
-    onUseDefaultDownloadDirectory: () -> Unit,
-    onChooseCustomDownloadDirectory: () -> Unit,
-    onRelinkConfiguredDownloads: () -> Unit,
     onOpenRecordInBrowser: (String, Boolean) -> Unit,
+    bottomBarHeight: Dp,
     uiVisible: Boolean = true,
-    onLibraryIdleChanged: (Boolean) -> Unit = {},
-    onBottomBarHeightChanged: (Int) -> Unit = {}
+    onLibraryIdleChanged: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     val libraryEnabled = com.miowser.app.settings.AppSettings.current.libraryBehavior.isAvailable
@@ -252,14 +248,7 @@ internal fun HubHomePage(
     }
     var librarySearchVisible by rememberSaveable { mutableStateOf(false) }
     var librarySearchQuery by rememberSaveable { mutableStateOf("") }
-    var librarySortMenuExpanded by remember { mutableStateOf(false) }
     var showClearLibraryConfirmation by remember { mutableStateOf(false) }
-    var libraryHealthVisible by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(libraryEnabled) {
-        if (!libraryEnabled) libraryHealthVisible = false
-    }
-    var hubMenuExpanded by remember { mutableStateOf(false) }
-    var viewMenuExpanded by remember { mutableStateOf(false) }
     val viewPrefs = remember(context) { context.getSharedPreferences("hub_library_view", android.content.Context.MODE_PRIVATE) }
     var libraryView by rememberSaveable { mutableStateOf(
         if (viewPrefs.getBoolean("list", false)) HubLibraryView.LIST else HubLibraryView.GRID) }
@@ -283,8 +272,7 @@ internal fun HubHomePage(
     var importingFolder by remember { mutableStateOf(false) }
     val importScope = rememberCoroutineScope()
     val importSnackbar = remember { SnackbarHostState() }
-    var hubBottomBarHeightPx by remember { androidx.compose.runtime.mutableIntStateOf(0) }
-    val hubBottomBarHeight = with(LocalDensity.current) { hubBottomBarHeightPx.toDp() }
+    var failedVideoLogExpanded by remember { mutableStateOf(false) }
     val importFolderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { treeUri ->
         if (treeUri != null && !importingFolder) {
             val targetParent = importParentId
@@ -344,7 +332,7 @@ internal fun HubHomePage(
         LibraryHealthPage(
             entries = libraryEntries.toList(),
             folders = LibraryFolders.entries.toList(),
-            onBack = { libraryHealthVisible = false },
+            onBack = { onLibraryHealthVisibilityChanged(false) },
             onLocate = onRelinkLibraryEntry,
             onRemove = onRemoveLibraryEntry,
             onOpenSource = { url -> onOpenRecordInBrowser(url, false) }
@@ -380,7 +368,7 @@ internal fun HubHomePage(
         snackbarHost = {
             MiowserSnackbarHost(
                 hostState = importSnackbar,
-                modifier = Modifier.padding(bottom = hubBottomBarHeight + UiSpacing.s)
+                modifier = Modifier.padding(bottom = bottomBarHeight + UiSpacing.s)
             )
         },
         topBar = {
@@ -413,84 +401,6 @@ internal fun HubHomePage(
                                     if (librarySearchVisible) Icons.Rounded.Close else Icons.Rounded.Search,
                                     contentDescription = if (librarySearchVisible) "Close Library search" else "Search Library"
                                 )
-                            }
-                            Box {
-                                IconButton(onClick = { librarySortMenuExpanded = true }) {
-                                    Icon(Icons.AutoMirrored.Rounded.Sort, contentDescription = "Sort Library")
-                                }
-                                MiowserDropdownMenu(
-                                    expanded = librarySortMenuExpanded,
-                                    onDismissRequest = { librarySortMenuExpanded = false }
-                                ) {
-                                    HubLibrarySort.entries.forEach { option ->
-                                        com.miowser.app.ui.MiowserMenuItem(
-                                            text = { Text(option.label) },
-                                            selected = option == librarySort,
-                                            onClick = {
-                                                librarySortMenuExpanded = false
-                                                if (option != librarySort) {
-                                                    view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                                                }
-                                                selectLibrarySort(option)
-                                            },
-                                            trailingIcon = {
-                                                if (option == librarySort) {
-                                                    Text("Selected", color = MaterialTheme.colorScheme.primary)
-                                                }
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        if (selectedSection == HubSection.LIBRARY) Box {
-                            IconButton(onClick = { hubMenuExpanded = true }) {
-                                Icon(Icons.Rounded.MoreVert, contentDescription = "Hub menu")
-                            }
-                            MiowserDropdownMenu(
-                                expanded = hubMenuExpanded,
-                                onDismissRequest = { hubMenuExpanded = false; viewMenuExpanded = false }
-                            ) {
-                                if (selectedSection == HubSection.LIBRARY) {
-                                    if (viewMenuExpanded) {
-                                        MiowserMenuItem(text = { Text("View as") }, onClick = { viewMenuExpanded = false })
-                                        HubLibraryView.entries.forEach { option ->
-                                            MiowserMenuItem(
-                                                text = { Text(if (option == HubLibraryView.GRID) "Grid" else "List") },
-                                                selected = libraryView == option,
-                                                onClick = {
-                                                    libraryView = option
-                                                    viewPrefs.edit().putBoolean("list", option == HubLibraryView.LIST).apply()
-                                                    viewMenuExpanded = false
-                                                    hubMenuExpanded = false
-                                                }
-                                            )
-                                        }
-                                    } else {
-                                    MiowserMenuItem(text = { Text("View as") }, onClick = { viewMenuExpanded = true })
-                                    MiowserMenuItem(
-                                        text = { Text("Library health") },
-                                        leadingIcon = {
-                                            Icon(Icons.Rounded.HealthAndSafety, contentDescription = null)
-                                        },
-                                        onClick = {
-                                            hubMenuExpanded = false
-                                            libraryHealthVisible = true
-                                        }
-                                    )
-                                    MiowserMenuItem(
-                                        text = { Text("Clear Library") },
-                                        leadingIcon = {
-                                            Icon(Icons.Rounded.DeleteSweep, contentDescription = null)
-                                        },
-                                        enabled = libraryHasEntries,
-                                        onClick = {
-                                            hubMenuExpanded = false
-                                            showClearLibraryConfirmation = true
-                                        }
-                                    )
-                                    }
-                                }
                             }
                         }
                     }
@@ -632,27 +542,45 @@ internal fun HubHomePage(
                     }
                 }
             }
-            HubBottomNavigation(
-                libraryEnabled = libraryEnabled,
-                selectedSection = selectedSection,
-                activeDownloadCount = downloads.count { it.status.isHubActiveDownload() },
-                librarySort = librarySort,
-                onLibrarySortSelected = selectLibrarySort,
-                selectedDownloadSection = selectedDownloadSection,
-                onDownloadSectionSelected = onDownloadSectionSelected,
-                downloadDirectory = downloadDirectory,
-                customDownloadDirectoryAccessible = customDownloadDirectoryAccessible,
-                onUseDefaultDownloadDirectory = onUseDefaultDownloadDirectory,
-                onChooseCustomDownloadDirectory = onChooseCustomDownloadDirectory,
-                onRelinkConfiguredDownloads = onRelinkConfiguredDownloads,
-                onOpenRecordInBrowser = onOpenRecordInBrowser,
-                onSectionSelected = onSectionSelected,
-                modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged {
-                    hubBottomBarHeightPx = it.height
-                    onBottomBarHeightChanged(it.height)
-                }
-            )
         }
+    }
+
+    if (librarySettingsOpen && libraryEnabled) {
+        LibraryOptionsSheet("Saved Library", onDismissLibrarySettings) {
+            LibraryOptionsGroup("View", Icons.Rounded.GridView) {
+                ChoiceRow(HubLibraryView.entries, libraryView, { if (it == HubLibraryView.GRID) "Grid" else "List" }) {
+                    libraryView = it
+                    viewPrefs.edit().putBoolean("list", it == HubLibraryView.LIST).apply()
+                }
+            }
+            LibraryOptionsGroup("Sort this folder", Icons.AutoMirrored.Rounded.Sort) {
+                ChoiceRow(HubLibrarySort.entries, librarySort, { it.label }, selectLibrarySort)
+            }
+            LibraryOptionsGroup("Library tools", Icons.Rounded.Settings) {
+                LibraryOptionAction("Library health", Icons.Rounded.HealthAndSafety) {
+                    onDismissLibrarySettings()
+                    onLibraryHealthVisibilityChanged(true)
+                }
+                LibraryOptionAction("Video references", Icons.Rounded.History) {
+                    onDismissLibrarySettings()
+                    failedVideoLogExpanded = true
+                }
+                LibraryOptionAction("Clear Library", Icons.Rounded.DeleteSweep, enabled = libraryHasEntries,
+                    destructive = true) {
+                    onDismissLibrarySettings()
+                    showClearLibraryConfirmation = true
+                }
+            }
+        }
+    }
+    if (failedVideoLogExpanded) {
+        FailedVideoLogSheet(
+            onDismiss = { failedVideoLogExpanded = false },
+            onOpenInBrowser = { value, search ->
+                failedVideoLogExpanded = false
+                onOpenRecordInBrowser(value, search)
+            }
+        )
     }
 
     if (creatingFolder) {
@@ -721,12 +649,10 @@ internal fun HubHomePage(
 }
 
 @Composable
-private fun HubBottomNavigation(
-    libraryEnabled: Boolean,
+internal fun HubBottomNavigation(
     selectedSection: HubSection,
     activeDownloadCount: Int,
-    librarySort: HubLibrarySort,
-    onLibrarySortSelected: (HubLibrarySort) -> Unit,
+    onOpenLibrarySettings: () -> Unit,
     selectedDownloadSection: HubDownloadSection,
     onDownloadSectionSelected: (HubDownloadSection) -> Unit,
     downloadDirectory: DownloadDirectory?,
@@ -734,30 +660,18 @@ private fun HubBottomNavigation(
     onUseDefaultDownloadDirectory: () -> Unit,
     onChooseCustomDownloadDirectory: () -> Unit,
     onRelinkConfiguredDownloads: () -> Unit,
-    onOpenRecordInBrowser: (String, Boolean) -> Unit,
     onSectionSelected: (HubSection) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val motion = LocalMotionPolicy.current
-    var librarySettingsExpanded by remember { mutableStateOf(false) }
     var downloadSettingsExpanded by remember { mutableStateOf(false) }
-    var failedVideoLogExpanded by remember { mutableStateOf(false) }
-    LaunchedEffect(libraryEnabled) {
-        if (!libraryEnabled) {
-            librarySettingsExpanded = false
-            failedVideoLogExpanded = false
-        }
-    }
     val view = LocalView.current
     val labels = mapOf(
         HubSection.LIBRARY to stringResource(R.string.nav_library),
         HubSection.DOWNLOADS to stringResource(R.string.nav_downloads),
         HubSection.MORE to stringResource(R.string.nav_more)
     )
-    val sections = remember(libraryEnabled) {
-        if (libraryEnabled) HubSection.entries.toList()
-        else listOf(HubSection.DOWNLOADS, HubSection.MORE)
-    }
+    val sections = HubSection.entries
     val openLibrarySettings = stringResource(R.string.nav_open_library_settings)
     // The Scaffold content inset keeps this overlay clear of gesture and three-button navigation.
     BoxWithConstraints(
@@ -853,7 +767,7 @@ private fun HubBottomNavigation(
                                 onLongClick = when (section) {
                                     HubSection.LIBRARY -> ({
                                         view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                                        librarySettingsExpanded = true
+                                        onOpenLibrarySettings()
                                     })
                                     HubSection.DOWNLOADS -> ({
                                         view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
@@ -891,62 +805,6 @@ private fun HubBottomNavigation(
         }
     }
 
-    if (librarySettingsExpanded) {
-        ExpressiveBottomSheet(onDismissRequest = { librarySettingsExpanded = false }) {
-            ExpressiveSheetHeading("Library settings")
-            ExpressiveChoiceSetting(
-                title = "Library order",
-                description = "Choose how videos are arranged in this folder."
-            ) {
-                HubLibrarySort.entries.forEach { option ->
-                    FilterChip(
-                        selected = option == librarySort,
-                        onClick = {
-                            if (option != librarySort) {
-                                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                                onLibrarySortSelected(option)
-                            }
-                        },
-                        label = { Text(option.label) }
-                    )
-                }
-            }
-            Surface(
-                onClick = {
-                    librarySettingsExpanded = false
-                    failedVideoLogExpanded = true
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh
-            ) {
-                Row(
-                    modifier = Modifier.padding(UiSpacing.l),
-                    horizontalArrangement = Arrangement.spacedBy(UiSpacing.m),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Rounded.History, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Column {
-                        Text("Video references", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            "Review playback issues and saved video details",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
-    }
-    if (failedVideoLogExpanded) {
-        FailedVideoLogSheet(
-            onDismiss = { failedVideoLogExpanded = false },
-            onOpenInBrowser = { value, search ->
-                failedVideoLogExpanded = false
-                onOpenRecordInBrowser(value, search)
-            }
-        )
-    }
     if (downloadSettingsExpanded) {
         ExpressiveBottomSheet(onDismissRequest = { downloadSettingsExpanded = false }) {
             ExpressiveSheetHeading("Downloads settings")
@@ -1146,7 +1004,7 @@ private fun HubMoreContent(
     }
 }
 
-private fun DownloadStatus.isHubActiveDownload(): Boolean =
+internal fun DownloadStatus.isHubActiveDownload(): Boolean =
     this == DownloadStatus.QUEUED || this == DownloadStatus.DOWNLOADING ||
         this == DownloadStatus.PAUSED || this == DownloadStatus.MUXING
 

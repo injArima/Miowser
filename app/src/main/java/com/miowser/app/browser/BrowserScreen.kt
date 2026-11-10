@@ -45,6 +45,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
@@ -358,6 +359,7 @@ fun BrowserScreen(
     // The shortcut's tab operation can still wait for saved tabs to restore below.
     var showingHub by rememberSaveable { mutableStateOf(shortcutRequest == null || shortcutRequest.localVideo != null) }
     var deviceVideosSelected by rememberSaveable { mutableStateOf(true) }
+    var returnToDeviceLibrary by rememberSaveable { mutableStateOf(true) }
     val hubDestinations = rememberSaveableStateHolder()
     val libraryEnabled = AppSettings.current.libraryBehavior.isAvailable
     var hubSection by rememberSaveable {
@@ -2032,8 +2034,8 @@ fun BrowserScreen(
             BrowserBackAction.CLOSE_CHILD_TAB -> activeTab?.let { closeTab(it.id) }
             BrowserBackAction.SHOW_HUB -> showingHub = true
             BrowserBackAction.SHOW_HUB_LIBRARY -> {
-                if (libraryEnabled && hubSection != HubSection.LIBRARY) hubSection = HubSection.LIBRARY
-                else deviceVideosSelected = true
+                deviceVideosSelected = hubSection == HubSection.LIBRARY || returnToDeviceLibrary || !libraryEnabled
+                hubSection = HubSection.LIBRARY
             }
             BrowserBackAction.EXIT_APP -> Unit
         }
@@ -2779,8 +2781,45 @@ fun BrowserScreen(
 
         if (showingHub && playbackRequest == null && activeScreen == null && !showBackupRestore &&
             shortcutRequest?.localVideo == null) {
+            var librarySettingsOpen by remember { mutableStateOf(false) }
+            var libraryHealthVisible by rememberSaveable { mutableStateOf(false) }
+            val selectedHubSection = when {
+                deviceVideosSelected -> HubSection.LIBRARY
+                !libraryEnabled && hubSection == HubSection.LIBRARY -> HubSection.DOWNLOADS
+                else -> hubSection
+            }
+            fun selectHubSection(section: HubSection) {
+                if (section == HubSection.LIBRARY) {
+                    if (selectedHubSection != HubSection.LIBRARY) {
+                        deviceVideosSelected = returnToDeviceLibrary || !libraryEnabled
+                    }
+                } else {
+                    if (selectedHubSection == HubSection.LIBRARY) returnToDeviceLibrary = deviceVideosSelected
+                    deviceVideosSelected = false
+                }
+                hubSection = section
+            }
+            fun selectDownloadSection(section: HubDownloadSection) {
+                hubDownloadSection = section
+                HubSettingsStore.save(context, HubSettings(
+                    librarySort = hubLibrarySort,
+                    defaultDownloadSection = section
+                ))
+            }
+            fun openHubRecord(value: String, search: Boolean) {
+                val target = if (search) AppSettings.current.searchUrl(value)
+                    else UrlOrSearchResolver.resolve(value, AppSettings.current.searchUrlTemplate)
+                if (target.isNotBlank()) {
+                    showingHub = false
+                    activeScreen = null
+                    if (startupReady) openUrlInActiveTab(target) else pendingStartupUrl = target
+                }
+            }
             val destinationTabs: @Composable () -> Unit = {
-                LibraryHubTabs(deviceVideosSelected) { deviceVideosSelected = it }
+                LibraryHubTabs(deviceVideosSelected) {
+                    deviceVideosSelected = it
+                    returnToDeviceLibrary = it
+                }
             }
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainerLow).statusBarsPadding()) {
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -2800,9 +2839,14 @@ fun BrowserScreen(
                                     else download.savedUri?.let { DeviceDownload(it, download.displayName) }
                                 }.distinctBy { it.uri }
                             } }
-                            SideEffect { hubBottomBarHeightPx = 0 }
                             DeviceVideosPage(imported, deviceDownloads, initialView = initialHubSettings,
                                 destinationTabs = destinationTabs,
+                                librarySettingsOpen = librarySettingsOpen,
+                                onDismissLibrarySettings = { librarySettingsOpen = false },
+                                onOpenDirectories = {
+                                    openMediaSettings()
+                                    activeScreen = Screen.MEDIA_DIRECTORIES
+                                },
                                 onBrowse = { showingHub = false },
                                 discoveryEnabled = discoveryEnabled,
                                 autoRescan = AppSettings.current.deviceAutoRescanEnabled,
@@ -2813,25 +2857,17 @@ fun BrowserScreen(
                         } else {
             HubHomePage(
                 destinationTabs = destinationTabs,
-                onBottomBarHeightChanged = { hubBottomBarHeightPx = it },
+                bottomBarHeight = with(density) { hubBottomBarHeightPx.toDp() },
                 onLibraryIdleChanged = { libraryIdle = it },
                 onOpenMediaSettings = { openMediaSettings() },
                 uiVisible = playbackRequest == null && activeScreen == null && !showBackupRestore,
-                selectedSection = if (!libraryEnabled && hubSection == HubSection.LIBRARY) {
-                    HubSection.DOWNLOADS
-                } else hubSection,
-                onSectionSelected = { hubSection = it },
+                selectedSection = selectedHubSection,
+                librarySettingsOpen = librarySettingsOpen,
+                onDismissLibrarySettings = { librarySettingsOpen = false },
+                libraryHealthVisible = libraryHealthVisible && libraryEnabled,
+                onLibraryHealthVisibilityChanged = { libraryHealthVisible = it },
                 selectedDownloadSection = hubDownloadSection,
-                onDownloadSectionSelected = { section ->
-                    hubDownloadSection = section
-                    HubSettingsStore.save(
-                        context,
-                        HubSettings(
-                            librarySort = hubLibrarySort,
-                            defaultDownloadSection = section
-                        )
-                    )
-                },
+                onDownloadSectionSelected = ::selectDownloadSection,
                 libraryEntries = MediaLibrary.entries,
                 onPlayLibraryEntry = ::playLibraryEntry,
                 onRemoveLibraryEntry = { entry ->
@@ -2911,50 +2947,58 @@ fun BrowserScreen(
                 },
                 onOpenBrowser = { showingHub = false },
                 onOpenBackupRestore = { showBackupRestore = true },
-                downloadDirectory = downloadDirectory,
-                customDownloadDirectoryAccessible = downloadDirectory?.let { directory ->
-                    directory.mode != DownloadDirectoryMode.CUSTOM ||
-                        DownloadDirectoryStore.hasCustomAccess(context, directory)
-                } ?: false,
-                onUseDefaultDownloadDirectory = {
-                    downloadDirectory = DownloadDirectoryStore.useDefault(context)
-                    coroutineScope.launch {
-                        val linked = DownloadQueue.relinkConfiguredDownloads(context)
-                        showActionSnackbar(if (linked > 0) {
-                            "Using Downloads/Miowser; reconnected $linked ${if (linked == 1) "file" else "files"}"
-                        } else "Using Downloads/Miowser")
-                    }
-                },
-                onChooseCustomDownloadDirectory = {
-                    pendingDownloadDirectoryAction = null
-                    customDownloadFolderLauncher.launch(downloadDirectory?.treeUri)
-                },
-                onRelinkConfiguredDownloads = {
-                    val directory = downloadDirectory
-                    if (directory?.mode == DownloadDirectoryMode.CUSTOM &&
-                        !DownloadDirectoryStore.hasCustomAccess(context, directory)) {
-                        pendingDownloadDirectoryAction = null
-                        customDownloadFolderLauncher.launch(directory.treeUri)
-                    } else coroutineScope.launch {
-                        val linked = DownloadQueue.relinkConfiguredDownloads(context)
-                        showActionSnackbar(if (linked == 0) "No unavailable downloads matched this folder"
-                            else "Reconnected $linked ${if (linked == 1) "download" else "downloads"}")
-                    }
-                },
-                onOpenRecordInBrowser = { value, search ->
-                    val target = if (search) {
-                        AppSettings.current.searchUrl(value)
-                    } else {
-                        UrlOrSearchResolver.resolve(value, AppSettings.current.searchUrlTemplate)
-                    }
-                    if (target.isNotBlank()) {
-                        showingHub = false
-                        activeScreen = null
-                        if (startupReady) openUrlInActiveTab(target) else pendingStartupUrl = target
-                    }
-                }
+                onOpenRecordInBrowser = ::openHubRecord
             )
                         }
+                    }
+                    if (libraryHealthVisible && libraryEnabled && !deviceVideosSelected) {
+                        SideEffect { hubBottomBarHeightPx = 0 }
+                    } else {
+                        HubBottomNavigation(
+                            selectedSection = selectedHubSection,
+                            activeDownloadCount = DownloadQueue.downloads.count {
+                                it.id !in pendingDownloadDeletes && it.status.isHubActiveDownload()
+                            },
+                            onOpenLibrarySettings = {
+                                if (!libraryEnabled && !deviceVideosSelected) selectHubSection(HubSection.LIBRARY)
+                                librarySettingsOpen = true
+                            },
+                            selectedDownloadSection = hubDownloadSection,
+                            onDownloadSectionSelected = ::selectDownloadSection,
+                            onSectionSelected = ::selectHubSection,
+                            downloadDirectory = downloadDirectory,
+                            customDownloadDirectoryAccessible = downloadDirectory?.let { directory ->
+                                directory.mode != DownloadDirectoryMode.CUSTOM ||
+                                    DownloadDirectoryStore.hasCustomAccess(context, directory)
+                            } ?: false,
+                            onUseDefaultDownloadDirectory = {
+                                downloadDirectory = DownloadDirectoryStore.useDefault(context)
+                                coroutineScope.launch {
+                                    val linked = DownloadQueue.relinkConfiguredDownloads(context)
+                                    showActionSnackbar(if (linked > 0) {
+                                        "Using Downloads/Miowser; reconnected $linked ${if (linked == 1) "file" else "files"}"
+                                    } else "Using Downloads/Miowser")
+                                }
+                            },
+                            onChooseCustomDownloadDirectory = {
+                                pendingDownloadDirectoryAction = null
+                                customDownloadFolderLauncher.launch(downloadDirectory?.treeUri)
+                            },
+                            onRelinkConfiguredDownloads = {
+                                val directory = downloadDirectory
+                                if (directory?.mode == DownloadDirectoryMode.CUSTOM &&
+                                    !DownloadDirectoryStore.hasCustomAccess(context, directory)) {
+                                    pendingDownloadDirectoryAction = null
+                                    customDownloadFolderLauncher.launch(directory.treeUri)
+                                } else coroutineScope.launch {
+                                    val linked = DownloadQueue.relinkConfiguredDownloads(context)
+                                    showActionSnackbar(if (linked == 0) "No unavailable downloads matched this folder"
+                                        else "Reconnected $linked ${if (linked == 1) "download" else "downloads"}")
+                                }
+                            },
+                            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
+                                .onSizeChanged { hubBottomBarHeightPx = it.height }
+                        )
                     }
                 }
             }

@@ -24,7 +24,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 import com.miowser.app.library.LibraryThumbnailStore
 import com.miowser.app.library.device.*
-import com.miowser.app.ui.ExpressiveEmptyState
 import com.miowser.app.ui.MiowserLoadingIndicator
 import com.miowser.app.ui.theme.HubLibraryTokens
 import com.miowser.app.ui.theme.UiSpacing
@@ -40,6 +39,7 @@ internal fun DeviceVideoFolders(
     source: String?,
     listMode: Boolean,
     modifier: Modifier,
+    emptyState: @Composable (String) -> Unit,
     onOpen: (DeviceVideoFolder) -> Unit
 ) {
     val app = LocalContext.current.applicationContext
@@ -62,9 +62,8 @@ internal fun DeviceVideoFolders(
     val current = window
     if (current == null || current.count == 0) {
         Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            if (status.scanning) MiowserLoadingIndicator(description = "Checking video folders")
-            else ExpressiveEmptyState("No video folders", "Link a folder or allow video access to browse folders.",
-                Icons.Rounded.Folder)
+            if (status.scanning || current == null) MiowserLoadingIndicator(description = "Checking video folders")
+            else emptyState("No video folders")
         }
         return
     }
@@ -72,7 +71,7 @@ internal fun DeviceVideoFolders(
         columns = if (listMode) GridCells.Fixed(1) else GridCells.Adaptive(HubLibraryTokens.gridMinCell),
         state = grid,
         modifier = modifier.fillMaxWidth().testTag("device_video_folders"),
-        contentPadding = PaddingValues(bottom = UiSpacing.l),
+        contentPadding = PaddingValues(bottom = HubLibraryTokens.gridBottomClearance),
         horizontalArrangement = Arrangement.spacedBy(UiSpacing.m),
         verticalArrangement = Arrangement.spacedBy(UiSpacing.m)
     ) {
