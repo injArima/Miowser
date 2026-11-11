@@ -22,6 +22,8 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.*
+import com.miowser.app.ui.AppText as Text
+import com.miowser.app.ui.theme.BrandTypography
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -117,7 +119,7 @@ internal fun DeviceVideosPage(
     Column(Modifier.fillMaxSize().navigationBarsPadding()) {
         LibraryHubTopBar(
             title = {
-                Text(folderPath?.substringAfterLast('/')?.ifBlank { "Storage root" } ?: "Library",
+                Text(BrandTypography.name,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
             },
             navigation = if (folderPath != null) {
@@ -352,10 +354,13 @@ private fun DeviceVideoGrid(
                 val saved = canonical ?: if (video.uri != video.canonicalUri) {
                     observeLibraryCard(LibraryCardId("LOCAL_FILE:${video.uri}"))
                 } else null
+                val progress = com.miowser.app.player.LocalPlaybackProgressStore.load(app, video.canonicalUri)
+                    ?: if (video.uri != video.canonicalUri)
+                        com.miowser.app.player.LocalPlaybackProgressStore.load(app, video.uri) else null
                 HubVideoCard(title = video.title, sourceLabel = video.folder.ifBlank {
                     status.sources.firstOrNull { it.id == video.sourceId }?.label ?: "Device video"
-                }, positionMs = saved?.positionMs ?: 0, durationMs = video.durationMs.takeIf { it > 0 }
-                    ?: saved?.durationMs ?: 0, listMode = listMode,
+                }, positionMs = progress?.positionMs ?: saved?.positionMs ?: 0, durationMs = video.durationMs.takeIf { it > 0 }
+                    ?: progress?.durationMs ?: saved?.durationMs ?: 0, listMode = listMode,
                     qualityLabel = videoQualityLabel(video.height),
                     onClick = { onPlay(DevicePlaybackSelection(query, current, index)) }, localPreview = preview)
             }

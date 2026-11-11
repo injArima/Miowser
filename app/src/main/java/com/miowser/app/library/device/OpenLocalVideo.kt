@@ -26,5 +26,5 @@ internal suspend fun openGrantedVideo(context: Context, uri: Uri): PlaybackReque
         val readable = runCatching { resolver.openFileDescriptor(uri, "r")?.use { true } == true }.getOrDefault(false)
         if (!readable) return@withContext null
         val title = displayName ?: "Video"
-        PlaybackRequest.Local(uri, title, "Opened file", videoName = title, allowLibraryRecording = false)
+        PlaybackRequest.Local(uri, title, "Opened file", videoName = title)
     }

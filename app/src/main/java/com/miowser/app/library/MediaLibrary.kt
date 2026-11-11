@@ -89,6 +89,7 @@ object MediaLibrary {
      */
     fun recordOpened(context: Context, incoming: LibraryEntry): LibraryEntry {
         Persistence.requireOwner()
+        if (incoming.sourceKind != LibrarySourceKind.REMOTE_STREAM) return incoming
         val existingIndex = mutableRecords.indexOfFirst { it.identityKey == incoming.identityKey }
         val existing = mutableRecords.getOrNull(existingIndex)
         val placement = if (existing == null && incoming.sourceKind == LibrarySourceKind.REMOTE_STREAM) {

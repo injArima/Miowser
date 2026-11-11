@@ -2,6 +2,16 @@
 
 The Compose UI uses these shared values. Changes to a token update its consumers together. The component values below apply to the browser, hub, settings, sheets, and other non-player UI. The migration preserves existing measurements and colors.
 
+Brand typography is centralized in `BrandTypography` in `Type.kt`: the name
+**Miowser** uses bundled Racing Sans One at its original regular weight. App
+surfaces import `AppText as Text`; it applies the brand font only to complete
+occurrences of the name and preserves Material styling, annotations, colors and
+sizes for surrounding words. Labels without the name pass directly to Material
+Text. Use this shared text component for new app labels instead of introducing
+per-screen font choices. Native in-app selection labels use the matching Android
+font span. System-managed launcher labels and external webpage content retain
+their platform/site typography.
+
 | Category | Tokens and values | Where applied |
 | --- | --- | --- |
 | Spacing (`UiSpacing`) | `xxs` 2, `xs` 4, `s` 8, `compact` 10, `m` 12, `comfortable` 14, `l` 16, `roomy` 18, `xl` 20, `xxl` 24, `xxxl` 32 dp | Repeated padding, item gaps, and spacers in browser chrome, menus and sheets, hub, settings, history, onboarding, and player controls. |

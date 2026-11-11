@@ -2,7 +2,17 @@ package com.miowser.app.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.sp
+import com.miowser.app.R
+
+/** Brand-only font; the rest of each label retains its Material typography. */
+internal object BrandTypography {
+    const val name = "Miowser"
+    val fontResource = R.font.racing_sans_one
+    val fontFamily = FontFamily(Font(fontResource, FontWeight.Normal))
+}
 
 /** The full Material type scale, tuned for clear hierarchy in dense browser surfaces. */
 val ExpressiveTypography = Typography().let { base ->

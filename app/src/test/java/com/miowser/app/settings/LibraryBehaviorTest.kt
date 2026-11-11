@@ -10,7 +10,8 @@ class LibraryBehaviorTest {
         assertTrue(shouldRecordLibraryPlayback(
             LibraryBehavior.AUTOMATIC,
             openedFromLibrary = false,
-            privateTab = false
+            privateTab = false,
+            onlinePlayback = true
         ))
     }
 
@@ -19,7 +20,8 @@ class LibraryBehaviorTest {
         assertFalse(shouldRecordLibraryPlayback(
             LibraryBehavior.AUTOMATIC,
             openedFromLibrary = false,
-            privateTab = true
+            privateTab = true,
+            onlinePlayback = true
         ))
     }
 
@@ -28,7 +30,8 @@ class LibraryBehaviorTest {
         assertFalse(shouldRecordLibraryPlayback(
             LibraryBehavior.MANUAL_ONLY,
             openedFromLibrary = false,
-            privateTab = false
+            privateTab = false,
+            onlinePlayback = true
         ))
     }
 
@@ -37,7 +40,8 @@ class LibraryBehaviorTest {
         assertTrue(shouldRecordLibraryPlayback(
             LibraryBehavior.MANUAL_ONLY,
             openedFromLibrary = true,
-            privateTab = false
+            privateTab = false,
+            onlinePlayback = true
         ))
     }
 
@@ -46,7 +50,18 @@ class LibraryBehaviorTest {
         assertFalse(shouldRecordLibraryPlayback(
             LibraryBehavior.DISABLED,
             openedFromLibrary = true,
-            privateTab = false
+            privateTab = false,
+            onlinePlayback = true
         ))
+    }
+
+    @Test
+    fun deviceAndDownloadedPlaybackNeverCreatesNetworkRecords() {
+        LibraryBehavior.entries.forEach { behavior ->
+            listOf(false, true).forEach { openedFromLibrary ->
+                assertFalse(shouldRecordLibraryPlayback(behavior, openedFromLibrary,
+                    privateTab = false, onlinePlayback = false))
+            }
+        }
     }
 }

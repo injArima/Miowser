@@ -25,7 +25,7 @@ internal class PlaybackSession private constructor(val player: ExoPlayer, privat
         player.setPlaybackSpeed(1f)
         player.trackSelectionParameters = TrackSelectionParameters.Builder()
             .configureLocalSubtitles(context, request).build()
-        player.setMediaItem(MediaItem.fromUri(request.uri), request.startPositionMs.coerceAtLeast(0L))
+        player.setMediaItem(MediaItem.fromUri(request.uri), request.resumePosition(context).coerceAtLeast(0L))
         player.playWhenReady = true
         player.prepare()
     }
@@ -67,7 +67,8 @@ internal class PlaybackSession private constructor(val player: ExoPlayer, privat
                     player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
                         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
                 }
-                if (request.startPositionMs > 0) player.seekTo(request.startPositionMs)
+                val startPosition = if (request is PlaybackRequest.Local) request.resumePosition(context) else request.startPositionMs
+                if (startPosition > 0) player.seekTo(startPosition)
                 player.playWhenReady = true
                 player.prepare()
             } catch (error: Exception) { player.release(); throw error }

@@ -31,15 +31,16 @@ enum class LibraryBehavior(val label: String) {
 }
 
 /**
- * Existing Library entries remain writable in manual mode so their playback progress stays
- * useful. Direct browser and Downloads playback is recorded only in automatic mode. Private
+ * Existing online Library entries remain writable in manual mode so their playback progress stays
+ * useful. Online browser playback is recorded only in automatic mode. Device/downloaded files, private
  * browsing and the disabled mode never write Library data.
  */
 fun shouldRecordLibraryPlayback(
     behavior: LibraryBehavior,
     openedFromLibrary: Boolean,
-    privateTab: Boolean
-): Boolean = !privateTab && behavior.isAvailable &&
+    privateTab: Boolean,
+    onlinePlayback: Boolean
+): Boolean = onlinePlayback && !privateTab && behavior.isAvailable &&
     (openedFromLibrary || behavior == LibraryBehavior.AUTOMATIC)
 
 /**

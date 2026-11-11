@@ -59,7 +59,7 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Text
+import com.miowser.app.ui.AppText as Text
 import androidx.compose.material3.TextButton
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -1837,7 +1837,7 @@ fun BrowserScreen(
         showOverflowMenu = false
         libraryPlaybackQueue = null
         playbackFromLibrary = false
-        playbackRequest = request
+        playbackRequest = request.copy(rememberProgress = showingHub || activeTab?.isPrivate != true)
     }
 
     LaunchedEffect(shortcutRequest?.sequence) {
@@ -1865,23 +1865,16 @@ fun BrowserScreen(
                     }
                     val video = window[candidate] ?: break
                     val locators = listOf(video.canonicalUri, video.uri).distinct()
-                    val saved = locators.firstNotNullOfOrNull { findLibraryEntry("LOCAL_FILE:$it") }
                     val uri = withContext(Dispatchers.IO) {
-                        (listOfNotNull(saved?.mediaUri) + locators).distinct().firstOrNull {
+                        locators.firstOrNull {
                             LocalInspectionCache.available(context.applicationContext, it, force = true)
                         }
                     }
                     if (requestId != libraryPlayRequestId || !showingHub || !deviceVideosSelected || activeScreen != null) return@launch
                     if (uri != null) {
                         libraryPlaybackQueue = null
-                        val entry = findLibraryEntry("LOCAL_FILE:$uri") ?: saved?.let {
-                            if (libraryEnabled && it.mediaUri != uri) MediaLibrary.relinkLocal(context, it.mediaUri, uri)
-                            it.copy(mediaUri = uri)
-                        }
-                        playbackFromLibrary = entry != null
-                        val request = entry?.copy(title = video.title)?.toPlaybackRequest(
-                            null, "Miowser", resume = AppSettings.current.resumeSavedVideos
-                        ) ?: deviceRequest(video, uri)
+                        playbackFromLibrary = false
+                        val request = deviceRequest(video, uri)
                         devicePlayback = request to DevicePlaybackSelection(selection.query, window, candidate)
                         playbackRequest = request
                         return@launch
@@ -2959,7 +2952,8 @@ fun BrowserScreen(
                                     uri = uri,
                                     title = download.displayName,
                                     pageUrl = download.pageUrl.takeIf(String::isNotBlank),
-                                    videoName = download.displayName
+                                    videoName = download.displayName,
+                                    rememberProgress = showingHub || activeTab?.isPrivate != true
                                 )
                             }
                             DownloadedFileType.APK -> when (DownloadedFileOpener.installApk(context, download)) {
@@ -3211,9 +3205,9 @@ fun BrowserScreen(
                     )
                 }
             }
-            val recordCurrentPlayback = (request !is PlaybackRequest.Local || request.allowLibraryRecording) &&
-                shouldRecordLibraryPlayback(
+            val recordCurrentPlayback = shouldRecordLibraryPlayback(
                     behavior = AppSettings.current.libraryBehavior,
+                    onlinePlayback = request is PlaybackRequest.Remote,
                     openedFromLibrary = playbackFromLibrary,
                     privateTab = !showingHub && activeTab?.isPrivate == true
                 )
@@ -3950,7 +3944,8 @@ fun BrowserScreen(
                     uri = download.savedUri!!,
                     title = download.displayName,
                     pageUrl = download.pageUrl.takeIf(String::isNotBlank),
-                    videoName = download.displayName
+                    videoName = download.displayName,
+                    rememberProgress = showingHub || activeTab?.isPrivate != true
                 )
             } else if (fileType == DownloadedFileType.MEDIA) {
                 showSavedSnackbar("Blob saved; open it from Downloads")

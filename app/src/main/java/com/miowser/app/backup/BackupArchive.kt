@@ -27,7 +27,7 @@ internal val BACKUP_PREFERENCE_NAMES = listOf(
     "settings", "hub_settings", "bookmarks", "browser_speed_dials", "media_library",
     "library_folders", "downloads", "failed_video_log", "site_protection", "site_permissions",
     "site_element_rules", "adblock_filters", "browser_overflow_menu", "player_display_preferences",
-    "player_subtitle_style", "player_track_preferences"
+    "player_subtitle_style", "player_track_preferences", "local_playback_progress"
 )
 
 data class BackupSource(val name: String, val open: () -> InputStream)

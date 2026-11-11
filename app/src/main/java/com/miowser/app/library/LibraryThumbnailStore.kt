@@ -282,46 +282,6 @@ object LibraryThumbnailStore {
         }
     }
 
-    /** Extracts a local file's exact midpoint without moving the visible player's playhead. */
-    fun captureLocalMiddleFrame(
-        context: Context,
-        mediaUri: Uri,
-        durationMs: Long,
-        identityKey: String,
-        onComplete: (String?) -> Unit
-    ): () -> Unit {
-        if (mediaUri.scheme?.lowercase() in setOf("http", "https")) {
-            onComplete(null)
-            return {}
-        }
-        val captureKey = "$identityKey:middle"
-        if (!capturesInFlight.add(captureKey)) {
-            onComplete(null)
-            return {}
-        }
-        val cancelled = AtomicBoolean()
-        val job = captureScope.launch {
-            var storing = false
-            try {
-                val frame = loadLocalFrame(context.applicationContext, mediaUri, durationMs, midpoint = true)
-                if (frame == null) onComplete(null)
-                else {
-                    storing = true
-                    storeAsync(context.applicationContext, identityKey, captureKey, frame,
-                        LibraryThumbnailKind.MIDDLE, null, recycleCapture = false) {
-                        if (!cancelled.get()) onComplete(it)
-                    }
-                }
-            } finally {
-                if (!storing) capturesInFlight.remove(captureKey)
-            }
-        }
-        return {
-            cancelled.set(true)
-            job.cancel()
-        }
-    }
-
     /**
      * Copies a page-provided poster into Miowser's bounded persistent artwork cache. The response
      * is streamed to a temporary file so a large or dishonest image cannot occupy the app heap.

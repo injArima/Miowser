@@ -75,7 +75,7 @@ import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Text
+import com.miowser.app.ui.AppText as Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.FilledTonalIconButton
@@ -275,7 +275,6 @@ internal fun HubHomePage(
     val directCounts = rememberLibraryFolderCounts(uiVisible && selectedSection == HubSection.LIBRARY, libraryCache)
     val foldersForCounts = LibraryFolders.entries.toList()
     val folderVideoCounts = remember(directCounts, foldersForCounts) { countLibraryBranches(directCounts, foldersForCounts) }
-    val selectedFolderVideoCount = folderVideoCounts[activeFolderId.takeIf { it.isNotEmpty() }] ?: 0
     val destinations = rememberSaveableStateHolder()
     val libraryViews = rememberSaveableStateHolder()
     val libraryHasEntries by remember(libraryEntries) { derivedStateOf { libraryEntries.isNotEmpty() } }
@@ -298,20 +297,8 @@ internal fun HubHomePage(
                 LibraryHubTopBar(
                     branded = selectedSection != HubSection.MORE,
                     title = {
-                        if (selectedSection == HubSection.LIBRARY) {
-                            Column {
-                                Text(stringResource(R.string.nav_library), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(
-                                    pluralStringResource(R.plurals.library_video_count, selectedFolderVideoCount, selectedFolderVideoCount),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        } else {
-                            Text(
-                                if (selectedSection == HubSection.DOWNLOADS) "Downloads" else "More"
-                            )
-                        }
+                        Text(if (selectedSection == HubSection.MORE) "More" else stringResource(R.string.app_name),
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
                     },
                     actions = {
                         if (selectedSection == HubSection.LIBRARY) {
@@ -1042,6 +1029,8 @@ private fun HubDownloadedGrid(
                 } else {
                     null
                 }
+                val localProgress = if (fileType == DownloadedFileType.MEDIA && savedUri != null)
+                    com.miowser.app.player.LocalPlaybackProgressStore.load(context, savedUri) else null
                 val qualityHeight by produceState<Int?>(
                     initialValue = libraryEntry?.qualityHeight ?: DownloadedFileInspector.cachedQualityHeight(savedUri),
                     savedUri,
@@ -1085,8 +1074,8 @@ private fun HubDownloadedGrid(
                 HubVideoCard(
                     title = download.displayName.ifBlank { "Downloaded file" },
                     sourceLabel = downloadSourceLabel(download),
-                    positionMs = libraryEntry?.positionMs ?: 0L,
-                    durationMs = libraryEntry?.durationMs ?: 0L,
+                    positionMs = localProgress?.positionMs ?: libraryEntry?.positionMs ?: 0L,
+                    durationMs = localProgress?.durationMs ?: libraryEntry?.durationMs ?: 0L,
                     thumbnailUrl = savedThumbnail,
                     localPreview = localPreview.takeIf { fileAvailable == true },
                     deferArtwork = { gridState.isScrollInProgress },
@@ -1278,7 +1267,7 @@ private fun HubLibraryContent(
             ) {
                 ExpressiveEmptyState(
                     title = "Your Library is empty",
-                    description = "Videos opened in Miowser's player will appear here.",
+                    description = "Online videos opened in Miowser's player will appear here.",
                     icon = Icons.Rounded.VideoLibrary
                 )
             }
@@ -1427,51 +1416,6 @@ private fun ManagedLibraryCard(
     }
     val available = availabilityOverride ?: savedAvailability
     val isUnavailable = available == false
-
-    // Upgrade old first-frame thumbnails for local videos as cards become visible. This also
-    // repairs records whose thumbnail was never captured, without reopening the player.
-    LaunchedEffect(entry.identityKey, entry.qualityHeight, available, scrolling) {
-        if (scrolling || !isLocalFile || available != true || entry.qualityHeight != null) {
-            return@LaunchedEffect
-        }
-        val height = withContext(Dispatchers.IO) {
-            DownloadedFileInspector.videoQualityHeight(context.applicationContext, Uri.parse(entry.mediaUri))
-        }
-        if (height != null) MediaLibrary.updateQuality(context.applicationContext, entry.identityKey, height)
-    }
-    LaunchedEffect(entry.identityKey, entry.thumbnailUrl, available, scrolling) {
-        if (scrolling || !isLocalFile || available != true) {
-            return@LaunchedEffect
-        }
-        delay(350)
-        val source = entry.mediaUri
-        val thumbnail = entry.thumbnailUrl.orEmpty()
-        val checked = LocalInspectionCache.peek("library-preview", source)
-        if (checked == thumbnail || checked == "missing:$thumbnail") return@LaunchedEffect
-        val ticket = LocalInspectionCache.ticket()
-        val hasMiddleFrame = withContext(Dispatchers.IO) {
-            LibraryThumbnailStore.isMiddleFrame(entry.thumbnailUrl)
-        }
-        if (hasMiddleFrame) {
-            LocalInspectionCache.remember("library-preview", source, thumbnail, ticket = ticket)
-            return@LaunchedEffect
-        }
-        kotlinx.coroutines.suspendCancellableCoroutine<Unit> { continuation ->
-            val cancel = LibraryThumbnailStore.captureLocalMiddleFrame(
-                context = context.applicationContext,
-                mediaUri = Uri.parse(entry.mediaUri),
-                durationMs = entry.durationMs, identityKey = entry.identityKey
-            ) { uri ->
-                if (continuation.isActive) {
-                    LocalInspectionCache.remember("library-preview", source, uri ?: "missing:$thumbnail",
-                        if (uri != null) LocalInspectionCache.SUCCESS_MS else LocalInspectionCache.RETRY_MS, ticket)
-                    if (uri != null) MediaLibrary.updateThumbnail(context.applicationContext, entry.identityKey, uri)
-                    continuation.resumeWith(Result.success(Unit))
-                }
-            }
-            continuation.invokeOnCancellation { cancel() }
-        }
-    }
 
     HubVideoCard(
         listMode = listMode,

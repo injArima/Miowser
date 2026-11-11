@@ -18,7 +18,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
+import com.miowser.app.ui.AppText as Text
 import androidx.compose.material3.TextButton
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope

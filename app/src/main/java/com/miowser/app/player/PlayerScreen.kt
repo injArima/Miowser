@@ -68,7 +68,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.miowser.app.ui.AppText as Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -193,7 +193,7 @@ sealed class PlaybackRequest {
         val pageTitle: String? = null,
         val videoName: String? = null,
         override val startPositionMs: Long = 0L,
-        val allowLibraryRecording: Boolean = true
+        val rememberProgress: Boolean = true
     ) : PlaybackRequest()
 }
 
@@ -322,7 +322,7 @@ fun PlayerScreen(
             (activeLocalRequest == localPlaylistRequest && retainedLocalSession.value != null))) {
         PlayerContent(request, playlist, onSelectPlaylistEntry, onPlayPrevious, onPlayNext,
             onDownload, onOpenSourcePage, onBrowseSource, companionBrowsing,
-            recordInLibrary, onDismiss, transport, orientationMode,
+            recordInLibrary && request is PlaybackRequest.Remote, onDismiss, transport, orientationMode,
             { orientationMode = it },
             retainedLocalSession.value.takeIf { localPlaylistRequest != null }, pagedPlaylist)
     } else {
@@ -443,11 +443,10 @@ private fun PlayerContent(
     var gestureFeedback by remember(request) { mutableStateOf<PlayerGestureFeedback?>(null) }
     var gestureFeedbackActivity by remember(request) { mutableIntStateOf(0) }
     var libraryRecorded by remember(request) { mutableStateOf(false) }
-    var lastSavedLibraryPositionMs by remember(request) { mutableLongStateOf(-1L) }
+    var lastSavedPlaybackPositionMs by remember(request) { mutableLongStateOf(-1L) }
     var playerView by remember(request) { mutableStateOf<PlayerView?>(null) }
     var pageSubtitleView by remember(request) { mutableStateOf<SubtitleView?>(null) }
     var midpointCaptureRequested by remember(request) { mutableStateOf(false) }
-    var localMidpointExtractionAttempted by remember(request) { mutableStateOf(false) }
     var fallbackCaptureRequested by remember(request) { mutableStateOf(false) }
     var leavingForSourcePage by remember(request) { mutableStateOf(false) }
     val libraryIdentityKey = remember(request) { request.toLibraryEntry().identityKey }
@@ -609,18 +608,21 @@ private fun PlayerContent(
             trackPanel != PlayerTrackKind.SUBTITLE) finishSubtitleAdjustment()
     }
 
-    val saveLibraryProgress: (Boolean) -> Unit = { force ->
-        if (libraryRecorded) {
+    val savePlaybackProgress: (Boolean) -> Unit = { force ->
+        val local = request as? PlaybackRequest.Local
+        if (local?.rememberProgress == true || libraryRecorded) {
             val currentPosition = exoPlayer.currentPosition.coerceAtLeast(0L)
             val currentDuration = exoPlayer.duration.takeIf { it != C.TIME_UNSET && it > 0L } ?: 0L
-            if (force || kotlin.math.abs(currentPosition - lastSavedLibraryPositionMs) >= LIBRARY_PROGRESS_MIN_DELTA_MS) {
-                MediaLibrary.updateProgress(
-                    context = context,
-                    identityKey = libraryIdentityKey,
-                    positionMs = currentPosition,
-                    durationMs = currentDuration
-                )
-                lastSavedLibraryPositionMs = currentPosition
+            if (force || kotlin.math.abs(currentPosition - lastSavedPlaybackPositionMs) >= LIBRARY_PROGRESS_MIN_DELTA_MS) {
+                if (local != null) {
+                    // A reused playlist player may already own the next file during disposal.
+                    if (exoPlayer.currentMediaItem?.localConfiguration?.uri == local.uri) {
+                        LocalPlaybackProgressStore.save(context, local.uri.toString(), currentPosition, currentDuration)
+                    }
+                } else {
+                    MediaLibrary.updateProgress(context, libraryIdentityKey, currentPosition, currentDuration)
+                }
+                lastSavedPlaybackPositionMs = currentPosition
             }
         }
     }
@@ -643,8 +645,8 @@ private fun PlayerContent(
         }
     }
 
-    LaunchedEffect(request, hasRenderedFirstFrame, playerView) {
-        if (!hasRenderedFirstFrame || playerView == null) return@LaunchedEffect
+    LaunchedEffect(request, hasRenderedFirstFrame, playerView, recordInLibrary) {
+        if (!recordInLibrary || !hasRenderedFirstFrame || playerView == null) return@LaunchedEffect
         // Avoid the decoder's first transitional/black frame. This uses the existing surface and
         // is cancelled automatically when the playlist item changes.
         delay(750)
@@ -665,7 +667,7 @@ private fun PlayerContent(
                     )
                 )
                 libraryRecorded = true
-                lastSavedLibraryPositionMs = entry.positionMs
+                lastSavedPlaybackPositionMs = entry.positionMs
             }
         }
 
@@ -676,7 +678,7 @@ private fun PlayerContent(
                 isPlaying = playing
                 // A network rebuffer also changes isPlaying to false. Persist only an intentional
                 // pause here; lifecycle pause, end, and disposal have their own forced saves.
-                if (!playing && !exoPlayer.playWhenReady) saveLibraryProgress(true)
+                if (!playing && !exoPlayer.playWhenReady) savePlaybackProgress(true)
             }
 
             override fun onPlaybackStateChanged(state: Int) {
@@ -686,7 +688,7 @@ private fun PlayerContent(
                 if (state == Player.STATE_READY) {
                     recordReadyMedia()
                 } else if (state == Player.STATE_ENDED) {
-                    saveLibraryProgress(true)
+                    savePlaybackProgress(true)
                 }
             }
 
@@ -732,7 +734,7 @@ private fun PlayerContent(
         playingQualityHeight = videoQualityHeight(exoPlayer.videoSize.width, exoPlayer.videoSize.height)
         if (exoPlayer.playbackState == Player.STATE_READY) recordReadyMedia()
         onDispose {
-            saveLibraryProgress(true)
+            savePlaybackProgress(true)
             exoPlayer.removeListener(listener)
             com.miowser.app.diagnostics.DevResourceDiagnostics.listenerRemoved()
             if (retainedSession == null) session.close()
@@ -766,35 +768,6 @@ private fun PlayerContent(
         }
     }
 
-    // Local files can be randomly accessed cheaply and reliably. Extract their exact midpoint on
-    // the artwork worker; if the platform extractor refuses the file, active-decoder capture below
-    // remains the fallback when playback reaches the middle.
-    LaunchedEffect(request, libraryRecorded, hasRenderedFirstFrame, recordInLibrary) {
-        val local = request as? PlaybackRequest.Local ?: return@LaunchedEffect
-        if (!recordInLibrary || !libraryRecorded || !hasRenderedFirstFrame || localMidpointExtractionAttempted)
-            return@LaunchedEffect
-        val existing = MediaLibrary.entries.firstOrNull { it.identityKey == libraryIdentityKey }?.thumbnailUrl
-        if (LibraryThumbnailStore.isMiddleFrame(existing)) return@LaunchedEffect
-        localMidpointExtractionAttempted = true
-        midpointCaptureRequested = true
-        delay(1_000)
-        kotlinx.coroutines.suspendCancellableCoroutine<Unit> { continuation ->
-            val cancel = LibraryThumbnailStore.captureLocalMiddleFrame(
-                context.applicationContext,
-                local.uri,
-                durationMs = exoPlayer.knownDurationMs(),
-                identityKey = libraryIdentityKey
-            ) { uri ->
-                if (continuation.isActive) {
-                    if (uri != null) MediaLibrary.updateThumbnail(context.applicationContext, libraryIdentityKey, uri)
-                    else midpointCaptureRequested = false
-                    continuation.resumeWith(Result.success(Unit))
-                }
-            }
-            continuation.invokeOnCancellation { cancel() }
-        }
-    }
-
     val backgroundAudioOnly = rememberUpdatedState(audioOnly)
     val backgroundPlaybackAllowed = rememberUpdatedState(backgroundPlaybackEnabled)
     DisposableEffect(lifecycleOwner, exoPlayer) {
@@ -812,7 +785,7 @@ private fun PlayerContent(
                     pausedWhenInactive = !keepPlaying && !exoPlayer.playWhenReady
                     pauseControlRevision = PlayerPlaybackService.externalControlRevision
                     if (!keepPlaying) exoPlayer.pause()
-                    saveLibraryProgress(true)
+                    savePlaybackProgress(true)
                 }
                 Lifecycle.Event.ON_RESUME -> {
                     if (pauseControlRevision == PlayerPlaybackService.externalControlRevision) {

@@ -70,7 +70,7 @@ private class SelectionSearchActionModeCallback(
             Menu.NONE,
             SEARCH_WITH_MIOWSER_ITEM_ID,
             copyOrder + 1,
-            webView.context.getString(R.string.search_with_miowser)
+            com.miowser.app.ui.brandNameNativeText(webView.context, webView.context.getString(R.string.search_with_miowser))
         ).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
         return true
     }

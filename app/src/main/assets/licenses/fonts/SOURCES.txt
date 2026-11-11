@@ -1,4 +1,4 @@
-Subtitle font assets (SIL Open Font License 1.1)
+Bundled font assets (SIL Open Font License 1.1)
 
 Roboto: subtitle_roboto.ttf
   https://github.com/google/fonts/blob/main/ofl/roboto/Roboto%5Bwdth%2Cwght%5D.ttf
@@ -21,3 +21,8 @@ Lobster: subtitle_lobster.ttf
   License: Lobster-OFL.txt
 
 System uses the device's default font and has no bundled asset.
+
+Brand wordmark (Racing Sans One): racing_sans_one.ttf
+  https://github.com/google/fonts/blob/main/ofl/racingsansone/RacingSansOne-Regular.ttf
+  License: RacingSansOne-OFL.txt
+  SHA-256: 8b5cada83e3e4692f624f1b583a069b34e457e07a4210ceddbb1133b3383673e

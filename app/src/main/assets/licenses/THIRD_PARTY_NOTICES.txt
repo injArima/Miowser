@@ -18,4 +18,4 @@ The bundled Public Suffix List is from https://publicsuffix.org/list/ and carrie
 
 # Subtitle fonts
 
-Bundled Roboto, Arimo (Helvetica-like), Nunito Sans (Avenir-like), Fredoka One, and Lobster font assets are licensed under the SIL Open Font License 1.1. Their individual OFL texts and source links are included in this app under assets/licenses/fonts/.
+Bundled Roboto, Arimo (Helvetica-like), Nunito Sans (Avenir-like), Fredoka One, Lobster, and Racing Sans One font assets are licensed under the SIL Open Font License 1.1. Their individual OFL texts and source links are included in this app under assets/licenses/fonts/.

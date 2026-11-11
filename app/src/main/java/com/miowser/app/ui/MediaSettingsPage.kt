@@ -32,7 +32,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.miowser.app.ui.AppText as Text
 import androidx.compose.material3.rememberSliderState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -140,7 +140,7 @@ internal fun MediaSettingsPage(
         }
         SettingsSection("History") {
             val description = when (settings.libraryBehavior) {
-                LibraryBehavior.AUTOMATIC -> "Save played media and progress automatically."
+                LibraryBehavior.AUTOMATIC -> "Save online videos and their progress automatically."
                 LibraryBehavior.MANUAL_ONLY -> "Keep entries you add and update their progress."
                 LibraryBehavior.DISABLED -> "Hide the Miowser Library and keep your entries for later."
             }
