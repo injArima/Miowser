@@ -24,6 +24,18 @@ private const val VIDEO_SNIFFER_SCRIPT = """
             var watched = new WeakSet();
             var playing = new Set();
             var token = bridge.documentToken();
+            var lastActivity = null;
+            function publishActivity() {
+                var active = playing.size > 0;
+                if (active === lastActivity) return;
+                lastActivity = active;
+                bridge.reportMediaActivityForDocument(token, active);
+            }
+            function updateActivity(el) {
+                if (el.isConnected && !el.paused && !el.ended && (playing.has(el) || playing.size < 32)) playing.add(el);
+                else playing.delete(el);
+                publishActivity();
+            }
             function report(el) {
                 var src = el.currentSrc || el.src;
                 if (!src || src.length > 8192 || location.href.length > 8192) return;
@@ -39,15 +51,13 @@ private const val VIDEO_SNIFFER_SCRIPT = """
 
             function watch(el) {
                 report(el);
-                if (watched.has(el)) return;
+                if (watched.has(el)) { updateActivity(el); return; }
                 watched.add(el);
                 el.addEventListener('loadedmetadata', function() { report(el); });
                 el.addEventListener('durationchange', function() { report(el); });
                 el.addEventListener('loadeddata', function() { report(el); });
                 function activity() {
-                    if (!el.paused && !el.ended && (playing.has(el) || playing.size < 32)) playing.add(el);
-                    else playing.delete(el);
-                    bridge.reportMediaActivityForDocument(token, playing.size > 0);
+                    updateActivity(el);
                 }
                 el.addEventListener('play', activity);
                 el.addEventListener('pause', activity);
@@ -58,6 +68,19 @@ private const val VIDEO_SNIFFER_SCRIPT = """
             function scan(root) {
                 root.querySelectorAll('video, audio').forEach(watch);
             }
+
+            // pushState track/episode changes reset the native generation without replacing
+            // this document. Rebind once for that navigation, not on every DOM mutation.
+            window.__miowserRefreshMediaSniffer = function() {
+                var next = bridge.documentToken();
+                if (next === token) return;
+                token = next;
+                reported.clear();
+                playing.clear();
+                lastActivity = null;
+                scan(document);
+                publishActivity();
+            };
 
             function whenReady() {
                 token = bridge.documentToken();
@@ -71,7 +94,7 @@ private const val VIDEO_SNIFFER_SCRIPT = """
                         });
                     });
                     playing.forEach(function(el) { if (!el.isConnected || el.paused || el.ended) playing.delete(el); });
-                    bridge.reportMediaActivityForDocument(token, playing.size > 0);
+                    publishActivity();
                 });
                 observer.observe(document.documentElement || document, { childList: true, subtree: true });
             }
@@ -97,4 +120,8 @@ fun WebView.installVideoSnifferScript() {
     } else {
         com.miowser.app.diagnostics.SafeLog.warning(TAG, "DOCUMENT_START_SCRIPT not supported — video-element sniffing degraded")
     }
+}
+
+internal fun WebView.refreshMediaSnifferForNavigation() {
+    evaluateJavascript("window.__miowserRefreshMediaSniffer && window.__miowserRefreshMediaSniffer();", null)
 }

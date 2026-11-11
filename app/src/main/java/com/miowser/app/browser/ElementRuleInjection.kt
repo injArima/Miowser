@@ -75,6 +75,23 @@ private const val ELEMENT_RULE_INJECTION_SCRIPT = """
 
         state.refresh = function() {
             state.rules = readRules();
+            // CSS hiding is maintained by the browser; only DOM deletion needs an observer.
+            if (!state.rules.delete.length && state.observer) {
+                state.observer.disconnect();
+                state.observer = null;
+            }
+            if (state.rules.delete.length && !state.observer) {
+                var scheduled = false;
+                state.observer = new MutationObserver(function() {
+                    if (scheduled) return;
+                    scheduled = true;
+                    requestAnimationFrame(function() {
+                        scheduled = false;
+                        if (state.rules.delete.length) applyCurrentRules();
+                    });
+                });
+                state.observer.observe(document, { childList: true, subtree: true });
+            }
             return applyCurrentRules();
         };
         window.__miowserApplyElementRules = state.refresh;
@@ -83,18 +100,6 @@ private const val ELEMENT_RULE_INJECTION_SCRIPT = """
                 if (applyCurrentRules()) readyObserver.disconnect();
             });
             readyObserver.observe(document, { childList: true, subtree: true });
-        }
-        if (!state.observer) {
-            var scheduled = false;
-            state.observer = new MutationObserver(function() {
-                if (scheduled) return;
-                scheduled = true;
-                requestAnimationFrame(function() {
-                    scheduled = false;
-                    if (state.rules.delete.length) applyCurrentRules();
-                });
-            });
-            state.observer.observe(document, { childList: true, subtree: true });
         }
     })();
 """

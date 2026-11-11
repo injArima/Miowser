@@ -4,6 +4,7 @@ import android.content.Context
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewTreeObserver
+import android.view.ViewConfiguration
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 
 /** Native WebView drag recognition with feedback scoped to a live pull or committed refresh. */
@@ -11,8 +12,14 @@ internal data class BrowserPullFeedback(val progress: Float, val refreshing: Boo
 
 internal class BrowserPullToRefreshLayout(context: Context) : SwipeRefreshLayout(context) {
     var onFeedbackChanged: (BrowserPullFeedback?) -> Unit = {}
+    var checkPageTarget: ((Float, Float, (Boolean) -> Unit) -> Unit)? = null
     private val nativeSpinner = getChildAt(0).apply { alpha = 0f }
+    private val pageGesture = BrowserPageGesturePolicy(ViewConfiguration.get(context).scaledTouchSlop.toFloat())
     private var gestureActive = false
+    private var intercepting = false
+    private var gestureGeneration = 0L
+    private var downX = 0f
+    private var downY = 0f
     private var feedback: BrowserPullFeedback? = null
     private val pullObserver = ViewTreeObserver.OnPreDrawListener {
         publishFeedback()
@@ -20,16 +27,52 @@ internal class BrowserPullToRefreshLayout(context: Context) : SwipeRefreshLayout
     }
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-        if (event.actionMasked == MotionEvent.ACTION_DOWN) gestureActive = true
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            gestureGeneration++
+            gestureActive = true
+            intercepting = false
+            downX = event.x; downY = event.y
+            pageGesture.begin(isEnabled && !isRefreshing && !canChildScrollUp())
+        } else if (event.actionMasked == MotionEvent.ACTION_MOVE) {
+            pageGesture.move(event.x - downX, event.y - downY, event.pointerCount)
+        } else if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN) {
+            pageGesture.claimForPage()
+            if (intercepting) cancelPull()
+        }
         return try {
-            super.dispatchTouchEvent(event)
+            val handled = super.dispatchTouchEvent(event)
+            // Dispatch DOWN first: page clicks never wait for a JS/native round trip.
+            if (event.actionMasked == MotionEvent.ACTION_DOWN && pageGesture.needsPageCheck) {
+                val ticket = gestureGeneration
+                val check = checkPageTarget
+                if (check == null || width <= 0 || height <= 0) pageGesture.resolvePageTarget(false)
+                else check(event.x / width, event.y / height) { allowed ->
+                    if (ticket == gestureGeneration && gestureActive) pageGesture.resolvePageTarget(allowed)
+                }
+            }
+            handled
         } finally {
             when (event.actionMasked) {
-                MotionEvent.ACTION_UP -> gestureActive = false
+                MotionEvent.ACTION_UP -> {
+                    gestureActive = false
+                    intercepting = false
+                    pageGesture.cancel()
+                }
                 MotionEvent.ACTION_CANCEL -> cancelPull()
             }
             publishFeedback()
         }
+    }
+
+    override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_MOVE && !intercepting && !pageGesture.canRefresh) return false
+        return super.onInterceptTouchEvent(event).also { if (it) intercepting = true }
+    }
+
+    override fun requestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {
+        // SwipeRefreshLayout's legacy nested-scroll check can ignore WebView's request.
+        if (disallowIntercept) pageGesture.claimForPage()
+        super.requestDisallowInterceptTouchEvent(disallowIntercept)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -39,7 +82,10 @@ internal class BrowserPullToRefreshLayout(context: Context) : SwipeRefreshLayout
 
     fun cancelPull() {
         val wasPulling = gestureActive || nativeSpinner.visibility == View.VISIBLE
+        gestureGeneration++
         gestureActive = false
+        intercepting = false
+        pageGesture.cancel()
         if (!isRefreshing && wasPulling) {
             // Also reset a native return animation interrupted by another touch owner.
             val enabled = isEnabled
@@ -52,6 +98,9 @@ internal class BrowserPullToRefreshLayout(context: Context) : SwipeRefreshLayout
     fun finishRefresh() {
         isRefreshing = false
         gestureActive = false
+        intercepting = false
+        gestureGeneration++
+        pageGesture.cancel()
         publishFeedback()
     }
 
@@ -82,6 +131,8 @@ internal class BrowserPullToRefreshLayout(context: Context) : SwipeRefreshLayout
     override fun onDetachedFromWindow() {
         if (viewTreeObserver.isAlive) viewTreeObserver.removeOnPreDrawListener(pullObserver)
         gestureActive = false
+        gestureGeneration++
+        pageGesture.cancel()
         super.onDetachedFromWindow()
         feedback = null
         onFeedbackChanged(null)

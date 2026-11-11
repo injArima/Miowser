@@ -2324,6 +2324,7 @@ fun BrowserScreen(
                                     swipeRefresh.apply {
                                         pullHost[0] = this
                                         onFeedbackChanged = { pullFeedback = it }
+                                        checkPageTarget = { x, y, result -> engine.checkPageAllowsRefresh(x, y, result) }
                                         val display = NativeVideoAssistantDisplay(ctx)
                                         content.addView(engine, FrameLayout.LayoutParams(-1, -1))
                                         content.addView(display, FrameLayout.LayoutParams(-1, -1))
@@ -2349,6 +2350,7 @@ fun BrowserScreen(
                                 },
                                 onRelease = { host ->
                                     host.onFeedbackChanged = {}
+                                    host.checkPageTarget = null
                                     host.finishRefresh()
                                     pullHost[0] = null
                                     releaseVideoAssistantHost(host, tab::detachVideoAssistantDisplay)

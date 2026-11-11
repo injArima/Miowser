@@ -14,6 +14,7 @@ import com.miowser.app.adblock.BlockedPageInfo
 import com.miowser.app.adblock.StubResponses
 import com.miowser.app.grabber.MediaType
 import com.miowser.app.grabber.MediaUrlClassifier
+import com.miowser.app.grabber.refreshMediaSnifferForNavigation
 import com.miowser.app.settings.AppSettings
 
 private const val TAG = "Miowser/Intercept"
@@ -231,7 +232,10 @@ class MiowserWebViewClient(
             onNewPageStarted()
             // pushState episode switches keep the same document and never deliver
             // another commit/finish callback. Rebind detection after its reset.
-            if (!mainFrameLoading && !isReload) onPageCommitted()
+            if (!mainFrameLoading && !isReload) {
+                view.refreshMediaSnifferForNavigation()
+                onPageCommitted()
+            }
         }
         refreshNavigationState(view)
     }
