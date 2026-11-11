@@ -8,6 +8,7 @@ import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import com.miowser.app.ui.theme.PlayerSpeedControlTokens
 
 /** Player resource owner. The screen removes listeners and saves progress before closing it. */
 @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
@@ -22,7 +23,7 @@ internal class PlaybackSession private constructor(val player: ExoPlayer, privat
         cleanups.forEach { it() }
         cleanups.clear()
         player.pause()
-        player.setPlaybackSpeed(1f)
+        player.setPlaybackSpeed(PlayerDisplayPreferenceStore.playbackSpeed(context) ?: PlayerSpeedControlTokens.normal)
         player.trackSelectionParameters = TrackSelectionParameters.Builder()
             .configureLocalSubtitles(context, request).build()
         player.setMediaItem(MediaItem.fromUri(request.uri), request.resumePosition(context).coerceAtLeast(0L))
@@ -59,6 +60,7 @@ internal class PlaybackSession private constructor(val player: ExoPlayer, privat
                 .setLoadControl(playerLoadControl(context))
                 .build()
             try {
+                PlayerDisplayPreferenceStore.playbackSpeed(context)?.let(player::setPlaybackSpeed)
                 player.setMediaItem(item)
                 if (request is PlaybackRequest.Local) {
                     player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()

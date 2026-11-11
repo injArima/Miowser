@@ -66,7 +66,6 @@ import com.miowser.app.ui.theme.UiSpacing
 internal class BrowserVideoSessionPreferences {
     var orientation by mutableStateOf<PlayerOrientationMode?>(null)
     var scale: BrowserVideoScale? = null
-    var speed: Double? = null
 }
 
 /** Own the activity orientation outside the replaceable fullscreen video view. */
@@ -150,6 +149,12 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
     var feedbackSequence by remember { mutableIntStateOf(0) }
     val speedHold = remember { BrowserVideoSpeedHold() }
     var holdingSpeed by remember { mutableStateOf(false) }
+    var preferredPlaybackSpeed by remember(context) {
+        mutableStateOf(PlayerDisplayPreferenceStore.playbackSpeed(context)?.toDouble())
+    }
+    val speedRestore = remember(controller, owner, video.sourceRevision, preferredPlaybackSpeed) {
+        BrowserPlaybackSpeedRestore(preferredPlaybackSpeed)
+    }
     val timeline = remember { BrowserVideoTimelineInteraction() }
     var scrubbing by remember { mutableStateOf(false) }
     var interaction by remember { mutableIntStateOf(0) }
@@ -265,7 +270,17 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
             val saved = PlayerDisplayPreferenceStore.scaleMode(context)
             val scale = preferences.scale ?: BrowserVideoScale.entries.firstOrNull { it.name == saved }
             scale?.let(controller::setScale)
-            preferences.speed?.takeIf { it != video.speed }?.let(controller::setSpeed)
+        }
+    }
+    LaunchedEffect(controller, owner, state.controlsEnabled, video.sourceRevision, video.speed, holdingSpeed, speedRestore) {
+        if (!state.controlsEnabled || holdingSpeed) return@LaunchedEffect
+        while (true) {
+            val current = controller.state.value
+            val sample = current.session?.state ?: return@LaunchedEffect
+            if (!owner.matches(current) || !current.controlsEnabled || sample.sourceRevision != video.sourceRevision) return@LaunchedEffect
+            val speed = speedRestore.next(sample.speed, holdingSpeed) ?: return@LaunchedEffect
+            controller.setSpeed(speed)
+            delay(BrowserPlaybackSpeedRestore.RETRY_DELAY_MS)
         }
     }
     BackHandler(enabled = locked && !inPip && state.controlsEnabled && !modal) { locked = false; visible = true }
@@ -393,7 +408,8 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                                     },
                                     speedMenu, { speedMenu = it; interaction++ }, { rate ->
                                         val speed = rate.toDouble()
-                                        preferences.speed = speed
+                                        preferredPlaybackSpeed = speed
+                                        PlayerDisplayPreferenceStore.savePlaybackSpeed(context, speed.toFloat())
                                         act { controller.setSpeed(speed) }
                                     },
                                     subtitleFocus, "Subtitles", true, if (subtitleAvailable) ({ closeMenus(); overlays.open(PlayerOverlay.SUBTITLES); interaction++ }) else null,

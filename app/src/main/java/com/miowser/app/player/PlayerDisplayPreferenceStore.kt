@@ -8,6 +8,21 @@ internal object PlayerDisplayPreferenceStore {
     private const val SCALE_MODE = "scale_mode"
     private const val ORIENTATION = "orientation"
     private const val BRIGHTNESS = "brightness"
+    private const val PLAYBACK_SPEED = "playback_speed"
+
+    fun playbackSpeed(context: Context): Float? =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getFloat(PLAYBACK_SPEED, Float.NaN)
+            .takeIf(::validPlayerPlaybackSpeed)
+
+    fun savePlaybackSpeed(context: Context, value: Float) {
+        if (!validPlayerPlaybackSpeed(value)) return
+        // A video switch can happen before the ordered disk writer runs. apply() publishes
+        // this small preference immediately and lets Android write it asynchronously.
+        com.miowser.app.persistence.RestoreWriteFence.write {
+            context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putFloat(PLAYBACK_SPEED, value).apply()
+        }
+    }
 
     fun scaleMode(context: Context): String? =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(SCALE_MODE, null)

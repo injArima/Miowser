@@ -85,6 +85,7 @@ internal const val BROWSER_VIDEO_CONTROL_SCRIPT = """
                     case 'rate':
                         if (!Number.isFinite(value) || value < 0.25 || value > 3) { ack(false); return; }
                         heldRate = null; // An explicit speed selection supersedes a temporary hold.
+                        video.defaultPlaybackRate = value;
                         video.playbackRate = value;
                         ack(Math.abs(video.playbackRate - value) < 0.01);
                         break;

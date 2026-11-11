@@ -373,7 +373,7 @@ private fun PlayerContent(
     var hasRenderedFirstFrame by remember(request) { mutableStateOf(false) }
     var playbackEnded by remember(request) { mutableStateOf(false) }
     var isScrubbing by remember(request) { mutableStateOf(false) }
-    var playbackSpeed by remember(request) { mutableFloatStateOf(1f) }
+    var playbackSpeed by remember(request) { mutableFloatStateOf(PlayerDisplayPreferenceStore.playbackSpeed(context) ?: 1f) }
     var playerVolume by remember(request) { mutableFloatStateOf(1f) }
     var volumeBeforeMute by remember(request) { mutableFloatStateOf(1f) }
     var audioOnly by remember(request) { mutableStateOf(false) }
@@ -1223,6 +1223,7 @@ private fun PlayerContent(
                         onSpeedMenuChange = { if (!it || !overlays.isPresent) speedMenuExpanded = it },
                         speedMenuExpanded = speedMenuExpanded,
                         onSpeedSelected = { speed ->
+                            PlayerDisplayPreferenceStore.savePlaybackSpeed(context, speed)
                             exoPlayer.setPlaybackSpeed(speed)
                             controlsVisible = true
                             controlsActivity++
