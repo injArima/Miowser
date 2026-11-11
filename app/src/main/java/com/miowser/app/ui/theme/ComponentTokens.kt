@@ -158,6 +158,9 @@ object SubtitlePanelTokens {
     val delayHelpMaxWidth = 300.dp
     val delayHelpOffset = UiControlSize.touchTarget
     const val delayHelpDurationMs = 8_000L
+    const val delayPreviewHoldDurationMs = 750L
+    val transportButtonSize = UiControlSize.compact
+    val transportIconSize = UiIconSize.menu
     const val tracksWeight = 0.28f
     const val inspectionWeight = 0.72f
     const val previewTextFraction = 0.12f

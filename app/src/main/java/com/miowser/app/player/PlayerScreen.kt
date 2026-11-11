@@ -413,8 +413,7 @@ private fun PlayerContent(
     var trackPanel by remember(request) { mutableStateOf<PlayerTrackKind?>(null) }
     var inspectingSubtitle by remember(request) { mutableStateOf<DetectedMedia?>(null) }
     var subtitleStyle by remember { mutableStateOf(PlayerSubtitleStyleStore.load(context)) }
-    var subtitleAdjustAnchorMs by remember(request) { mutableStateOf<Long?>(null) }
-    var resumeAfterSubtitleAdjust by remember(request) { mutableStateOf(false) }
+    var subtitleAdjusting by remember(request) { mutableStateOf(false) }
     var subtitleNotice by remember(request) { mutableStateOf<String?>(null) }
     var subtitleNoticeRevision by remember(request) { mutableIntStateOf(0) }
     fun showSubtitleNotice(message: String) {
@@ -573,21 +572,17 @@ private fun PlayerContent(
     }
 
     fun finishSubtitleAdjustment() {
-        if (subtitleAdjustAnchorMs == null) return
-        subtitleAdjustAnchorMs = null
-        if (resumeAfterSubtitleAdjust) exoPlayer.play()
-        resumeAfterSubtitleAdjust = false
+        if (!subtitleAdjusting) return
+        subtitleAdjusting = false
     }
 
     fun beginSubtitleAdjustment() {
         if (!subtitleInspectionReady || subtitleInspectionCues.none { it.cues.isNotEmpty() }) return
-        resumeAfterSubtitleAdjust = exoPlayer.playWhenReady
-        subtitleAdjustAnchorMs = exoPlayer.currentPosition.coerceAtLeast(0L)
-        exoPlayer.pause()
+        subtitleAdjusting = true
     }
 
     fun confirmSubtitleDelay(delayMs: Long) {
-        if (subtitleAdjustAnchorMs == null) return
+        if (!subtitleAdjusting) return
         trackPreferences = trackPreferences.copy(subtitleDelayMs = delayMs)
         PlayerTrackPreferenceStore.save(context, libraryIdentityKey, trackPreferences)
         finishSubtitleAdjustment()
@@ -600,8 +595,8 @@ private fun PlayerContent(
         }
     }
 
-    LaunchedEffect(overlays.target, trackPanel, subtitleAdjustAnchorMs) {
-        if (subtitleAdjustAnchorMs != null && overlays.target != PlayerOverlay.SUBTITLES &&
+    LaunchedEffect(overlays.target, trackPanel, subtitleAdjusting) {
+        if (subtitleAdjusting && overlays.target != PlayerOverlay.SUBTITLES &&
             trackPanel != PlayerTrackKind.SUBTITLE) finishSubtitleAdjustment()
     }
 
@@ -1360,7 +1355,7 @@ private fun PlayerContent(
                 externalSubtitleReady = subtitleInspectionReady,
                 externalSubtitleCues = subtitleInspectionCues,
                 embeddedSubtitleLabel = embeddedSubtitle?.label,
-                subtitleAdjustAnchorMs = subtitleAdjustAnchorMs,
+                subtitleAdjusting = subtitleAdjusting,
                 onBeginSubtitleAdjust = ::beginSubtitleAdjustment,
                 onCancelSubtitleAdjust = ::finishSubtitleAdjustment,
                 onConfirmSubtitleDelay = ::confirmSubtitleDelay,
@@ -1401,7 +1396,7 @@ private fun PlayerContent(
                     trackPreferences.subtitles, { selectTrack(PlayerTrackKind.SUBTITLE, it) },
                     ::selectDetectedSubtitle, effectiveSubtitleStyle, attachedExternalSubtitleUrl,
                     subtitleInspectionError, subtitleInspectionReady, subtitleInspectionCues,
-                    subtitleAdjustAnchorMs, ::beginSubtitleAdjustment, ::finishSubtitleAdjustment,
+                    subtitleAdjusting, ::beginSubtitleAdjustment, ::finishSubtitleAdjustment,
                     ::confirmSubtitleDelay,
                     ::updateSubtitleDelay, { overlays.dismiss() }, panelModifier, initialFocus, embeddedSubtitle?.label)
             }
@@ -1998,7 +1993,7 @@ private fun PlayerSubtitleWorkspaceSheet(
     error: String?,
     ready: Boolean,
     timeline: List<CuesWithTiming>,
-    subtitleAdjustAnchorMs: Long?,
+    subtitleAdjusting: Boolean,
     onBeginSubtitleAdjust: () -> Unit,
     onCancelSubtitleAdjust: () -> Unit,
     onConfirmSubtitleDelay: (Long) -> Unit,
@@ -2019,8 +2014,10 @@ private fun PlayerSubtitleWorkspaceSheet(
         }, inspect = { contentModifier ->
             val position = rememberSubtitlePlaybackPosition(player)
             PlayerSubtitleInspectPanel(style, chosen, timeline, error, ready,
-                position, subtitleAdjustAnchorMs, onConfirmSubtitleDelay, onDelayChange,
-                onBeginSubtitleAdjust, onCancelSubtitleAdjust, contentModifier, embeddedSubtitleLabel)
+                position, subtitleAdjusting, onConfirmSubtitleDelay, onDelayChange,
+                onBeginSubtitleAdjust, onCancelSubtitleAdjust, contentModifier, embeddedSubtitleLabel,
+                currentPositionMs = { player.currentPosition },
+                transportControls = { RichSubtitleInspectionTransport(player) })
         })
 }
 
@@ -2101,7 +2098,7 @@ private fun PlayerTrackSelectionSheet(
     externalSubtitleReady: Boolean,
     externalSubtitleCues: List<CuesWithTiming>,
     embeddedSubtitleLabel: String?,
-    subtitleAdjustAnchorMs: Long?,
+    subtitleAdjusting: Boolean,
     onBeginSubtitleAdjust: () -> Unit,
     onCancelSubtitleAdjust: () -> Unit,
     onConfirmSubtitleDelay: (Long) -> Unit,
@@ -2113,7 +2110,7 @@ private fun PlayerTrackSelectionSheet(
             player, options, detectedSubtitles, selection, onSelect, onSelectDetectedSubtitle,
             subtitleStyle, attachedExternalSubtitleUrl, externalSubtitleError,
             externalSubtitleReady, externalSubtitleCues,
-            subtitleAdjustAnchorMs, onBeginSubtitleAdjust, onCancelSubtitleAdjust,
+            subtitleAdjusting, onBeginSubtitleAdjust, onCancelSubtitleAdjust,
             onConfirmSubtitleDelay,
             onSubtitleDelayChange, onDismiss, embeddedSubtitleLabel = embeddedSubtitleLabel
         )

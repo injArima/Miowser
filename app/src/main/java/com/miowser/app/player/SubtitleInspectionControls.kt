@@ -47,18 +47,16 @@ internal fun PlayerSubtitleTimingControls(
     onDraftChange: (SubtitleDelayDraft) -> Unit,
     onDelayChange: (Long) -> Unit,
     onConfirmSubtitleDelay: (Long) -> Unit,
-    anchorMs: Long?,
-    pressedCueStartUs: Long?,
+    assisted: Boolean,
+    heldPreview: Long?,
     canAdjust: Boolean,
     onBeginAdjust: () -> Unit,
     onCancelAdjust: () -> Unit,
     sourceKey: String?
 ) {
     var manualEditing by remember(sourceKey) { mutableStateOf(false) }
-    var helpVisible by remember(sourceKey, anchorMs) { mutableStateOf(false) }
-    val assisted = anchorMs != null
+    var helpVisible by remember(sourceKey, assisted) { mutableStateOf(false) }
     val editing = manualEditing || assisted
-    val heldPreview = if (anchorMs != null && pressedCueStartUs != null) subtitleDelayForCue(anchorMs, pressedCueStartUs) else null
     val focusManager = LocalFocusManager.current
     val motion = LocalMotionPolicy.current
     val accent = subtitleOverlayAccent()
@@ -161,8 +159,9 @@ internal fun PlayerSubtitleTimingControls(
                         Surface(modifier = Modifier.widthIn(max = SubtitlePanelTokens.delayHelpMaxWidth),
                             shape = MaterialTheme.shapes.large, color = PlayerUiColors.panel,
                             contentColor = PlayerUiColors.content, shadowElevation = UiElevation.high) {
-                            Text("Playback is paused at ${formatPlayerTime(anchorMs)}. Tap lines to try their delay in the field. " +
-                                "Hold a line to preview without saving. Use the tick to apply, or the cross to cancel.",
+                            Text("Tap a line when it is spoken to calculate its delay at the current video time. " +
+                                "Use the playback controls to pause or seek if needed. Hold a line to preview without saving. " +
+                                "Use the tick to apply, or the cross to cancel.",
                                 modifier = Modifier.padding(UiSpacing.m), style = MaterialTheme.typography.bodyMedium)
                         }
                     }

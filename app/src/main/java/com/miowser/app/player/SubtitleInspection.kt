@@ -31,6 +31,8 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -91,14 +93,16 @@ internal fun PlayerSubtitleInspectPanel(
     error: String?,
     ready: Boolean,
     playbackPositionMs: State<Long?>,
-    subtitleAdjustAnchorMs: Long?,
+    subtitleAdjusting: Boolean,
     onConfirmSubtitleDelay: (Long) -> Unit,
     onDelayChange: (Long) -> Unit,
     onBeginAdjust: () -> Unit,
     onCancelAdjust: () -> Unit,
     modifier: Modifier,
     embeddedSubtitleLabel: String? = null,
-    inspectionTitle: String? = null
+    inspectionTitle: String? = null,
+    currentPositionMs: () -> Long? = { playbackPositionMs.value },
+    transportControls: @Composable () -> Unit = {}
 ) {
     val entries = remember(timeline) { timeline.filter { it.cues.isNotEmpty() } }
     val focus by remember(entries, style.delayMs, playbackPositionMs) {
@@ -107,13 +111,20 @@ internal fun PlayerSubtitleInspectPanel(
     val list = rememberLazyListState()
     var followPlayback by remember(chosen?.url, embeddedSubtitleLabel, timeline) { mutableStateOf(true) }
     var previewIndex by remember(chosen?.url, embeddedSubtitleLabel, timeline) { mutableIntStateOf(-1) }
-    var pressedIndex by remember(timeline) { mutableIntStateOf(-1) }
+    var heldPreview by remember(timeline) { mutableStateOf<SubtitleDelayPreview?>(null) }
     var lastFollowedIndex by remember(timeline) { mutableIntStateOf(-1) }
     val sourceKey = chosen?.url ?: embeddedSubtitleLabel
-    var delayDraft by remember(sourceKey, subtitleAdjustAnchorMs, style.delayMs) {
+    var delayDraft by remember(sourceKey, subtitleAdjusting, style.delayMs) {
         mutableStateOf(SubtitleDelayDraft(style.delayMs.toString()))
     }
     val motion = LocalMotionPolicy.current
+    val platformViewConfiguration = LocalViewConfiguration.current
+    val cueViewConfiguration = remember(platformViewConfiguration) {
+        object : ViewConfiguration by platformViewConfiguration {
+            override val longPressTimeoutMillis = maxOf(platformViewConfiguration.longPressTimeoutMillis,
+                SubtitlePanelTokens.delayPreviewHoldDurationMs)
+        }
+    }
     val viewportHeight by remember { derivedStateOf { list.layoutInfo.viewportSize.height } }
     val fallbackRowHeight = with(LocalDensity.current) { UiControlSize.touchTarget.roundToPx() }
     val anchorRowHeight by remember(focus.anchorIndex) {
@@ -128,12 +139,12 @@ internal fun PlayerSubtitleInspectPanel(
             }
         }
     }
-    LaunchedEffect(subtitleAdjustAnchorMs) {
+    LaunchedEffect(subtitleAdjusting) {
         // Finishing an adjustment must not silently re-enable following after manual interaction.
-        if (subtitleAdjustAnchorMs != null) followPlayback = false
+        if (subtitleAdjusting) followPlayback = false
     }
     LaunchedEffect(focus.activeIndex) { previewIndex = -1 }
-    LaunchedEffect(entries, focus.anchorIndex, followPlayback, subtitleAdjustAnchorMs, viewportHeight, anchorRowHeight, motion.reduced) {
+    LaunchedEffect(entries, focus.anchorIndex, followPlayback, subtitleAdjusting, viewportHeight, anchorRowHeight, motion.reduced) {
         if (!followPlayback || focus.anchorIndex < 0 || viewportHeight <= 0) return@LaunchedEffect
         val target = focus.anchorIndex
         val rowHeight = anchorRowHeight ?: fallbackRowHeight
@@ -154,6 +165,7 @@ internal fun PlayerSubtitleInspectPanel(
             Text(inspectionTitle ?: chosen?.let(::detectedSubtitleLabel) ?: embeddedSubtitleLabel ?: "Choose a subtitle",
                 modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
+            transportControls()
             SubtitleInspectionPlaybackTime(playbackPositionMs)
             if (!followPlayback && hasTrack && ready && entries.isNotEmpty()) {
                 FilledTonalIconButton(onClick = {
@@ -177,8 +189,8 @@ internal fun PlayerSubtitleInspectPanel(
         if (status != null) Text(status, style = MaterialTheme.typography.bodySmall,
             color = PlayerUiColors.content.copy(alpha = SubtitlePanelTokens.secondaryContentAlpha))
         PlayerSubtitleTimingControls(style.delayMs, delayDraft, { delayDraft = it }, onDelayChange,
-            onConfirmSubtitleDelay, subtitleAdjustAnchorMs,
-            entries.getOrNull(pressedIndex)?.startTimeUs,
+            onConfirmSubtitleDelay, subtitleAdjusting,
+            heldPreview?.delayMs,
             hasTrack && ready && entries.isNotEmpty(), onBeginAdjust, onCancelAdjust, sourceKey)
         if (preview.any { it.bitmap != null }) {
             SubtitleCuePreview(style, preview, Modifier.fillMaxWidth().height(SubtitlePanelTokens.inspectionPreviewHeight)
@@ -202,38 +214,46 @@ internal fun PlayerSubtitleInspectPanel(
                     val entry = entries[index]
                     val interaction = remember { MutableInteractionSource() }
                     val pressed by interaction.collectIsPressedAsState()
-                    LaunchedEffect(pressed) {
-                        if (pressed) pressedIndex = index
-                        else if (pressedIndex == index) pressedIndex = -1
+                    LaunchedEffect(pressed, heldPreview?.cueIndex) {
+                        if (!pressed && heldPreview?.cueIndex == index) heldPreview = null
                     }
                     DisposableEffect(index) {
-                        onDispose { if (pressedIndex == index) pressedIndex = -1 }
+                        onDispose { if (heldPreview?.cueIndex == index) heldPreview = null }
                     }
-                    SegmentedListItem(selected = if (subtitleAdjustAnchorMs != null) delayDraft.cueStartUs == entry.startTimeUs
-                        else index == focus.activeIndex, onClick = {
-                        previewIndex = index
-                        followPlayback = false
-                        if (subtitleAdjustAnchorMs != null) delayDraft = delayDraft.selectCue(subtitleAdjustAnchorMs, entry.startTimeUs)
-                    }, shapes = ListItemDefaults.segmentedShapes(index, entries.size),
-                        // Consume long presses as previews, so releasing cannot confirm or select a cue.
-                        onLongClick = if (subtitleAdjustAnchorMs != null) ({ previewIndex = index }) else null,
-                        onLongClickLabel = if (subtitleAdjustAnchorMs != null) "Preview delay" else null,
-                        modifier = Modifier.fillMaxWidth().testTag("subtitle_cue_$index"),
-                        interactionSource = interaction,
-                        colors = ListItemDefaults.segmentedColors(
-                            containerColor = if (index == previewIndex) accent.copy(alpha = SubtitlePanelTokens.previewCueAlpha)
-                                .compositeOver(PlayerUiColors.panel) else PlayerUiColors.panel,
-                            contentColor = PlayerUiColors.content, leadingContentColor = accent,
-                            selectedContainerColor = accent.copy(alpha = SubtitlePanelTokens.selectedCueAlpha).compositeOver(PlayerUiColors.panel),
-                            selectedContentColor = PlayerUiColors.content, selectedLeadingContentColor = accent),
-                        contentPadding = PaddingValues(horizontal = UiSpacing.s, vertical = UiSpacing.xs),
-                        leadingContent = {
-                            Text(formatPlayerTime(entry.startTimeUs / 1_000L),
-                                modifier = Modifier.widthIn(min = SubtitlePanelTokens.cueTimeWidth),
-                                style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace)
-                        }) {
-                        Text(entry.cues.joinToString("\n") { it.text?.toString() ?: "Image subtitle" },
-                            style = MaterialTheme.typography.bodyMedium)
+                    CompositionLocalProvider(LocalViewConfiguration provides cueViewConfiguration) {
+                        SegmentedListItem(selected = if (subtitleAdjusting) delayDraft.cueStartUs == entry.startTimeUs
+                            else index == focus.activeIndex, onClick = {
+                            previewIndex = index
+                            followPlayback = false
+                            if (subtitleAdjusting) currentPositionMs()?.let {
+                                delayDraft = delayDraft.selectCue(it, entry.startTimeUs)
+                            }
+                        }, shapes = ListItemDefaults.segmentedShapes(index, entries.size),
+                            // Consume long presses as previews, so releasing cannot confirm or select a cue.
+                            onLongClick = if (subtitleAdjusting) ({
+                                currentPositionMs()?.let {
+                                    heldPreview = SubtitleDelayPreview(index, subtitleDelayForCue(it, entry.startTimeUs))
+                                    previewIndex = index
+                                }
+                            }) else null,
+                            onLongClickLabel = if (subtitleAdjusting) "Preview delay" else null,
+                            modifier = Modifier.fillMaxWidth().testTag("subtitle_cue_$index"),
+                            interactionSource = interaction,
+                            colors = ListItemDefaults.segmentedColors(
+                                containerColor = if (index == previewIndex) accent.copy(alpha = SubtitlePanelTokens.previewCueAlpha)
+                                    .compositeOver(PlayerUiColors.panel) else PlayerUiColors.panel,
+                                contentColor = PlayerUiColors.content, leadingContentColor = accent,
+                                selectedContainerColor = accent.copy(alpha = SubtitlePanelTokens.selectedCueAlpha).compositeOver(PlayerUiColors.panel),
+                                selectedContentColor = PlayerUiColors.content, selectedLeadingContentColor = accent),
+                            contentPadding = PaddingValues(horizontal = UiSpacing.s, vertical = UiSpacing.xs),
+                            leadingContent = {
+                                Text(formatPlayerTime(entry.startTimeUs / 1_000L),
+                                    modifier = Modifier.widthIn(min = SubtitlePanelTokens.cueTimeWidth),
+                                    style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace)
+                            }) {
+                            Text(entry.cues.joinToString("\n") { it.text?.toString() ?: "Image subtitle" },
+                                style = MaterialTheme.typography.bodyMedium)
+                        }
                     }
                 }
             }

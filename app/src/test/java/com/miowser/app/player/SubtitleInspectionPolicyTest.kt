@@ -86,4 +86,25 @@ class SubtitleInspectionPolicyTest {
         assertEquals(MAX_SUBTITLE_DELAY_MS, SubtitleDelayDraft(MAX_SUBTITLE_DELAY_MS.toString()).step(50).valueMs)
         assertEquals(-MAX_SUBTITLE_DELAY_MS, SubtitleDelayDraft((-MAX_SUBTITLE_DELAY_MS).toString()).step(-50).valueMs)
     }
+
+    @Test
+    fun `assisted selections use the current clock after playback advances or seeks`() {
+        val original = SubtitleDelayDraft("0")
+        val first = original.selectCue(5_000, 4_000_000)
+        val later = first.selectCue(8_000, 7_500_000)
+        val afterSeek = later.selectCue(2_000, 3_000_000)
+        assertEquals(1_000L, first.valueMs)
+        assertEquals(500L, later.valueMs)
+        assertEquals(-1_000L, afterSeek.valueMs)
+        assertEquals(0L, original.valueMs)
+    }
+
+    @Test
+    fun `subtitle transport seeking clamps both ends and accepts unknown duration`() {
+        assertEquals(0L, subtitleInspectionSeekTarget(5_000, -10_000, 60_000))
+        assertEquals(60_000L, subtitleInspectionSeekTarget(55_000, 10_000, 60_000))
+        assertEquals(25_000L, subtitleInspectionSeekTarget(15_000, 10_000, 60_000))
+        assertEquals(25_000L, subtitleInspectionSeekTarget(15_000, 10_000, 0))
+        assertEquals(0L, subtitleInspectionSeekTarget(0, -10_000, 0))
+    }
 }

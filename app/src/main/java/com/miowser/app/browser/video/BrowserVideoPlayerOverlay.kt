@@ -168,8 +168,7 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
     var subtitleStyle by remember(context) { mutableStateOf(PlayerSubtitleStyleStore.load(context)) }
     var subtitleDelayMs by remember { mutableLongStateOf(subtitleStyle.delayMs) }
     val effectiveSubtitleStyle = subtitleStyle.copy(delayMs = subtitleDelayMs)
-    var subtitleAdjustAnchorMs by remember { mutableStateOf<Long?>(null) }
-    var resumeAfterSubtitleAdjust by remember { mutableStateOf(false) }
+    var subtitleAdjusting by remember { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(context, lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -187,26 +186,22 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
     val selectedDetectedSubtitle = detectedSubtitles.firstOrNull { it.url == selectedSubtitleUrl }
 
     fun finishSubtitleAdjustment() {
-        if (subtitleAdjustAnchorMs == null) return
-        subtitleAdjustAnchorMs = null
-        if (resumeAfterSubtitleAdjust) controller.playPause()
-        resumeAfterSubtitleAdjust = false
+        if (!subtitleAdjusting) return
+        subtitleAdjusting = false
     }
     fun beginSubtitleAdjustment() {
         if (selectedDetectedSubtitle == null || externalSubtitleCues.none { it.cues.isNotEmpty() }) return
         val playback = controller.state.value
-        subtitleAdjustAnchorMs = browserSubtitlePositionMs(playback, owner, SystemClock.elapsedRealtime())
-            ?: return
-        resumeAfterSubtitleAdjust = playback.session?.state?.playing == true
-        if (resumeAfterSubtitleAdjust) controller.pause()
+        if (browserSubtitlePositionMs(playback, owner, SystemClock.elapsedRealtime()) == null) return
+        subtitleAdjusting = true
     }
     fun confirmSubtitleDelay(delayMs: Long) {
-        if (subtitleAdjustAnchorMs == null) return
+        if (!subtitleAdjusting) return
         subtitleDelayMs = delayMs
         finishSubtitleAdjustment()
     }
-    LaunchedEffect(overlays.target, subtitleAdjustAnchorMs) {
-        if (subtitleAdjustAnchorMs != null && overlays.target != PlayerOverlay.SUBTITLES) {
+    LaunchedEffect(overlays.target, subtitleAdjusting) {
+        if (subtitleAdjusting && overlays.target != PlayerOverlay.SUBTITLES) {
             finishSubtitleAdjustment()
         }
     }
@@ -521,12 +516,19 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                         PlayerSubtitleInspectPanel(effectiveSubtitleStyle, selectedDetectedSubtitle,
                             externalSubtitleCues, externalSubtitleError,
                             !externalSubtitleLoading && externalSubtitleCues.isNotEmpty(),
-                            position, subtitleAdjustAnchorMs, ::confirmSubtitleDelay,
+                            position, subtitleAdjusting, ::confirmSubtitleDelay,
                             { subtitleDelayMs = it }, ::beginSubtitleAdjustment, ::finishSubtitleAdjustment,
                             contentModifier, inspectionTitle = selectedDetectedSubtitle?.let(::detectedSubtitleLabel)
                                 ?: video.captions.withIndex().firstOrNull { it.value.selected }?.let {
                                     it.value.displayLabel("Subtitle", it.index)
-                                })
+                                }, currentPositionMs = {
+                                browserSubtitlePositionMs(controller.state.value, owner, SystemClock.elapsedRealtime())
+                            }, transportControls = {
+                                SubtitleInspectionTransport(state.pendingPlaying ?: video.playing,
+                                    state.controlsEnabled, state.canSeek,
+                                    onPlayPause = { act(controller::playPause) },
+                                    onSeek = { delta -> act { controller.skip(delta) } })
+                            })
                     })
             }
         })

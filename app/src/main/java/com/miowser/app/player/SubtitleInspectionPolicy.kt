@@ -4,6 +4,7 @@ import androidx.media3.extractor.text.CuesWithTiming
 import kotlin.math.roundToInt
 
 internal data class SubtitleInspectionFocus(val activeIndex: Int, val anchorIndex: Int)
+internal data class SubtitleDelayPreview(val cueIndex: Int, val delayMs: Long)
 
 /** Gaps have no selected cue, but seeking into one should still reveal the next line. */
 internal fun subtitleInspectionFocus(timeline: List<CuesWithTiming>, positionMs: Long?): SubtitleInspectionFocus {
@@ -31,12 +32,15 @@ internal fun parseSubtitleDelay(input: String): Long? = input.toLongOrNull()
 
 internal fun subtitleDelayLabel(delayMs: Long): String = "${if (delayMs > 0) "+" else ""}$delayMs ms"
 
+internal fun subtitleInspectionSeekTarget(positionMs: Long, deltaMs: Long, durationMs: Long): Long =
+    (positionMs + deltaMs).coerceIn(0L, durationMs.takeIf { it > 0L } ?: Long.MAX_VALUE)
+
 /** Editing and cue previews never change playback or persisted timing until confirmation. */
 internal data class SubtitleDelayDraft(val input: String, val cueStartUs: Long? = null) {
     val valueMs: Long? get() = parseSubtitleDelay(input)
 
-    fun selectCue(anchorMs: Long, startUs: Long): SubtitleDelayDraft =
-        SubtitleDelayDraft(subtitleDelayForCue(anchorMs, startUs).toString(), startUs)
+    fun selectCue(playbackMs: Long, startUs: Long): SubtitleDelayDraft =
+        SubtitleDelayDraft(subtitleDelayForCue(playbackMs, startUs).toString(), startUs)
 
     fun edit(value: String): SubtitleDelayDraft = SubtitleDelayDraft(value)
 

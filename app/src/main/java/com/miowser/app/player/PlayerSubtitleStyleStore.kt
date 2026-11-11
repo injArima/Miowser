@@ -4,7 +4,7 @@ import android.content.Context
 
 internal const val MAX_SUBTITLE_DELAY_MS = 3_600_000L
 
-/** Align the selected cue's start with the paused video frame. */
+/** Align the selected cue's start with the sampled video time. */
 internal fun subtitleDelayForCue(playbackPositionMs: Long, cueStartTimeUs: Long): Long =
     (playbackPositionMs - cueStartTimeUs / 1_000L)
         .coerceIn(-MAX_SUBTITLE_DELAY_MS, MAX_SUBTITLE_DELAY_MS)
