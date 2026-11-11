@@ -584,7 +584,6 @@ private fun PlayerContent(
         resumeAfterSubtitleAdjust = exoPlayer.playWhenReady
         subtitleAdjustAnchorMs = exoPlayer.currentPosition.coerceAtLeast(0L)
         exoPlayer.pause()
-        showSubtitleNotice("Adjusting subtitles: tap the matching line")
     }
 
     fun alignSubtitleToCue(cueStartTimeUs: Long) {
@@ -593,7 +592,6 @@ private fun PlayerContent(
         trackPreferences = trackPreferences.copy(subtitleDelayMs = delayMs)
         PlayerTrackPreferenceStore.save(context, libraryIdentityKey, trackPreferences)
         finishSubtitleAdjustment()
-        showSubtitleNotice("Subtitle delay set to ${delayMs} ms")
     }
 
     fun updateSubtitleDelay(delayMs: Long) {
@@ -2013,6 +2011,7 @@ private fun PlayerSubtitleWorkspaceSheet(
 ) {
     val chosen = detectedSubtitles.firstOrNull { it.url == attachedUrl }
     PlayerSubtitleWorkspace(onDismiss, modifier, initialFocus,
+        inspectionTitle = chosen?.let(::detectedSubtitleLabel) ?: embeddedSubtitleLabel,
         tracks = { contentModifier, inspect ->
             PlayerSubtitleTrackList(options, detectedSubtitles, selection, chosen,
                 error, ready, { selected ->

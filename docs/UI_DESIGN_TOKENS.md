@@ -21,6 +21,7 @@ their platform/site typography.
 | Elevation (`UiElevation`) | `low` 2, `raised` 4, `medium` 6, `high` 8, `floating` 12 dp | Repeated tonal and shadow elevation for floating surfaces and sheets. |
 | Secure status (`UiSemanticColors`) | `secureOnLight` `#137333`, `secureOnDark` `#81C995` | HTTPS state in the address bar. Error and other status colors continue to use theme color roles. |
 | Player colors (`PlayerUiColors`) | `backdrop` black, `content` white, `panel` `#151313`, `sidePanel` `#17191D`, `disabledControl` `#9C9C9C`, `seekBackward` `#FFAAA5`, `seekForward` `#A8E6B0`, `caution` `#FFD875`, `guidanceSurface` `#2D291E`, `subtitlePreview` `#8C8C8C` | Rich and WebView player chrome, seek feedback, guidance, and subtitle preview. Fixed colors keep video overlays legible independently of wallpaper accents. |
+| Subtitle inspection (`SubtitlePanelTokens`) | 48 dp minimum timestamp width; shared small segmented gap; 28% viewport cue anchor; 24% selected, 8% preview and 18% control tint overlays | Shared rich/WebView subtitle workspace. Row shapes come from Material 3 `segmentedShapes`; expansion uses the central controls motion timings and respects reduced motion. |
 
 ## Non-player component tokens
 

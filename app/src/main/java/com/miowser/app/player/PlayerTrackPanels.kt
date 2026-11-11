@@ -31,7 +31,8 @@ import com.miowser.app.ui.theme.SubtitlePanelTokens
 internal fun PlayerSubtitleWorkspace(
     onDismiss: () -> Unit, modifier: Modifier = Modifier, initialFocus: FocusRequester? = null,
     tracks: @Composable (Modifier, () -> Unit) -> Unit,
-    inspect: (@Composable (Modifier) -> Unit)? = null
+    inspect: (@Composable (Modifier) -> Unit)? = null,
+    inspectionTitle: String? = null
 ) {
     var section by remember { mutableIntStateOf(0) }
     BoxWithConstraints(Modifier.fillMaxSize().then(modifier)) {
@@ -63,12 +64,18 @@ internal fun PlayerSubtitleWorkspace(
                         tracks(Modifier.fillMaxSize(), openInspect)
                     }
                     if (inspect != null) Column(Modifier.weight(SubtitlePanelTokens.inspectionWeight).fillMaxHeight()) {
-                        Text("Inspect", style = MaterialTheme.typography.labelLarge); inspect(Modifier.fillMaxSize())
+                        Text(inspectionTitle ?: "Choose a subtitle", style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        inspect(Modifier.fillMaxSize())
                     }
                 } else {
                     val contentModifier = Modifier.fillMaxWidth().weight(1f)
                     when (sections.getOrElse(section) { "Tracks" }) {
-                        "Inspect" -> inspect?.invoke(contentModifier)
+                        "Inspect" -> Column(contentModifier) {
+                            Text(inspectionTitle ?: "Choose a subtitle", style = MaterialTheme.typography.labelLarge,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            inspect?.invoke(Modifier.fillMaxWidth().weight(1f))
+                        }
                         else -> tracks(contentModifier, openInspect)
                     }
                 }

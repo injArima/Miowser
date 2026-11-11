@@ -147,6 +147,14 @@ object PlayerSpeedControlTokens {
 }
 
 object SubtitlePanelTokens {
+    const val cueAnchorFraction = 0.28f
+    const val selectedCueAlpha = 0.24f
+    const val previewCueAlpha = 0.08f
+    const val controlContainerAlpha = 0.18f
+    const val secondaryContentAlpha = 0.7f
+    val cueTimeWidth = 48.dp
+    val cueGap = UiSpacing.xxs
+    val delayEditorInlineWidth = 320.dp
     const val tracksWeight = 0.28f
     const val inspectionWeight = 0.72f
     const val previewTextFraction = 0.12f

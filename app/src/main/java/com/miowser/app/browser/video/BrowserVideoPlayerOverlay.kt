@@ -472,6 +472,10 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                 }
             }) { _, panelModifier, initialFocus ->
                 PlayerSubtitleWorkspace({ overlays.dismiss() }, panelModifier, initialFocus,
+                    inspectionTitle = selectedDetectedSubtitle?.let(::detectedSubtitleLabel)
+                        ?: video.captions.withIndex().firstOrNull { it.value.selected }?.let {
+                            it.value.displayLabel("Subtitle", it.index)
+                        },
                     tracks = { contentModifier, inspect ->
                         LazyColumn(contentModifier) {
                             state.message?.let { item("error") { Text(it, color = MaterialTheme.colorScheme.error) } }
