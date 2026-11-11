@@ -49,13 +49,15 @@ internal data class PlayerTrackOption(
     val trackIndex: Int,
     val label: String,
     val detail: String,
-    val externalSubtitleUrl: String? = null
+    val externalSubtitleUrl: String? = null,
+    val formatId: String? = null
 )
 
 internal data class PlayerTrackSnapshot(
     val subtitles: List<PlayerTrackOption> = emptyList(),
     val audio: List<PlayerTrackOption> = emptyList(),
-    val video: List<PlayerTrackOption> = emptyList()
+    val video: List<PlayerTrackOption> = emptyList(),
+    val selectedSubtitleKey: String? = null
 ) {
     fun options(kind: PlayerTrackKind): List<PlayerTrackOption> = when (kind) {
         PlayerTrackKind.SUBTITLE -> subtitles
@@ -98,6 +100,7 @@ internal fun buildPlayerTrackSnapshot(tracks: Tracks): PlayerTrackSnapshot {
     val subtitles = mutableListOf<PlayerTrackOption>()
     val audio = mutableListOf<PlayerTrackOption>()
     val video = mutableListOf<PlayerTrackOption>()
+    var selectedSubtitleKey: String? = null
     tracks.groups.forEachIndexed { groupIndex, group ->
         val kind = when (group.type) {
             C.TRACK_TYPE_TEXT -> PlayerTrackKind.SUBTITLE
@@ -121,16 +124,20 @@ internal fun buildPlayerTrackSnapshot(tracks: Tracks): PlayerTrackSnapshot {
                 detail = detail,
                 externalSubtitleUrl = format.id?.takeIf {
                     kind == PlayerTrackKind.SUBTITLE && it.startsWith(DETECTED_VTT_TRACK_ID)
-                }?.removePrefix(DETECTED_VTT_TRACK_ID)
+                }?.removePrefix(DETECTED_VTT_TRACK_ID),
+                formatId = format.id
             )
             when (kind) {
-                PlayerTrackKind.SUBTITLE -> subtitles += option
+                PlayerTrackKind.SUBTITLE -> {
+                    subtitles += option
+                    if (group.isTrackSelected(trackIndex)) selectedSubtitleKey = option.key
+                }
                 PlayerTrackKind.AUDIO -> audio += option
                 PlayerTrackKind.VIDEO -> video += option
             }
         }
     }
-    return PlayerTrackSnapshot(subtitles, audio, video)
+    return PlayerTrackSnapshot(subtitles, audio, video, selectedSubtitleKey)
 }
 
 /** Applies an override without rebuilding the MediaItem, so playback continues in place. */

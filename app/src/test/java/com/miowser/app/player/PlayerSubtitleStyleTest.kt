@@ -12,10 +12,10 @@ class PlayerSubtitleStyleTest {
         assertEquals(CaptionVisualPreset.YELLOW_TRANSLUCENT, legacyPreset(true, true, false))
     }
 
-    @Test fun subtitleDelayMovesVttLookupWithoutGoingBeforeStart() {
+    @Test fun subtitleDelayMovesLookupAndKeepsTheFirstCueHiddenUntilItsStart() {
         assertEquals(4_750L, PlayerSubtitleStyle(delayMs = 250L).vttPositionMs(5_000L))
         assertEquals(5_250L, PlayerSubtitleStyle(delayMs = -250L).vttPositionMs(5_000L))
-        assertEquals(0L, PlayerSubtitleStyle(delayMs = 500L).vttPositionMs(100L))
+        assertEquals(-400L, PlayerSubtitleStyle(delayMs = 500L).vttPositionMs(100L))
     }
 
     @Test fun selectedCueStartsAtThePausedPlaybackPosition() {

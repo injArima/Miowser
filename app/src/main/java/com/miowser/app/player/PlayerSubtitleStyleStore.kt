@@ -51,7 +51,7 @@ internal fun PlayerSubtitleStyle.resolvedOutlineEnabled(): Boolean =
 
 /** A positive delay shows a cue later than its VTT timestamp. */
 internal fun PlayerSubtitleStyle.vttPositionMs(playbackPositionMs: Long): Long =
-    (playbackPositionMs - delayMs).coerceAtLeast(0L)
+    playbackPositionMs - delayMs
 
 internal object PlayerSubtitleStyleStore {
     private const val PREFS = "player_subtitle_style"

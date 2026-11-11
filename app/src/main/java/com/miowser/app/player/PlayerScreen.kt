@@ -486,6 +486,40 @@ private fun PlayerContent(
     }
     var externalSubtitleError by remember(request) { mutableStateOf<String?>(null) }
     var externalSubtitleLoadAttempt by remember(request) { mutableIntStateOf(0) }
+    val embeddedSubtitle = trackSnapshot.subtitles.firstOrNull {
+        it.key == trackSnapshot.selectedSubtitleKey && it.externalSubtitleUrl == null
+    }?.takeIf { request is PlaybackRequest.Local && attachedExternalSubtitleUrl == null }
+    var embeddedSubtitleCues by remember(request, embeddedSubtitle?.key) {
+        mutableStateOf(emptyList<CuesWithTiming>())
+    }
+    var embeddedSubtitleLoaded by remember(request, embeddedSubtitle?.key) { mutableStateOf(false) }
+    var embeddedSubtitleError by remember(request, embeddedSubtitle?.key) { mutableStateOf<String?>(null) }
+    var embeddedSubtitleRequested by remember(request, embeddedSubtitle?.key) { mutableStateOf(false) }
+    var embeddedSubtitleAttempt by remember(request, embeddedSubtitle?.key) { mutableIntStateOf(0) }
+    val needsEmbeddedSubtitles = embeddedSubtitle != null &&
+        (embeddedSubtitleRequested || overlays.target == PlayerOverlay.SUBTITLES ||
+            trackPanel == PlayerTrackKind.SUBTITLE || effectiveSubtitleStyle.delayMs != 0L)
+    LaunchedEffect(request, embeddedSubtitle?.key, needsEmbeddedSubtitles, embeddedSubtitleAttempt) {
+        if (!needsEmbeddedSubtitles || embeddedSubtitleLoaded) return@LaunchedEffect
+        val local = request as? PlaybackRequest.Local ?: return@LaunchedEffect
+        val id = embeddedSubtitle.formatId ?: return@LaunchedEffect
+        embeddedSubtitleRequested = true
+        embeddedSubtitleError = null
+        try {
+            embeddedSubtitleCues = readEmbeddedSubtitles(context.applicationContext, local.uri, id)
+            embeddedSubtitleLoaded = true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            embeddedSubtitleError = failure.message ?: "Couldn’t inspect this subtitle track."
+        }
+    }
+    val subtitleInspectionCues = if (attachedExternalSubtitleUrl != null) externalSubtitleCues else embeddedSubtitleCues
+    val subtitleInspectionReady = if (attachedExternalSubtitleUrl != null) externalSubtitleCues.isNotEmpty() else embeddedSubtitleLoaded
+    val subtitleInspectionError = if (attachedExternalSubtitleUrl != null) externalSubtitleError else embeddedSubtitleError
+    val useEmbeddedSubtitleTimeline = embeddedSubtitle != null && embeddedSubtitleLoaded && effectiveSubtitleStyle.delayMs != 0L
+    val useSubtitleTimeline = attachedExternalSubtitleUrl != null || useEmbeddedSubtitleTimeline
+    val playbackSubtitleCues = if (attachedExternalSubtitleUrl != null) externalSubtitleCues else embeddedSubtitleCues
 
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val systemBarsController = remember(activity) {
@@ -562,7 +596,7 @@ private fun PlayerContent(
     }
 
     fun beginSubtitleAdjustment() {
-        if (externalSubtitleCues.none { it.cues.isNotEmpty() } || attachedExternalSubtitleUrl == null) return
+        if (!subtitleInspectionReady || subtitleInspectionCues.none { it.cues.isNotEmpty() }) return
         resumeAfterSubtitleAdjust = exoPlayer.playWhenReady
         subtitleAdjustAnchorMs = exoPlayer.currentPosition.coerceAtLeast(0L)
         exoPlayer.pause()
@@ -915,6 +949,7 @@ private fun PlayerContent(
         if (kind == PlayerTrackKind.SUBTITLE) {
             finishSubtitleAdjustment()
             attachedExternalSubtitleUrl = null
+            if (!embeddedSubtitleLoaded) embeddedSubtitleAttempt++
             if (recordInLibrary) MediaLibrary.updateSubtitle(context, libraryIdentityKey, null)
         }
         val updatedPreferences = trackPreferences.withSelection(kind, selection)
@@ -1063,15 +1098,15 @@ private fun PlayerContent(
                 view.player = if (audioOnly) null else exoPlayer
                 view.resizeMode = scaleMode.resizeMode
                 applyPlayerSubtitleStyle(view, effectiveSubtitleStyle, subtitleTypeface)
-                view.subtitleView?.visibility = if (attachedExternalSubtitleUrl == null)
+                view.subtitleView?.visibility = if (!useSubtitleTimeline)
                     View.VISIBLE else View.INVISIBLE
-                pageSubtitleView?.visibility = if (attachedExternalSubtitleUrl == null)
+                pageSubtitleView?.visibility = if (!useSubtitleTimeline)
                     View.GONE else View.VISIBLE
                 view.keepScreenOn = !audioOnly && exoPlayer.playWhenReady && playbackError == null
             }
         )
-        if (!audioOnly) ExternalSubtitleLayer(exoPlayer, pageSubtitleView, attachedExternalSubtitleUrl,
-            externalSubtitleCues, effectiveSubtitleStyle, subtitleTypeface)
+        if (!audioOnly) SubtitleTimelineLayer(exoPlayer, pageSubtitleView, useSubtitleTimeline,
+            playbackSubtitleCues, effectiveSubtitleStyle, subtitleTypeface)
 
         if (!inPip) {
 
@@ -1366,9 +1401,10 @@ private fun PlayerContent(
                 },
                 subtitleStyle = effectiveSubtitleStyle,
                 attachedExternalSubtitleUrl = attachedExternalSubtitleUrl,
-                externalSubtitleError = externalSubtitleError,
-                externalSubtitleReady = externalSubtitleCues.isNotEmpty(),
-                externalSubtitleCues = externalSubtitleCues,
+                externalSubtitleError = subtitleInspectionError,
+                externalSubtitleReady = subtitleInspectionReady,
+                externalSubtitleCues = subtitleInspectionCues,
+                embeddedSubtitleLabel = embeddedSubtitle?.label,
                 subtitleAdjustAnchorMs = subtitleAdjustAnchorMs,
                 onBeginSubtitleAdjust = ::beginSubtitleAdjustment,
                 onCancelSubtitleAdjust = ::finishSubtitleAdjustment,
@@ -1409,10 +1445,10 @@ private fun PlayerContent(
                     trackSnapshot.subtitles, (request as? PlaybackRequest.Remote)?.externalSubtitles.orEmpty(),
                     trackPreferences.subtitles, { selectTrack(PlayerTrackKind.SUBTITLE, it) },
                     ::selectDetectedSubtitle, effectiveSubtitleStyle, attachedExternalSubtitleUrl,
-                    externalSubtitleError, externalSubtitleCues.isNotEmpty(), externalSubtitleCues,
+                    subtitleInspectionError, subtitleInspectionReady, subtitleInspectionCues,
                     subtitleAdjustAnchorMs, ::beginSubtitleAdjustment, ::finishSubtitleAdjustment,
                     ::alignSubtitleToCue,
-                    ::updateSubtitleStyle, { overlays.dismiss() }, panelModifier, initialFocus)
+                    ::updateSubtitleStyle, { overlays.dismiss() }, panelModifier, initialFocus, embeddedSubtitle?.label)
             }
         }
         subtitleNotice?.let { message ->
@@ -2013,19 +2049,23 @@ private fun PlayerSubtitleWorkspaceSheet(
     onStyleChange: (PlayerSubtitleStyle) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
-    initialFocus: FocusRequester? = null
+    initialFocus: FocusRequester? = null,
+    embeddedSubtitleLabel: String? = null
 ) {
     val chosen = detectedSubtitles.firstOrNull { it.url == attachedUrl }
     PlayerSubtitleWorkspace(onDismiss, modifier, initialFocus,
         tracks = { contentModifier, inspect ->
             PlayerSubtitleTrackList(options, detectedSubtitles, selection, chosen,
-                error, ready, onSelect, { subtitle -> onSelectDetectedSubtitle(subtitle); inspect() }, contentModifier)
+                error, ready, { selected ->
+                    onSelect(selected)
+                    if (selected.mode == PlayerTrackMode.SPECIFIC) inspect()
+                }, { subtitle -> onSelectDetectedSubtitle(subtitle); inspect() }, contentModifier)
         }, inspect = { contentModifier ->
             PlayerSubtitleInspectPanel(style, chosen, timeline, error, ready,
-                subtitleAdjustAnchorMs, onAlignSubtitleToCue, contentModifier)
+                subtitleAdjustAnchorMs, onAlignSubtitleToCue, contentModifier, embeddedSubtitleLabel)
         }, settings = { contentModifier, inspect ->
             PlayerSubtitleControls(style, onStyleChange, subtitleAdjustAnchorMs != null,
-                chosen != null && ready && timeline.any { it.cues.isNotEmpty() },
+                (chosen != null || embeddedSubtitleLabel != null) && ready && timeline.any { it.cues.isNotEmpty() },
                 { onBeginSubtitleAdjust(); inspect() }, onCancelSubtitleAdjust, contentModifier)
         })
 }
@@ -2076,7 +2116,7 @@ private fun PlayerSubtitleTrackList(
         val embedded = options.filter { it.externalSubtitleUrl == null }
         if (embedded.isNotEmpty()) {
             item("embedded-heading") {
-                Text("In the stream", style = MaterialTheme.typography.labelMedium,
+                Text("Embedded subtitles", style = MaterialTheme.typography.labelMedium,
                     color = PlayerUiColors.content.copy(alpha = 0.7f),
                     modifier = Modifier.padding(start = 6.dp, top = UiSpacing.s))
             }
@@ -2099,7 +2139,8 @@ internal fun PlayerSubtitleInspectPanel(
     ready: Boolean,
     subtitleAdjustAnchorMs: Long?,
     onAlignSubtitleToCue: (Long) -> Unit,
-    modifier: Modifier
+    modifier: Modifier,
+    embeddedSubtitleLabel: String? = null
 ) {
     val context = LocalContext.current
     val typeface = remember(context, style.font) {
@@ -2108,13 +2149,16 @@ internal fun PlayerSubtitleInspectPanel(
     val sampleCues = remember {
         listOf(Cue.Builder().setText("The quick brown fox\njumps over the lazy dog.").build())
     }
-    val visibleCues = remember(style.bottomPadding) {
-        positionSubtitleCues(sampleCues, style.bottomPadding)
+    var previewIndex by remember(chosen?.url, embeddedSubtitleLabel, timeline) { mutableIntStateOf(0) }
+    val entries = remember(timeline) { timeline.filter { it.cues.isNotEmpty() } }
+    val preview = entries.getOrNull(previewIndex)?.cues ?: sampleCues
+    val visibleCues = remember(preview, style.bottomPadding) {
+        positionSubtitleCues(preview, style.bottomPadding)
     }
     Column(modifier) {
         Text(if (subtitleAdjustAnchorMs != null)
             "Tap the line that belongs at ${formatPlayerTime(subtitleAdjustAnchorMs)}"
-            else "Style sample",
+            else if (ready && entries.isNotEmpty()) "Subtitle preview" else "Style sample",
             style = MaterialTheme.typography.bodySmall,
             color = PlayerUiColors.content.copy(alpha = 0.72f), maxLines = 1,
             overflow = TextOverflow.Ellipsis)
@@ -2128,24 +2172,26 @@ internal fun PlayerSubtitleInspectPanel(
             })
         }
         Text(when {
-            chosen == null -> "Choose a file to inspect its cues"
             error != null -> error
+            chosen == null && embeddedSubtitleLabel == null -> "Choose a subtitle track to inspect"
             !ready -> "Loading subtitle…"
-            else -> detectedSubtitleLabel(chosen)
+            entries.isEmpty() -> "This track has no subtitle lines."
+            else -> embeddedSubtitleLabel ?: chosen?.let(::detectedSubtitleLabel).orEmpty()
         }, style = MaterialTheme.typography.bodySmall,
             color = PlayerUiColors.content.copy(alpha = 0.7f), modifier = Modifier.padding(vertical = 6.dp))
-        val entries = remember(timeline) { timeline.filter { it.cues.isNotEmpty() } }
-        if (chosen != null && ready) {
+        if ((chosen != null || embeddedSubtitleLabel != null) && ready) {
             LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-                items(entries, key = { it.startTimeUs }) { entry ->
+                items(entries.size, key = { it }) { index ->
+                    val entry = entries[index]
                     Column(Modifier.fillMaxWidth()
-                        .clickable(enabled = subtitleAdjustAnchorMs != null) {
-                            onAlignSubtitleToCue(entry.startTimeUs)
+                        .clickable {
+                            previewIndex = index
+                            if (subtitleAdjustAnchorMs != null) onAlignSubtitleToCue(entry.startTimeUs)
                         }.padding(vertical = 5.dp)) {
                         Text(formatPlayerTime(entry.startTimeUs / 1_000L),
                             style = MaterialTheme.typography.labelSmall,
                             color = subtitleOverlayAccent())
-                        Text(entry.cues.joinToString("\n") { it.text?.toString().orEmpty() },
+                        Text(entry.cues.joinToString("\n") { it.text?.toString() ?: "Image subtitle" },
                             style = MaterialTheme.typography.bodySmall, color = PlayerUiColors.content)
                     }
                     HorizontalDivider(color = PlayerUiColors.content.copy(alpha = 0.12f))
@@ -2341,6 +2387,7 @@ private fun PlayerTrackSelectionSheet(
     externalSubtitleError: String?,
     externalSubtitleReady: Boolean,
     externalSubtitleCues: List<CuesWithTiming>,
+    embeddedSubtitleLabel: String?,
     subtitleAdjustAnchorMs: Long?,
     onBeginSubtitleAdjust: () -> Unit,
     onCancelSubtitleAdjust: () -> Unit,
@@ -2355,7 +2402,7 @@ private fun PlayerTrackSelectionSheet(
             externalSubtitleReady, externalSubtitleCues,
             subtitleAdjustAnchorMs, onBeginSubtitleAdjust, onCancelSubtitleAdjust,
             onAlignSubtitleToCue,
-            onSubtitleStyleChange, onDismiss
+            onSubtitleStyleChange, onDismiss, embeddedSubtitleLabel = embeddedSubtitleLabel
         )
         return
     }

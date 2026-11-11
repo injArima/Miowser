@@ -13,6 +13,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -21,6 +22,22 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @OptIn(UnstableApi::class)
 class EmbeddedSubtitlePlaybackTest {
+    @Test fun mp4InspectionMatchesTheSubtitleFormatIdRatherThanTheOutputIndex() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val file = File.createTempFile("embedded-subtitles", ".mp4", context.cacheDir)
+        try {
+            instrumentation.context.assets.open("embedded-subtitles.mp4").use { input ->
+                file.outputStream().use { output -> input.copyTo(output) }
+            }
+            // This MP4 has a video with track ID 1 and tx3g subtitles with track ID 2.
+            val cues = runBlocking { readEmbeddedSubtitles(context, Uri.fromFile(file), "2") }
+            assertEquals(listOf("Embedded SubRip"), cues.flatMap { it.cues }.map { it.text.toString() })
+        } finally {
+            file.delete()
+        }
+    }
+
     @Test fun localMkvPlaysUnflaggedSubtitlesAndCanSwitchToLegacySsa() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = object : ContextWrapper(instrumentation.targetContext) {
@@ -49,7 +66,7 @@ class EmbeddedSubtitlePlaybackTest {
             assertTrue(autoCaption.any { it == "Embedded SubRip" || it == "Embedded SSA" })
 
             captions.clear()
-            instrumentation.onMain {
+            val ssaFormatId = instrumentation.onMain {
                 val player = checkNotNull(session).player
                 val snapshot = buildPlayerTrackSnapshot(player.currentTracks)
                 assertEquals(setOf("SubRip", "SSA"), snapshot.subtitles.map { it.label }.toSet())
@@ -57,9 +74,16 @@ class EmbeddedSubtitlePlaybackTest {
                 val selection = PlayerTrackSelection(PlayerTrackMode.SPECIFIC, ssa.key)
                 assertTrue(applyPlayerTrackSelection(player, snapshot, PlayerTrackKind.SUBTITLE, selection))
                 player.seekTo(1_000)
+                checkNotNull(ssa.formatId)
             }
             assertTrue("Expected a cue from the selected SSA track",
                 captions.pollUntil { "Embedded SSA" in it } != null)
+            val inspected = runBlocking { readEmbeddedSubtitles(context, Uri.fromFile(file), ssaFormatId) }
+            assertEquals(listOf("Embedded SSA"), inspected.flatMap { it.cues }.map { it.text.toString() })
+            val style = PlayerSubtitleStyle(delayMs = subtitleDelayForCue(2_500, inspected.first().startTimeUs))
+            assertTrue(externalWebvttCuesAt(inspected, style.vttPositionMs(2_000)).isEmpty())
+            assertEquals("Embedded SSA",
+                externalWebvttCuesAt(inspected, style.vttPositionMs(2_500)).single().text.toString())
 
             instrumentation.onMain {
                 val player = checkNotNull(session).player

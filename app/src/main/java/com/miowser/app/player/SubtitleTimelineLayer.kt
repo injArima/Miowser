@@ -15,14 +15,14 @@ import androidx.media3.ui.SubtitleView
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
-internal fun ExternalSubtitleLayer(player: Player, view: SubtitleView?, selectedUrl: String?,
+internal fun SubtitleTimelineLayer(player: Player, view: SubtitleView?, active: Boolean,
     timeline: List<CuesWithTiming>, style: PlayerSubtitleStyle, typeface: Typeface?) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    LaunchedEffect(player, view, selectedUrl, timeline, style, typeface, lifecycle) {
+    LaunchedEffect(player, view, active, timeline, style, typeface, lifecycle) {
         if (view == null) return@LaunchedEffect
-        view.visibility = if (selectedUrl == null) View.GONE else View.VISIBLE
+        view.visibility = if (!active) View.GONE else View.VISIBLE
         applyPlayerSubtitleStyle(view, style, typeface)
-        if (selectedUrl == null) { view.setCues(emptyList()); return@LaunchedEffect }
+        if (!active) { view.setCues(emptyList()); return@LaunchedEffect }
         var last: List<Cue>? = null
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             observePlayerClock(player, intervalMs = 50L) {
