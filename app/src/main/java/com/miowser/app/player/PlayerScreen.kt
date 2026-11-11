@@ -19,14 +19,11 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -53,7 +50,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
@@ -95,7 +91,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.semantics.semantics
@@ -107,12 +102,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
@@ -436,19 +427,13 @@ private fun PlayerContent(
             subtitleNotice = null
         }
     }
-    val latestStyleForSave by rememberUpdatedState(subtitleStyle)
-    LaunchedEffect(subtitleStyle) {
-        delay(250)
-        PlayerSubtitleStyleStore.save(context, subtitleStyle)
-    }
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) PlayerSubtitleStyleStore.save(context, latestStyleForSave)
+            if (event == Lifecycle.Event.ON_RESUME) subtitleStyle = PlayerSubtitleStyleStore.load(context)
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            PlayerSubtitleStyleStore.save(context, latestStyleForSave)
         }
     }
     val subtitleTypeface = remember(context, subtitleStyle.font) {
@@ -612,12 +597,11 @@ private fun PlayerContent(
         showSubtitleNotice("Subtitle delay set to ${delayMs} ms")
     }
 
-    fun updateSubtitleStyle(updated: PlayerSubtitleStyle) {
-        if (updated.delayMs != effectiveSubtitleStyle.delayMs) {
-            trackPreferences = trackPreferences.copy(subtitleDelayMs = updated.delayMs)
+    fun updateSubtitleDelay(delayMs: Long) {
+        if (delayMs != effectiveSubtitleStyle.delayMs) {
+            trackPreferences = trackPreferences.copy(subtitleDelayMs = delayMs)
             PlayerTrackPreferenceStore.save(context, libraryIdentityKey, trackPreferences)
         }
-        subtitleStyle = updated.copy(delayMs = subtitleStyle.delayMs)
     }
 
     LaunchedEffect(overlays.target, trackPanel, subtitleAdjustAnchorMs) {
@@ -1389,6 +1373,7 @@ private fun PlayerContent(
 
         trackPanel?.let { kind ->
             PlayerTrackSelectionSheet(
+                player = exoPlayer,
                 kind = kind,
                 options = trackSnapshot.options(kind),
                 detectedSubtitles = (request as? PlaybackRequest.Remote)?.externalSubtitles.orEmpty(),
@@ -1409,7 +1394,7 @@ private fun PlayerContent(
                 onBeginSubtitleAdjust = ::beginSubtitleAdjustment,
                 onCancelSubtitleAdjust = ::finishSubtitleAdjustment,
                 onAlignSubtitleToCue = ::alignSubtitleToCue,
-                onSubtitleStyleChange = ::updateSubtitleStyle,
+                onSubtitleDelayChange = ::updateSubtitleDelay,
                 onDismiss = { trackPanel = null }
             )
         }
@@ -1442,13 +1427,13 @@ private fun PlayerContent(
                     onNext = onPlayNext?.let { action -> ({ overlays.dismiss(); action() }) },
                     onDismiss = { overlays.dismiss() }, modifier = panelModifier, initialFocus = initialFocus, paged = pagedPlaylist)
                 PlayerOverlay.SUBTITLES -> PlayerSubtitleWorkspaceSheet(
-                    trackSnapshot.subtitles, (request as? PlaybackRequest.Remote)?.externalSubtitles.orEmpty(),
+                    exoPlayer, trackSnapshot.subtitles, (request as? PlaybackRequest.Remote)?.externalSubtitles.orEmpty(),
                     trackPreferences.subtitles, { selectTrack(PlayerTrackKind.SUBTITLE, it) },
                     ::selectDetectedSubtitle, effectiveSubtitleStyle, attachedExternalSubtitleUrl,
                     subtitleInspectionError, subtitleInspectionReady, subtitleInspectionCues,
                     subtitleAdjustAnchorMs, ::beginSubtitleAdjustment, ::finishSubtitleAdjustment,
                     ::alignSubtitleToCue,
-                    ::updateSubtitleStyle, { overlays.dismiss() }, panelModifier, initialFocus, embeddedSubtitle?.label)
+                    ::updateSubtitleDelay, { overlays.dismiss() }, panelModifier, initialFocus, embeddedSubtitle?.label)
             }
         }
         subtitleNotice?.let { message ->
@@ -2032,6 +2017,7 @@ private fun PlayerTimerContent(timeline: PlayerTimelineState, modifier: Modifier
 @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
 @Composable
 private fun PlayerSubtitleWorkspaceSheet(
+    player: Player,
     options: List<PlayerTrackOption>,
     detectedSubtitles: List<DetectedMedia>,
     selection: PlayerTrackSelection,
@@ -2046,7 +2032,7 @@ private fun PlayerSubtitleWorkspaceSheet(
     onBeginSubtitleAdjust: () -> Unit,
     onCancelSubtitleAdjust: () -> Unit,
     onAlignSubtitleToCue: (Long) -> Unit,
-    onStyleChange: (PlayerSubtitleStyle) -> Unit,
+    onDelayChange: (Long) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     initialFocus: FocusRequester? = null,
@@ -2061,12 +2047,10 @@ private fun PlayerSubtitleWorkspaceSheet(
                     if (selected.mode == PlayerTrackMode.SPECIFIC) inspect()
                 }, { subtitle -> onSelectDetectedSubtitle(subtitle); inspect() }, contentModifier)
         }, inspect = { contentModifier ->
+            val position = rememberSubtitlePlaybackPosition(player)
             PlayerSubtitleInspectPanel(style, chosen, timeline, error, ready,
-                subtitleAdjustAnchorMs, onAlignSubtitleToCue, contentModifier, embeddedSubtitleLabel)
-        }, settings = { contentModifier, inspect ->
-            PlayerSubtitleControls(style, onStyleChange, subtitleAdjustAnchorMs != null,
-                (chosen != null || embeddedSubtitleLabel != null) && ready && timeline.any { it.cues.isNotEmpty() },
-                { onBeginSubtitleAdjust(); inspect() }, onCancelSubtitleAdjust, contentModifier)
+                position, subtitleAdjustAnchorMs, onAlignSubtitleToCue, onDelayChange,
+                onBeginSubtitleAdjust, onCancelSubtitleAdjust, contentModifier, embeddedSubtitleLabel)
         })
 }
 
@@ -2129,252 +2113,11 @@ private fun PlayerSubtitleTrackList(
     }
 }
 
-@androidx.annotation.OptIn(markerClass = [UnstableApi::class])
-@Composable
-internal fun PlayerSubtitleInspectPanel(
-    style: PlayerSubtitleStyle,
-    chosen: DetectedMedia?,
-    timeline: List<CuesWithTiming>,
-    error: String?,
-    ready: Boolean,
-    subtitleAdjustAnchorMs: Long?,
-    onAlignSubtitleToCue: (Long) -> Unit,
-    modifier: Modifier,
-    embeddedSubtitleLabel: String? = null
-) {
-    val context = LocalContext.current
-    val typeface = remember(context, style.font) {
-        captionFontResource(style.font)?.let { ResourcesCompat.getFont(context, it) }
-    }
-    val sampleCues = remember {
-        listOf(Cue.Builder().setText("The quick brown fox\njumps over the lazy dog.").build())
-    }
-    var previewIndex by remember(chosen?.url, embeddedSubtitleLabel, timeline) { mutableIntStateOf(0) }
-    val entries = remember(timeline) { timeline.filter { it.cues.isNotEmpty() } }
-    val preview = entries.getOrNull(previewIndex)?.cues ?: sampleCues
-    val visibleCues = remember(preview, style.bottomPadding) {
-        positionSubtitleCues(preview, style.bottomPadding)
-    }
-    Column(modifier) {
-        Text(if (subtitleAdjustAnchorMs != null)
-            "Tap the line that belongs at ${formatPlayerTime(subtitleAdjustAnchorMs)}"
-            else if (ready && entries.isNotEmpty()) "Subtitle preview" else "Style sample",
-            style = MaterialTheme.typography.bodySmall,
-            color = PlayerUiColors.content.copy(alpha = 0.72f), maxLines = 1,
-            overflow = TextOverflow.Ellipsis)
-        Box(Modifier.fillMaxWidth(0.86f).height(108.dp).align(Alignment.CenterHorizontally)
-            .padding(top = 5.dp)
-            .clip(UiCorners.r10).background(PlayerUiColors.subtitlePreview)) {
-            AndroidView(modifier = Modifier.fillMaxSize(), factory = { SubtitleView(it) }, update = { view ->
-                applyPlayerSubtitleStyle(view, style, typeface)
-                view.setFractionalTextSize(0.12f * style.size)
-                view.setCues(visibleCues)
-            })
-        }
-        Text(when {
-            error != null -> error
-            chosen == null && embeddedSubtitleLabel == null -> "Choose a subtitle track to inspect"
-            !ready -> "Loading subtitle…"
-            entries.isEmpty() -> "This track has no subtitle lines."
-            else -> embeddedSubtitleLabel ?: chosen?.let(::detectedSubtitleLabel).orEmpty()
-        }, style = MaterialTheme.typography.bodySmall,
-            color = PlayerUiColors.content.copy(alpha = 0.7f), modifier = Modifier.padding(vertical = 6.dp))
-        if ((chosen != null || embeddedSubtitleLabel != null) && ready) {
-            LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-                items(entries.size, key = { it }) { index ->
-                    val entry = entries[index]
-                    Column(Modifier.fillMaxWidth()
-                        .clickable {
-                            previewIndex = index
-                            if (subtitleAdjustAnchorMs != null) onAlignSubtitleToCue(entry.startTimeUs)
-                        }.padding(vertical = 5.dp)) {
-                        Text(formatPlayerTime(entry.startTimeUs / 1_000L),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = subtitleOverlayAccent())
-                        Text(entry.cues.joinToString("\n") { it.text?.toString() ?: "Image subtitle" },
-                            style = MaterialTheme.typography.bodySmall, color = PlayerUiColors.content)
-                    }
-                    HorizontalDivider(color = PlayerUiColors.content.copy(alpha = 0.12f))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-internal fun PlayerSubtitleControls(
-    style: PlayerSubtitleStyle,
-    onChange: (PlayerSubtitleStyle) -> Unit,
-    adjusting: Boolean,
-    canAdjust: Boolean,
-    onBeginAdjust: () -> Unit,
-    onCancelAdjust: () -> Unit,
-    modifier: Modifier
-) {
-    Column(modifier.verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        PlayerSubtitleDelayControl(style.delayMs) { onChange(style.copy(delayMs = it)) }
-        TextButton(onClick = if (adjusting) onCancelAdjust else onBeginAdjust,
-            enabled = adjusting || canAdjust,
-            colors = ButtonDefaults.textButtonColors(contentColor = subtitleOverlayAccent())) {
-            Text(if (adjusting) "Cancel adjustment" else "Adjust Subtitle")
-        }
-        if (!canAdjust && !adjusting) {
-            Text("Select a detected subtitle file to adjust its timing.",
-                style = MaterialTheme.typography.bodySmall,
-                color = PlayerUiColors.content.copy(alpha = 0.65f))
-        }
-        SubtitleAppearanceControls(style, onChange, playerOverlay = true)
-    }
-}
-
-@Composable
-internal fun SubtitleAppearanceControls(
-    style: PlayerSubtitleStyle,
-    onChange: (PlayerSubtitleStyle) -> Unit,
-    playerOverlay: Boolean = false
-) {
-    val accent = if (playerOverlay) subtitleOverlayAccent() else MaterialTheme.colorScheme.primary
-    val secondary = if (playerOverlay) PlayerUiColors.content.copy(alpha = 0.6f)
-        else MaterialTheme.colorScheme.onSurfaceVariant
-    val unselected = if (playerOverlay) PlayerUiColors.content.copy(alpha = 0.12f)
-        else MaterialTheme.colorScheme.surfaceContainerHigh
-    PlayerSubtitleStepper(accent, "Font size", "${(style.size * 100).toInt()}%",
-        { onChange(style.copy(size = (style.size - 0.1f).coerceAtLeast(0.7f))) },
-        { onChange(style.copy(size = (style.size + 0.1f).coerceAtMost(1.6f))) })
-    PlayerSubtitleToggle(accent, secondary, "Bold", style.bold) { onChange(style.copy(bold = it)) }
-    Text("Text color", style = MaterialTheme.typography.labelMedium)
-    PlayerSubtitleColors(
-        accent,
-        listOf(AndroidColor.WHITE, AndroidColor.YELLOW, AndroidColor.CYAN,
-            AndroidColor.RED, AndroidColor.GREEN), style.resolvedTextColor()
-    ) { onChange(style.copy(textColor = it)) }
-    PlayerSubtitleStepper(accent, "Text opacity", "${style.textOpacity}%",
-        { onChange(style.copy(textOpacity = (style.textOpacity - 10).coerceAtLeast(10))) },
-        { onChange(style.copy(textOpacity = (style.textOpacity + 10).coerceAtMost(100))) })
-    PlayerSubtitleToggle(accent, secondary, "Outline", style.resolvedOutlineEnabled()) {
-        onChange(style.copy(outlineEnabled = it))
-    }
-    if (style.resolvedOutlineEnabled()) {
-        Text("Outline color", style = MaterialTheme.typography.labelMedium)
-        PlayerSubtitleColors(accent, listOf(AndroidColor.BLACK, AndroidColor.WHITE,
-            AndroidColor.CYAN, AndroidColor.RED), style.outlineColor) {
-            onChange(style.copy(outlineColor = it))
-        }
-    }
-    PlayerSubtitleStepper(accent, "Bottom offset", "${(style.bottomPadding * 100).toInt()}%",
-        { onChange(style.copy(bottomPadding = (style.bottomPadding - 0.01f).coerceAtLeast(0.03f))) },
-        { onChange(style.copy(bottomPadding = (style.bottomPadding + 0.01f).coerceAtMost(0.35f))) })
-    Text("Caption preset", style = MaterialTheme.typography.labelMedium)
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-        CaptionVisualPreset.entries.forEach { preset ->
-            Surface(onClick = {
-                onChange(style.copy(preset = preset, textColor = null, outlineEnabled = null))
-            }, shape = UiCorners.r8,
-                color = if (style.preset == preset) MaterialTheme.colorScheme.primaryContainer
-                    else unselected) {
-                Text(preset.label, modifier = Modifier.padding(horizontal = UiSpacing.compact, vertical = 7.dp),
-                    style = MaterialTheme.typography.labelSmall)
-            }
-        }
-    }
-    Text("Font", style = MaterialTheme.typography.labelMedium)
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-        CaptionFontChoice.entries.forEach { font ->
-            Surface(onClick = { onChange(style.copy(font = font)) },
-                shape = UiCorners.r8,
-                color = if (style.font == font) MaterialTheme.colorScheme.primaryContainer
-                    else unselected) {
-                Text(font.label, modifier = Modifier.padding(horizontal = UiSpacing.compact, vertical = 7.dp),
-                    style = MaterialTheme.typography.labelSmall)
-            }
-        }
-    }
-    TextButton(onClick = { onChange(PlayerSubtitleStyle(delayMs = if (playerOverlay) 0L else style.delayMs)) },
-        colors = ButtonDefaults.textButtonColors(contentColor = accent)) {
-        Text("Reset defaults")
-    }
-}
-
-@Composable
-private fun PlayerSubtitleStepper(
-    accent: Color, label: String, value: String, onDecrease: () -> Unit, onIncrease: () -> Unit
-) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-        TextButton(onClick = onDecrease, modifier = Modifier.width(38.dp).semantics { contentDescription = "Decrease $label" },
-            colors = ButtonDefaults.textButtonColors(contentColor = accent)) { Text("−") }
-        Text(value, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center,
-            modifier = Modifier.width(56.dp))
-        TextButton(onClick = onIncrease, modifier = Modifier.width(38.dp).semantics { contentDescription = "Increase $label" },
-            colors = ButtonDefaults.textButtonColors(contentColor = accent)) { Text("+") }
-    }
-}
-
-@Composable
-private fun PlayerSubtitleDelayControl(delayMs: Long, onChange: (Long) -> Unit) {
-    var input by remember { mutableStateOf(delayMs.toString()) }
-    LaunchedEffect(delayMs) {
-        if (input.toLongOrNull() != delayMs) input = delayMs.toString()
-    }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("Subtitle Delay", style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.weight(1f))
-        TextButton(onClick = { onChange((delayMs - 50L).coerceAtLeast(-MAX_SUBTITLE_DELAY_MS)) },
-            modifier = Modifier.width(38.dp).semantics { contentDescription = "Decrease subtitle delay by 50 milliseconds" },
-            colors = ButtonDefaults.textButtonColors(contentColor = subtitleOverlayAccent())) { Text("−") }
-        BasicTextField(
-            value = input,
-            onValueChange = { edited ->
-                if (edited.length <= 8 && edited.matches(Regex("-?\\d*"))) {
-                    input = edited
-                    edited.toLongOrNull()?.let { onChange(it.coerceIn(-MAX_SUBTITLE_DELAY_MS, MAX_SUBTITLE_DELAY_MS)) }
-                }
-            },
-            modifier = Modifier.width(64.dp).semantics { contentDescription = "Subtitle delay in milliseconds" }, singleLine = true,
-            textStyle = TextStyle(color = PlayerUiColors.content, fontSize = 14.sp, textAlign = TextAlign.Center),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            cursorBrush = Brush.verticalGradient(listOf(PlayerUiColors.content, PlayerUiColors.content))
-        )
-        Text("ms", style = MaterialTheme.typography.bodySmall)
-        TextButton(onClick = { onChange((delayMs + 50L).coerceAtMost(MAX_SUBTITLE_DELAY_MS)) },
-            modifier = Modifier.width(38.dp).semantics { contentDescription = "Increase subtitle delay by 50 milliseconds" },
-            colors = ButtonDefaults.textButtonColors(contentColor = subtitleOverlayAccent())) { Text("+") }
-    }
-    TextButton(onClick = { onChange(0L) },
-        colors = ButtonDefaults.textButtonColors(contentColor = subtitleOverlayAccent())) {
-        Text("Reset delay", style = MaterialTheme.typography.labelSmall)
-    }
-}
-
-@Composable
-private fun PlayerSubtitleToggle(accent: Color, secondary: Color, label: String, checked: Boolean, onToggle: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable { onToggle(!checked) }.padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-        Text(if (checked) "On" else "Off", style = MaterialTheme.typography.bodySmall,
-            color = if (checked) accent else secondary)
-    }
-}
-
-@Composable
-private fun PlayerSubtitleColors(accent: Color, colors: List<Int>, selected: Int, onSelect: (Int) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(UiSpacing.compact)) {
-        colors.forEach { color ->
-            Surface(onClick = { onSelect(color) }, shape = CircleShape,
-                border = BorderStroke(if (color == selected) 3.dp else 1.dp,
-                    if (color == selected) accent else Color.LightGray),
-                color = Color(color), modifier = Modifier.size(30.dp)) {}
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
 private fun PlayerTrackSelectionSheet(
+    player: Player,
     kind: PlayerTrackKind,
     options: List<PlayerTrackOption>,
     detectedSubtitles: List<DetectedMedia>,
@@ -2392,17 +2135,17 @@ private fun PlayerTrackSelectionSheet(
     onBeginSubtitleAdjust: () -> Unit,
     onCancelSubtitleAdjust: () -> Unit,
     onAlignSubtitleToCue: (Long) -> Unit,
-    onSubtitleStyleChange: (PlayerSubtitleStyle) -> Unit,
+    onSubtitleDelayChange: (Long) -> Unit,
     onDismiss: () -> Unit
 ) {
     if (kind == PlayerTrackKind.SUBTITLE) {
         PlayerSubtitleWorkspaceSheet(
-            options, detectedSubtitles, selection, onSelect, onSelectDetectedSubtitle,
+            player, options, detectedSubtitles, selection, onSelect, onSelectDetectedSubtitle,
             subtitleStyle, attachedExternalSubtitleUrl, externalSubtitleError,
             externalSubtitleReady, externalSubtitleCues,
             subtitleAdjustAnchorMs, onBeginSubtitleAdjust, onCancelSubtitleAdjust,
             onAlignSubtitleToCue,
-            onSubtitleStyleChange, onDismiss, embeddedSubtitleLabel = embeddedSubtitleLabel
+            onSubtitleDelayChange, onDismiss, embeddedSubtitleLabel = embeddedSubtitleLabel
         )
         return
     }

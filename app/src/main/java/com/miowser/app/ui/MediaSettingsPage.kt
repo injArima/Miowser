@@ -8,10 +8,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -42,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -56,7 +59,9 @@ import com.miowser.app.player.PlayerDisplayPreferenceStore
 import com.miowser.app.player.PlayerOrientationMode
 import com.miowser.app.player.PlayerScaleMode
 import com.miowser.app.player.PlayerSubtitleStyleStore
-import com.miowser.app.player.SubtitleAppearanceControls
+import com.miowser.app.player.SubtitleCuePreview
+import androidx.media3.common.text.Cue
+import androidx.media3.common.util.UnstableApi
 import com.miowser.app.settings.AppSettings
 import com.miowser.app.settings.DownloadThreadCount
 import com.miowser.app.settings.LibraryBehavior
@@ -66,6 +71,10 @@ import com.miowser.app.ui.theme.ExpressiveTokens
 import com.miowser.app.ui.theme.UiControlSize
 import com.miowser.app.ui.theme.UiIconSize
 import com.miowser.app.ui.theme.UiSpacing
+import com.miowser.app.ui.theme.PlayerUiColors
+import com.miowser.app.ui.theme.SubtitlePanelTokens
+import androidx.compose.foundation.background
+import androidx.compose.ui.platform.testTag
 import kotlin.math.roundToInt
 
 @Composable
@@ -319,17 +328,32 @@ internal fun ClearLibraryConfirmationDialog(onDismiss: () -> Unit, onClear: () -
 }
 
 @Composable
+@androidx.annotation.OptIn(markerClass = [UnstableApi::class])
 internal fun MediaSubtitleSettingsPage(onBack: () -> Unit) {
     val context = LocalContext.current
     var style by remember { mutableStateOf(PlayerSubtitleStyleStore.load(context)) }
-    MediaSettingsLayout("Subtitles", onBack) {
-        SettingsSection("Subtitle appearance") {
-            Column(Modifier.fillMaxWidth().padding(ExpressiveTokens.pageGutter),
-                verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
-                SubtitleAppearanceControls(style, onChange = { updated ->
-                    style = updated
-                    PlayerSubtitleStyleStore.save(context, updated)
-                })
+    val sample = remember(style.preset) {
+        listOf(Cue.Builder().setText(style.preset.sample).build())
+    }
+    SimplePageScaffold(title = "Subtitles", onBack = onBack) { modifier ->
+        BoxWithConstraints(modifier.fillMaxSize().padding(ExpressiveTokens.pageGutter)) {
+            val previewHeight = (maxHeight * SubtitlePanelTokens.settingsPreviewHeightFraction).coerceIn(
+                SubtitlePanelTokens.settingsPreviewMinHeight, SubtitlePanelTokens.settingsPreviewMaxHeight)
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(UiSpacing.m)) {
+                SubtitleCuePreview(style, sample, Modifier.fillMaxWidth().height(previewHeight)
+                    .clip(MaterialTheme.shapes.extraLarge).background(PlayerUiColors.subtitlePreview)
+                    .testTag("subtitle_appearance_preview"))
+                Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
+                    SettingsSection("Subtitle appearance") {
+                        Column(Modifier.fillMaxWidth().padding(ExpressiveTokens.pageGutter),
+                            verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
+                            SubtitleAppearanceControls(style, onChange = { updated ->
+                                style = updated
+                                PlayerSubtitleStyleStore.save(context, updated)
+                            })
+                        }
+                    }
+                }
             }
         }
     }

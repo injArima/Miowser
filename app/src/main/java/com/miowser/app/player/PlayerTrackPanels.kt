@@ -22,6 +22,7 @@ import com.miowser.app.ui.MiowserBottomSheetShape
 import com.miowser.app.ui.theme.PlayerUiColors
 import com.miowser.app.ui.theme.UiIconSize
 import com.miowser.app.ui.theme.UiSpacing
+import com.miowser.app.ui.theme.SubtitlePanelTokens
 
 /** Original subtitle workspace, with unsupported sections omitted rather than disabled. */
 @OptIn(ExperimentalLayoutApi::class)
@@ -29,13 +30,12 @@ import com.miowser.app.ui.theme.UiSpacing
 internal fun PlayerSubtitleWorkspace(
     onDismiss: () -> Unit, modifier: Modifier = Modifier, initialFocus: FocusRequester? = null,
     tracks: @Composable (Modifier, () -> Unit) -> Unit,
-    inspect: (@Composable (Modifier) -> Unit)? = null,
-    settings: (@Composable (Modifier, () -> Unit) -> Unit)? = null
+    inspect: (@Composable (Modifier) -> Unit)? = null
 ) {
     var section by remember { mutableIntStateOf(0) }
     BoxWithConstraints(Modifier.fillMaxSize().then(modifier)) {
         val landscape = maxWidth > maxHeight
-        val sections = buildList { add("Tracks"); if (inspect != null) add("Inspect"); if (settings != null) add("Settings") }
+        val sections = buildList { add("Tracks"); if (inspect != null) add("Inspect") }
         CompositionLocalProvider(LocalContentColor provides PlayerUiColors.content) {
             Column(Modifier.fillMaxSize().testTag("subtitle_workspace")
                 .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top))
@@ -57,21 +57,17 @@ internal fun PlayerSubtitleWorkspace(
                 }
                 val openInspect = { if (!landscape && inspect != null) section = sections.indexOf("Inspect") }
                 if (landscape) Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(UiSpacing.comfortable)) {
-                    Column(Modifier.weight(if (sections.size == 1) 1f else 0.28f).fillMaxHeight()) {
+                    Column(Modifier.weight(if (sections.size == 1) 1f else SubtitlePanelTokens.tracksWeight).fillMaxHeight()) {
                         Text("Available tracks", style = MaterialTheme.typography.labelLarge)
                         tracks(Modifier.fillMaxSize(), openInspect)
                     }
-                    if (inspect != null) Column(Modifier.weight(0.34f).fillMaxHeight()) {
+                    if (inspect != null) Column(Modifier.weight(SubtitlePanelTokens.inspectionWeight).fillMaxHeight()) {
                         Text("Inspect", style = MaterialTheme.typography.labelLarge); inspect(Modifier.fillMaxSize())
-                    }
-                    if (settings != null) Column(Modifier.weight(0.38f).fillMaxHeight()) {
-                        Text("Subtitle Settings", style = MaterialTheme.typography.labelLarge); settings(Modifier.fillMaxSize(), openInspect)
                     }
                 } else {
                     val contentModifier = Modifier.fillMaxWidth().weight(1f)
                     when (sections.getOrElse(section) { "Tracks" }) {
                         "Inspect" -> inspect?.invoke(contentModifier)
-                        "Settings" -> settings?.invoke(contentModifier, openInspect)
                         else -> tracks(contentModifier, openInspect)
                     }
                 }

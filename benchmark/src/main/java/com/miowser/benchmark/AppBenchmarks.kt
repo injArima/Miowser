@@ -264,7 +264,7 @@ class AppBenchmarks {
             repeat(3) {
                 device.requireNode(By.res("player_subtitles")).click()
                 device.requireNode(By.res("subtitle_workspace"))
-                device.findObject(By.text("Settings"))?.click()
+                device.findObject(By.text("Inspect"))?.click()
                 device.requireNode(By.desc("Increase subtitle delay by 50 milliseconds")).click()
                 device.requireNode(By.desc("Close subtitles")).click()
             }
@@ -304,7 +304,7 @@ class BaselineProfileGenerator {
             repeat(3) {
                 device.requireNode(By.res("player_subtitles")).click()
                 device.requireNode(By.res("subtitle_workspace"))
-                device.findObject(By.text("Settings"))?.click()
+                device.findObject(By.text("Inspect"))?.click()
                 device.requireNode(By.desc("Increase subtitle delay by 50 milliseconds")).click()
                 device.requireNode(By.desc("Close subtitles").clazz("android.widget.Button")).click()
             }

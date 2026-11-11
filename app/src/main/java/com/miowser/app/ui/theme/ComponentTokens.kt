@@ -145,3 +145,18 @@ object PlayerSpeedControlTokens {
     val menuWidth = 320.dp
     val fieldWidth = 184.dp
 }
+
+object SubtitlePanelTokens {
+    const val tracksWeight = 0.28f
+    const val inspectionWeight = 0.72f
+    const val previewTextFraction = 0.12f
+    const val settingsPreviewHeightFraction = 0.32f
+    val settingsPreviewMinHeight = 96.dp
+    val settingsPreviewMaxHeight = 180.dp
+    val inspectionPreviewHeight = 72.dp
+    val valueWidth = 56.dp
+    val delayFieldWidth = 64.dp
+    val colorSize = 30.dp
+    val colorBorder = 1.dp
+    val selectedColorBorder = 3.dp
+}

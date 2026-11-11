@@ -31,7 +31,12 @@ internal fun parseExternalSubtitle(text: String): List<CuesWithTiming> {
 
 @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
 internal fun externalWebvttCuesAt(timeline: List<CuesWithTiming>, positionMs: Long): List<Cue> {
-    if (timeline.isEmpty()) return emptyList()
+    return timeline.getOrNull(subtitleCueIndexAt(timeline, positionMs))?.cues.orEmpty()
+}
+
+@androidx.annotation.OptIn(markerClass = [UnstableApi::class])
+internal fun subtitleCueIndexAt(timeline: List<CuesWithTiming>, positionMs: Long): Int {
+    if (timeline.isEmpty()) return -1
     val timeUs = positionMs * 1_000L
     var left = 0
     var right = timeline.size
@@ -39,8 +44,8 @@ internal fun externalWebvttCuesAt(timeline: List<CuesWithTiming>, positionMs: Lo
         val middle = (left + right) ushr 1
         if (timeline[middle].startTimeUs <= timeUs) left = middle + 1 else right = middle
     }
-    val interval = timeline.getOrNull(left - 1) ?: return emptyList()
-    return interval.cues.takeIf { timeUs < interval.endTimeUs }.orEmpty()
+    val interval = timeline.getOrNull(left - 1) ?: return -1
+    return if (timeUs < interval.endTimeUs && interval.cues.isNotEmpty()) left - 1 else -1
 }
 
 /** Repositions text cues even when a WebVTT file sets its own line, as many sites do. */

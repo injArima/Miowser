@@ -33,10 +33,16 @@ class ExternalWebvttTest {
         )
 
         assertEquals(emptyList<Cue>(), externalWebvttCuesAt(timeline, 999))
+        assertEquals(-1, subtitleCueIndexAt(timeline, 999))
         assertEquals(listOf(first), externalWebvttCuesAt(timeline, 1_000))
+        assertEquals(0, subtitleCueIndexAt(timeline, 1_000))
         assertEquals(emptyList<Cue>(), externalWebvttCuesAt(timeline, 3_000))
+        assertEquals(-1, subtitleCueIndexAt(timeline, 3_000))
         assertEquals(listOf(second), externalWebvttCuesAt(timeline, 4_000))
+        assertEquals(1, subtitleCueIndexAt(timeline, 4_000))
         assertEquals(listOf(first), externalWebvttCuesAt(timeline, 1_500))
+        assertEquals(0, subtitleCueIndexAt(timeline, 1_500))
         assertEquals(emptyList<Cue>(), externalWebvttCuesAt(timeline, 6_000))
+        assertEquals(-1, subtitleCueIndexAt(timeline, 6_000))
     }
 }

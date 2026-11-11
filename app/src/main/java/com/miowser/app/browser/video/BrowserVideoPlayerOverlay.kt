@@ -170,20 +170,14 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
     val effectiveSubtitleStyle = subtitleStyle.copy(delayMs = subtitleDelayMs)
     var subtitleAdjustAnchorMs by remember { mutableStateOf<Long?>(null) }
     var resumeAfterSubtitleAdjust by remember { mutableStateOf(false) }
-    val latestSubtitleStyle by rememberUpdatedState(subtitleStyle)
     val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(subtitleStyle) {
-        delay(250)
-        PlayerSubtitleStyleStore.save(context, subtitleStyle)
-    }
     DisposableEffect(context, lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) PlayerSubtitleStyleStore.save(context, latestSubtitleStyle)
+            if (event == Lifecycle.Event.ON_RESUME) subtitleStyle = PlayerSubtitleStyleStore.load(context)
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            PlayerSubtitleStyleStore.save(context, latestSubtitleStyle)
         }
     }
     val subtitleTypeface = remember(context, subtitleStyle.font) {
@@ -523,27 +517,13 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                             }
                         }
                     }, inspect = { contentModifier ->
+                        val position = rememberBrowserSubtitlePlaybackPosition(controller, owner)
                         PlayerSubtitleInspectPanel(effectiveSubtitleStyle, selectedDetectedSubtitle,
                             externalSubtitleCues, externalSubtitleError,
                             !externalSubtitleLoading && externalSubtitleCues.isNotEmpty(),
-                            subtitleAdjustAnchorMs, ::alignSubtitleToCue, contentModifier)
-                    }, settings = { contentModifier, inspect ->
-                        Column(contentModifier) {
-                            if (selectedDetectedSubtitle == null) {
-                                Text("Appearance and timing controls apply to detected subtitle files.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = PlayerUiColors.content.copy(alpha = 0.68f))
-                            }
-                            PlayerSubtitleControls(effectiveSubtitleStyle, { updated ->
-                                    subtitleDelayMs = updated.delayMs
-                                    subtitleStyle = updated.copy(delayMs = subtitleStyle.delayMs)
-                                },
-                                subtitleAdjustAnchorMs != null,
-                                selectedDetectedSubtitle != null &&
-                                    externalSubtitleCues.any { it.cues.isNotEmpty() },
-                                { beginSubtitleAdjustment(); inspect() }, ::finishSubtitleAdjustment,
-                                Modifier.fillMaxWidth().weight(1f))
-                        }
+                            position, subtitleAdjustAnchorMs, ::alignSubtitleToCue,
+                            { subtitleDelayMs = it }, ::beginSubtitleAdjustment, ::finishSubtitleAdjustment,
+                            contentModifier)
                     })
             }
         })

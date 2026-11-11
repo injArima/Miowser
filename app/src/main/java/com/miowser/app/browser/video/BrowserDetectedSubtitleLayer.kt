@@ -10,6 +10,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.State
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -25,6 +27,31 @@ import com.miowser.app.player.positionSubtitleCues
 import com.miowser.app.player.vttPositionMs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.collectLatest
+
+/** Observe only while Inspect is visible, and sleep when the owned video is paused. */
+@Composable
+internal fun rememberBrowserSubtitlePlaybackPosition(
+    controller: BrowserPlaybackControls,
+    owner: BrowserVideoPipOwner
+): State<Long?> {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    return produceState<Long?>(
+        browserSubtitlePositionMs(controller.state.value, owner, SystemClock.elapsedRealtime()),
+        controller, owner, lifecycle
+    ) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            controller.state.collectLatest { state ->
+                do {
+                    value = browserSubtitlePositionMs(state, owner, SystemClock.elapsedRealtime())
+                    val video = state.session?.state
+                    if (value == null || video?.playing != true || video.buffering) break
+                    delay(100)
+                } while (isActive)
+            }
+        }
+    }
+}
 
 /** Uses the owned WebView video's clock; no second decoder or stream is opened. */
 internal fun browserSubtitlePositionMs(
