@@ -610,12 +610,13 @@ fun BrowserScreen(
     var activeTabId by remember { mutableStateOf<Long?>(null) }
 
     fun retireCompanionTabs(ids: Set<Long>) {
-        tabs.filter { it.id in ids }.forEach { tab ->
+        val owned = companionCleanup.ownedCandidates(ids)
+        tabs.filter { it.id in owned }.forEach { tab ->
             tab.setCompanionTracking(false)
             tab.pausePageMedia()
             tab.liveWebView?.onPause()
         }
-        companionCleanupTabIds = companionCleanupTabIds + ids
+        companionCleanupTabIds = companionCleanupTabIds + owned
     }
 
     fun showWebFullscreen(ownerId: Long, view: View, callback: WebChromeClient.CustomViewCallback) {
@@ -901,6 +902,7 @@ fun BrowserScreen(
             Toast.makeText(context, "Could not open the source page", Toast.LENGTH_SHORT).show()
             return
         }
+        companionCleanup.register(companion.id)
         companionFromWeb = fromWeb
         companionOriginalTabId = sourceTabId
         companionOldWasPlaying = if (fromWeb) sourceTab?.browserVideoPlayer?.intendedPlaying == true else false
@@ -1024,7 +1026,9 @@ fun BrowserScreen(
         snapshotFlow {
             (companionCleanupTabIds intersect tabs.map { it.id }.toSet()) to companionProtectedTabIds()
         }.collectLatest { (candidates, protected) ->
-            companionCleanupTabIds = companionCleanupTabIds intersect tabs.map { it.id }.toSet()
+            val existing = tabs.map { it.id }.toSet()
+            companionCleanup.retainTabs(existing)
+            companionCleanupTabIds = companionCleanupTabIds intersect existing
             while (true) {
                 val decision = companionCleanup.update(candidates, protected, android.os.SystemClock.elapsedRealtime())
                 if (decision.expiredIds.isNotEmpty()) {
@@ -1094,6 +1098,7 @@ fun BrowserScreen(
         transport.webView = child.ensureWebView()
         resultMsg.sendToTarget()
         if (openerTabId == companionTabId) {
+            companionCleanup.register(child.id)
             retireCompanionTabs(setOf(openerTabId))
             child.setCompanionTracking(!companionFromWeb)
             companionTemporaryTabIds = companionTemporaryTabIds + child.id
