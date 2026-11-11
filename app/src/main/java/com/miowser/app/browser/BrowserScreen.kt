@@ -199,6 +199,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collectLatest
 import com.miowser.app.ui.theme.LocalMotionPolicy
 import com.miowser.app.ui.theme.MiowserPlayerTheme
 import com.miowser.app.ui.theme.MotionTokens
@@ -387,6 +388,8 @@ fun BrowserScreen(
     var fullscreenVideo by remember { mutableStateOf<WebFullscreenVideo?>(null) }
     var companionTabId by remember { mutableStateOf<Long?>(null) }
     var companionTemporaryTabIds by remember { mutableStateOf(emptySet<Long>()) }
+    var companionCleanupTabIds by remember { mutableStateOf(emptySet<Long>()) }
+    val companionCleanup = remember { CompanionTabCleanup() }
     var companionFromWeb by remember { mutableStateOf(false) }
     var companionOriginalTabId by remember { mutableStateOf<Long?>(null) }
     var companionOldWasPlaying by remember { mutableStateOf(false) }
@@ -606,6 +609,15 @@ fun BrowserScreen(
     } }
     var activeTabId by remember { mutableStateOf<Long?>(null) }
 
+    fun retireCompanionTabs(ids: Set<Long>) {
+        tabs.filter { it.id in ids }.forEach { tab ->
+            tab.setCompanionTracking(false)
+            tab.pausePageMedia()
+            tab.liveWebView?.onPause()
+        }
+        companionCleanupTabIds = companionCleanupTabIds + ids
+    }
+
     fun showWebFullscreen(ownerId: Long, view: View, callback: WebChromeClient.CustomViewCallback) {
         val fromCompanion = companionFromWeb && companionTabId == ownerId
         if ((ownerId == activeTabId || fromCompanion) && !showingHub &&
@@ -614,9 +626,7 @@ fun BrowserScreen(
             exitWebFullscreen()
             if (fromCompanion) {
                 tabs.firstOrNull { it.id == ownerId }?.setCompanionTracking(false)
-                val discarded = tabs.filter { it.id in companionTemporaryTabIds && it.id != ownerId }
-                tabs.removeAll(discarded)
-                discarded.forEach { tab -> coroutineScope.launch { delay(100); tab.destroy() } }
+                retireCompanionTabs((companionTemporaryTabIds + listOfNotNull(companionOriginalTabId)) - ownerId)
                 companionTemporaryTabIds = emptySet()
                 activeTabId = ownerId
                 companionTabId = null
@@ -919,9 +929,10 @@ fun BrowserScreen(
                 else if (!oldWasPlaying && controller.intendedPlaying == true) controller.pause()
             }
         }
-        val discarded = tabs.filter { it.id in companionTemporaryTabIds && (!keepTab || it.id != companionId) }
-        tabs.removeAll(discarded)
-        discarded.forEach { tab -> coroutineScope.launch { delay(100); tab.destroy() } }
+        val retired = if (keepTab) {
+            (companionTemporaryTabIds + listOfNotNull(originalId)) - companionId
+        } else companionTemporaryTabIds
+        retireCompanionTabs(retired)
         companionTemporaryTabIds = emptySet()
     }
 
@@ -1000,6 +1011,40 @@ fun BrowserScreen(
         }
     }
 
+    fun companionProtectedTabIds(): Set<Long> =
+        listOfNotNull(activeTabId, companionTabId, fullscreenVideo?.tabId,
+            fileSelection.ownerId, pendingGeolocationOwnerId, pendingNewTabRequest?.openerTabId,
+            pendingHttpNavigation?.tabId, pendingCertificateError?.tabId).toSet() +
+            tabs.filter { it.rendererTransferCount > 0 }.map { it.id } +
+            if (pendingWebPermission != null || pendingRuntimePermission != null) tabs.map { it.id } else emptyList()
+
+    // Observe ownership changes, not page-loading ticks. Each inactive tab keeps its own
+    // deadline; visiting it, playing it, or using a pending permission cancels that deadline.
+    LaunchedEffect(tabController) {
+        snapshotFlow {
+            (companionCleanupTabIds intersect tabs.map { it.id }.toSet()) to companionProtectedTabIds()
+        }.collectLatest { (candidates, protected) ->
+            companionCleanupTabIds = companionCleanupTabIds intersect tabs.map { it.id }.toSet()
+            while (true) {
+                val decision = companionCleanup.update(candidates, protected, android.os.SystemClock.elapsedRealtime())
+                if (decision.expiredIds.isNotEmpty()) {
+                    // A tap can change ownership before snapshotFlow delivers its next value.
+                    val expired = decision.expiredIds - companionProtectedTabIds()
+                    expired.forEach { id ->
+                        val index = tabs.indexOfFirst { it.id == id }
+                        if (index >= 0) {
+                            val tab = tabs.removeAt(index)
+                            finalizeClosedTab(ClosedTabUndo(tab, index, false))
+                        }
+                    }
+                    companionCleanupTabIds = companionCleanupTabIds - expired
+                    return@collectLatest
+                }
+                delay(decision.nextDelayMs ?: return@collectLatest)
+            }
+        }
+    }
+
     fun archiveEligibleTabs(now: Long = System.currentTimeMillis()) {
         InactiveTabs.prune(context, AppSettings.current.inactiveTabRetention, now)
         val decisions = InactiveTabPolicy.decisions(
@@ -1049,7 +1094,7 @@ fun BrowserScreen(
         transport.webView = child.ensureWebView()
         resultMsg.sendToTarget()
         if (openerTabId == companionTabId) {
-            opener.setCompanionTracking(false)
+            retireCompanionTabs(setOf(openerTabId))
             child.setCompanionTracking(!companionFromWeb)
             companionTemporaryTabIds = companionTemporaryTabIds + child.id
             companionTabId = child.id
@@ -1239,7 +1284,7 @@ fun BrowserScreen(
     // Save meaningful session edits while foregrounded, not only when Android pauses us.
     LaunchedEffect(recordsReady) {
         if (recordsReady) androidx.compose.runtime.snapshotFlow {
-            TabSessionStore.snapshot(tabs.filterNot { it.id in companionTemporaryTabIds }, activeTabId)
+            TabSessionStore.snapshot(tabs.filterNot { it.id in companionTemporaryTabIds || (it.id in companionCleanupTabIds && it.id != activeTabId) }, activeTabId)
         }.collect { snapshot -> TabSessionStore.saveSnapshot(context, snapshot) }
     }
 
@@ -4069,7 +4114,7 @@ fun BrowserScreen(
                     }
                     // Final checkpoint in addition to the foreground session-change observer.
                     if (recordsReady) TabSessionStore.save(context,
-                        tabs.filterNot { it.id in companionTemporaryTabIds }, activeTabId)
+                        tabs.filterNot { it.id in companionTemporaryTabIds || (it.id in companionCleanupTabIds && it.id != activeTabId) }, activeTabId)
                     DownloadQueue.persist(context)
                 }
                 Lifecycle.Event.ON_STOP -> {
