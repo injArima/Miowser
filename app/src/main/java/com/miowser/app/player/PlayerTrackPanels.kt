@@ -22,6 +22,7 @@ import com.miowser.app.ui.CompactSheetDragHandle
 import com.miowser.app.ui.MiowserBottomSheetShape
 import com.miowser.app.ui.theme.PlayerUiColors
 import com.miowser.app.ui.theme.UiIconSize
+import com.miowser.app.ui.theme.UiControlSize
 import com.miowser.app.ui.theme.UiSpacing
 import com.miowser.app.ui.theme.SubtitlePanelTokens
 
@@ -31,8 +32,7 @@ import com.miowser.app.ui.theme.SubtitlePanelTokens
 internal fun PlayerSubtitleWorkspace(
     onDismiss: () -> Unit, modifier: Modifier = Modifier, initialFocus: FocusRequester? = null,
     tracks: @Composable (Modifier, () -> Unit) -> Unit,
-    inspect: (@Composable (Modifier) -> Unit)? = null,
-    inspectionTitle: String? = null
+    inspect: (@Composable (Modifier) -> Unit)? = null
 ) {
     var section by remember { mutableIntStateOf(0) }
     BoxWithConstraints(Modifier.fillMaxSize().then(modifier)) {
@@ -60,22 +60,17 @@ internal fun PlayerSubtitleWorkspace(
                 val openInspect = { if (!landscape && inspect != null) section = sections.indexOf("Inspect") }
                 if (landscape) Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(UiSpacing.comfortable)) {
                     Column(Modifier.weight(if (sections.size == 1) 1f else SubtitlePanelTokens.tracksWeight).fillMaxHeight()) {
-                        Text("Available tracks", style = MaterialTheme.typography.labelLarge)
+                        Text("Available tracks", style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.heightIn(min = UiControlSize.touchTarget).wrapContentHeight(Alignment.CenterVertically))
                         tracks(Modifier.fillMaxSize(), openInspect)
                     }
                     if (inspect != null) Column(Modifier.weight(SubtitlePanelTokens.inspectionWeight).fillMaxHeight()) {
-                        Text(inspectionTitle ?: "Choose a subtitle", style = MaterialTheme.typography.labelLarge,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
                         inspect(Modifier.fillMaxSize())
                     }
                 } else {
                     val contentModifier = Modifier.fillMaxWidth().weight(1f)
                     when (sections.getOrElse(section) { "Tracks" }) {
-                        "Inspect" -> Column(contentModifier) {
-                            Text(inspectionTitle ?: "Choose a subtitle", style = MaterialTheme.typography.labelLarge,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            inspect?.invoke(Modifier.fillMaxWidth().weight(1f))
-                        }
+                        "Inspect" -> inspect?.invoke(contentModifier)
                         else -> tracks(contentModifier, openInspect)
                     }
                 }

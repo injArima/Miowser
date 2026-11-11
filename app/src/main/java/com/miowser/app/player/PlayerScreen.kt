@@ -586,9 +586,8 @@ private fun PlayerContent(
         exoPlayer.pause()
     }
 
-    fun alignSubtitleToCue(cueStartTimeUs: Long) {
-        val anchorMs = subtitleAdjustAnchorMs ?: return
-        val delayMs = subtitleDelayForCue(anchorMs, cueStartTimeUs)
+    fun confirmSubtitleDelay(delayMs: Long) {
+        if (subtitleAdjustAnchorMs == null) return
         trackPreferences = trackPreferences.copy(subtitleDelayMs = delayMs)
         PlayerTrackPreferenceStore.save(context, libraryIdentityKey, trackPreferences)
         finishSubtitleAdjustment()
@@ -1364,7 +1363,7 @@ private fun PlayerContent(
                 subtitleAdjustAnchorMs = subtitleAdjustAnchorMs,
                 onBeginSubtitleAdjust = ::beginSubtitleAdjustment,
                 onCancelSubtitleAdjust = ::finishSubtitleAdjustment,
-                onAlignSubtitleToCue = ::alignSubtitleToCue,
+                onConfirmSubtitleDelay = ::confirmSubtitleDelay,
                 onSubtitleDelayChange = ::updateSubtitleDelay,
                 onDismiss = { trackPanel = null }
             )
@@ -1403,7 +1402,7 @@ private fun PlayerContent(
                     ::selectDetectedSubtitle, effectiveSubtitleStyle, attachedExternalSubtitleUrl,
                     subtitleInspectionError, subtitleInspectionReady, subtitleInspectionCues,
                     subtitleAdjustAnchorMs, ::beginSubtitleAdjustment, ::finishSubtitleAdjustment,
-                    ::alignSubtitleToCue,
+                    ::confirmSubtitleDelay,
                     ::updateSubtitleDelay, { overlays.dismiss() }, panelModifier, initialFocus, embeddedSubtitle?.label)
             }
         }
@@ -2002,7 +2001,7 @@ private fun PlayerSubtitleWorkspaceSheet(
     subtitleAdjustAnchorMs: Long?,
     onBeginSubtitleAdjust: () -> Unit,
     onCancelSubtitleAdjust: () -> Unit,
-    onAlignSubtitleToCue: (Long) -> Unit,
+    onConfirmSubtitleDelay: (Long) -> Unit,
     onDelayChange: (Long) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
@@ -2011,7 +2010,6 @@ private fun PlayerSubtitleWorkspaceSheet(
 ) {
     val chosen = detectedSubtitles.firstOrNull { it.url == attachedUrl }
     PlayerSubtitleWorkspace(onDismiss, modifier, initialFocus,
-        inspectionTitle = chosen?.let(::detectedSubtitleLabel) ?: embeddedSubtitleLabel,
         tracks = { contentModifier, inspect ->
             PlayerSubtitleTrackList(options, detectedSubtitles, selection, chosen,
                 error, ready, { selected ->
@@ -2021,7 +2019,7 @@ private fun PlayerSubtitleWorkspaceSheet(
         }, inspect = { contentModifier ->
             val position = rememberSubtitlePlaybackPosition(player)
             PlayerSubtitleInspectPanel(style, chosen, timeline, error, ready,
-                position, subtitleAdjustAnchorMs, onAlignSubtitleToCue, onDelayChange,
+                position, subtitleAdjustAnchorMs, onConfirmSubtitleDelay, onDelayChange,
                 onBeginSubtitleAdjust, onCancelSubtitleAdjust, contentModifier, embeddedSubtitleLabel)
         })
 }
@@ -2106,7 +2104,7 @@ private fun PlayerTrackSelectionSheet(
     subtitleAdjustAnchorMs: Long?,
     onBeginSubtitleAdjust: () -> Unit,
     onCancelSubtitleAdjust: () -> Unit,
-    onAlignSubtitleToCue: (Long) -> Unit,
+    onConfirmSubtitleDelay: (Long) -> Unit,
     onSubtitleDelayChange: (Long) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -2116,7 +2114,7 @@ private fun PlayerTrackSelectionSheet(
             subtitleStyle, attachedExternalSubtitleUrl, externalSubtitleError,
             externalSubtitleReady, externalSubtitleCues,
             subtitleAdjustAnchorMs, onBeginSubtitleAdjust, onCancelSubtitleAdjust,
-            onAlignSubtitleToCue,
+            onConfirmSubtitleDelay,
             onSubtitleDelayChange, onDismiss, embeddedSubtitleLabel = embeddedSubtitleLabel
         )
         return

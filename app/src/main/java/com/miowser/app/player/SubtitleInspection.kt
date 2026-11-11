@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,6 +33,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.res.ResourcesCompat
 import androidx.lifecycle.Lifecycle
@@ -87,12 +92,13 @@ internal fun PlayerSubtitleInspectPanel(
     ready: Boolean,
     playbackPositionMs: State<Long?>,
     subtitleAdjustAnchorMs: Long?,
-    onAlignSubtitleToCue: (Long) -> Unit,
+    onConfirmSubtitleDelay: (Long) -> Unit,
     onDelayChange: (Long) -> Unit,
     onBeginAdjust: () -> Unit,
     onCancelAdjust: () -> Unit,
     modifier: Modifier,
-    embeddedSubtitleLabel: String? = null
+    embeddedSubtitleLabel: String? = null,
+    inspectionTitle: String? = null
 ) {
     val entries = remember(timeline) { timeline.filter { it.cues.isNotEmpty() } }
     val focus by remember(entries, style.delayMs, playbackPositionMs) {
@@ -103,6 +109,10 @@ internal fun PlayerSubtitleInspectPanel(
     var previewIndex by remember(chosen?.url, embeddedSubtitleLabel, timeline) { mutableIntStateOf(-1) }
     var pressedIndex by remember(timeline) { mutableIntStateOf(-1) }
     var lastFollowedIndex by remember(timeline) { mutableIntStateOf(-1) }
+    val sourceKey = chosen?.url ?: embeddedSubtitleLabel
+    var delayDraft by remember(sourceKey, subtitleAdjustAnchorMs, style.delayMs) {
+        mutableStateOf(SubtitleDelayDraft(style.delayMs.toString()))
+    }
     val motion = LocalMotionPolicy.current
     val viewportHeight by remember { derivedStateOf { list.layoutInfo.viewportSize.height } }
     val fallbackRowHeight = with(LocalDensity.current) { UiControlSize.touchTarget.roundToPx() }
@@ -124,7 +134,7 @@ internal fun PlayerSubtitleInspectPanel(
     }
     LaunchedEffect(focus.activeIndex) { previewIndex = -1 }
     LaunchedEffect(entries, focus.anchorIndex, followPlayback, subtitleAdjustAnchorMs, viewportHeight, anchorRowHeight, motion.reduced) {
-        if (!followPlayback || subtitleAdjustAnchorMs != null || focus.anchorIndex < 0 || viewportHeight <= 0) return@LaunchedEffect
+        if (!followPlayback || focus.anchorIndex < 0 || viewportHeight <= 0) return@LaunchedEffect
         val target = focus.anchorIndex
         val rowHeight = anchorRowHeight ?: fallbackRowHeight
         val offset = subtitleInspectionScrollOffset(viewportHeight, rowHeight, SubtitlePanelTokens.cueAnchorFraction)
@@ -139,6 +149,24 @@ internal fun PlayerSubtitleInspectPanel(
     val accent = subtitleOverlayAccent()
     val preview = entries.getOrNull(if (previewIndex >= 0) previewIndex else focus.activeIndex)?.cues.orEmpty()
     Column(modifier, verticalArrangement = Arrangement.spacedBy(UiSpacing.xs)) {
+        Row(Modifier.fillMaxWidth().heightIn(min = UiControlSize.touchTarget), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(UiSpacing.xs)) {
+            Text(inspectionTitle ?: chosen?.let(::detectedSubtitleLabel) ?: embeddedSubtitleLabel ?: "Choose a subtitle",
+                modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            SubtitleInspectionPlaybackTime(playbackPositionMs)
+            if (!followPlayback && hasTrack && ready && entries.isNotEmpty()) {
+                FilledTonalIconButton(onClick = {
+                    lastFollowedIndex = -1
+                    previewIndex = -1
+                    followPlayback = true
+                }, colors = IconButtonDefaults.filledTonalIconButtonColors(
+                    containerColor = accent.copy(alpha = SubtitlePanelTokens.controlContainerAlpha).compositeOver(PlayerUiColors.panel),
+                    contentColor = accent)) {
+                    Icon(Icons.Rounded.Refresh, "Follow playback")
+                }
+            }
+        }
         val status = when {
             error != null -> error
             !hasTrack -> "Choose a subtitle track to inspect"
@@ -148,14 +176,10 @@ internal fun PlayerSubtitleInspectPanel(
         }
         if (status != null) Text(status, style = MaterialTheme.typography.bodySmall,
             color = PlayerUiColors.content.copy(alpha = SubtitlePanelTokens.secondaryContentAlpha))
-        PlayerSubtitleTimingControls(style.delayMs, onDelayChange, subtitleAdjustAnchorMs,
-            pressedIndex.takeIf { it >= 0 }?.let { entries[it].startTimeUs },
-            hasTrack && ready && entries.isNotEmpty(), !followPlayback,
-            onBeginAdjust, onCancelAdjust, onFollow = {
-                lastFollowedIndex = -1
-                previewIndex = -1
-                followPlayback = true
-            }, sourceKey = chosen?.url ?: embeddedSubtitleLabel)
+        PlayerSubtitleTimingControls(style.delayMs, delayDraft, { delayDraft = it }, onDelayChange,
+            onConfirmSubtitleDelay, subtitleAdjustAnchorMs,
+            entries.getOrNull(pressedIndex)?.startTimeUs,
+            hasTrack && ready && entries.isNotEmpty(), onBeginAdjust, onCancelAdjust, sourceKey)
         if (preview.any { it.bitmap != null }) {
             SubtitleCuePreview(style, preview, Modifier.fillMaxWidth().height(SubtitlePanelTokens.inspectionPreviewHeight)
                 .clip(MaterialTheme.shapes.medium).background(PlayerUiColors.subtitlePreview))
@@ -185,11 +209,15 @@ internal fun PlayerSubtitleInspectPanel(
                     DisposableEffect(index) {
                         onDispose { if (pressedIndex == index) pressedIndex = -1 }
                     }
-                    SegmentedListItem(selected = index == focus.activeIndex, onClick = {
+                    SegmentedListItem(selected = if (subtitleAdjustAnchorMs != null) delayDraft.cueStartUs == entry.startTimeUs
+                        else index == focus.activeIndex, onClick = {
                         previewIndex = index
                         followPlayback = false
-                        if (subtitleAdjustAnchorMs != null) onAlignSubtitleToCue(entry.startTimeUs)
+                        if (subtitleAdjustAnchorMs != null) delayDraft = delayDraft.selectCue(subtitleAdjustAnchorMs, entry.startTimeUs)
                     }, shapes = ListItemDefaults.segmentedShapes(index, entries.size),
+                        // Consume long presses as previews, so releasing cannot confirm or select a cue.
+                        onLongClick = if (subtitleAdjustAnchorMs != null) ({ previewIndex = index }) else null,
+                        onLongClickLabel = if (subtitleAdjustAnchorMs != null) "Preview delay" else null,
                         modifier = Modifier.fillMaxWidth().testTag("subtitle_cue_$index"),
                         interactionSource = interaction,
                         colors = ListItemDefaults.segmentedColors(
@@ -215,3 +243,12 @@ internal fun PlayerSubtitleInspectPanel(
 
 private const val MAX_ANIMATED_CUE_DISTANCE = 3
 private val SUBTITLE_NAVIGATION_KEYS = setOf(Key.DirectionDown, Key.DirectionUp, Key.PageDown, Key.PageUp, Key.MoveHome, Key.MoveEnd)
+
+@Composable
+private fun SubtitleInspectionPlaybackTime(positionMs: State<Long?>) {
+    val seconds by remember(positionMs) { derivedStateOf { positionMs.value?.div(1_000L) } }
+    Text(seconds?.let { formatPlayerTime(it * 1_000L) } ?: "--:--",
+        modifier = Modifier.semantics { contentDescription = "Video playback time" },
+        style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace,
+        color = PlayerUiColors.content)
+}

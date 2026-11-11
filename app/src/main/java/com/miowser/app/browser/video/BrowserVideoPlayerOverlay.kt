@@ -200,9 +200,9 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
         resumeAfterSubtitleAdjust = playback.session?.state?.playing == true
         if (resumeAfterSubtitleAdjust) controller.pause()
     }
-    fun alignSubtitleToCue(cueStartTimeUs: Long) {
-        val anchorMs = subtitleAdjustAnchorMs ?: return
-        subtitleDelayMs = subtitleDelayForCue(anchorMs, cueStartTimeUs)
+    fun confirmSubtitleDelay(delayMs: Long) {
+        if (subtitleAdjustAnchorMs == null) return
+        subtitleDelayMs = delayMs
         finishSubtitleAdjustment()
     }
     LaunchedEffect(overlays.target, subtitleAdjustAnchorMs) {
@@ -472,10 +472,6 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                 }
             }) { _, panelModifier, initialFocus ->
                 PlayerSubtitleWorkspace({ overlays.dismiss() }, panelModifier, initialFocus,
-                    inspectionTitle = selectedDetectedSubtitle?.let(::detectedSubtitleLabel)
-                        ?: video.captions.withIndex().firstOrNull { it.value.selected }?.let {
-                            it.value.displayLabel("Subtitle", it.index)
-                        },
                     tracks = { contentModifier, inspect ->
                         LazyColumn(contentModifier) {
                             state.message?.let { item("error") { Text(it, color = MaterialTheme.colorScheme.error) } }
@@ -525,9 +521,12 @@ private fun BrowserVideoControlsContent(controller: BrowserPlaybackControls, sta
                         PlayerSubtitleInspectPanel(effectiveSubtitleStyle, selectedDetectedSubtitle,
                             externalSubtitleCues, externalSubtitleError,
                             !externalSubtitleLoading && externalSubtitleCues.isNotEmpty(),
-                            position, subtitleAdjustAnchorMs, ::alignSubtitleToCue,
+                            position, subtitleAdjustAnchorMs, ::confirmSubtitleDelay,
                             { subtitleDelayMs = it }, ::beginSubtitleAdjustment, ::finishSubtitleAdjustment,
-                            contentModifier)
+                            contentModifier, inspectionTitle = selectedDetectedSubtitle?.let(::detectedSubtitleLabel)
+                                ?: video.captions.withIndex().firstOrNull { it.value.selected }?.let {
+                                    it.value.displayLabel("Subtitle", it.index)
+                                })
                     })
             }
         })

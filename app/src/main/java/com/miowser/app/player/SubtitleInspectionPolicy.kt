@@ -30,3 +30,16 @@ internal fun parseSubtitleDelay(input: String): Long? = input.toLongOrNull()
     ?.coerceIn(-MAX_SUBTITLE_DELAY_MS, MAX_SUBTITLE_DELAY_MS)
 
 internal fun subtitleDelayLabel(delayMs: Long): String = "${if (delayMs > 0) "+" else ""}$delayMs ms"
+
+/** Editing and cue previews never change playback or persisted timing until confirmation. */
+internal data class SubtitleDelayDraft(val input: String, val cueStartUs: Long? = null) {
+    val valueMs: Long? get() = parseSubtitleDelay(input)
+
+    fun selectCue(anchorMs: Long, startUs: Long): SubtitleDelayDraft =
+        SubtitleDelayDraft(subtitleDelayForCue(anchorMs, startUs).toString(), startUs)
+
+    fun edit(value: String): SubtitleDelayDraft = SubtitleDelayDraft(value)
+
+    fun step(deltaMs: Long): SubtitleDelayDraft =
+        SubtitleDelayDraft(((valueMs ?: 0L) + deltaMs).coerceIn(-MAX_SUBTITLE_DELAY_MS, MAX_SUBTITLE_DELAY_MS).toString())
+}

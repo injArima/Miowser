@@ -154,7 +154,10 @@ object SubtitlePanelTokens {
     const val secondaryContentAlpha = 0.7f
     val cueTimeWidth = 48.dp
     val cueGap = UiSpacing.xxs
-    val delayEditorInlineWidth = 320.dp
+    val delayEditorFieldWidth = 112.dp
+    val delayHelpMaxWidth = 300.dp
+    val delayHelpOffset = UiControlSize.touchTarget
+    const val delayHelpDurationMs = 8_000L
     const val tracksWeight = 0.28f
     const val inspectionWeight = 0.72f
     const val previewTextFraction = 0.12f

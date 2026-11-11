@@ -54,4 +54,36 @@ class SubtitleInspectionPolicyTest {
         assertEquals("+50 ms", subtitleDelayLabel(50))
         assertEquals("-50 ms", subtitleDelayLabel(-50))
     }
+
+    @Test
+    fun `assisted selections replace the proposed delay without changing the saved draft`() {
+        val original = SubtitleDelayDraft("250")
+        val first = original.selectCue(5_000, 4_000_000)
+        val second = first.selectCue(5_000, 6_000_000)
+        assertEquals(250L, original.valueMs)
+        assertEquals(1_000L, first.valueMs)
+        assertEquals(-1_000L, second.valueMs)
+        assertEquals(6_000_000L, second.cueStartUs)
+    }
+
+    @Test
+    fun `held cue preview leaves the pending selection unchanged on release`() {
+        val pending = SubtitleDelayDraft("0").selectCue(8_000, 7_000_000)
+        val preview = pending.selectCue(8_000, 9_000_000)
+        assertEquals(-1_000L, preview.valueMs)
+        assertEquals(1_000L, pending.valueMs)
+        assertEquals(7_000_000L, pending.cueStartUs)
+    }
+
+    @Test
+    fun `manual edits and steps replace cue selection and remain bounded`() {
+        val selected = SubtitleDelayDraft("0").selectCue(5_000, 4_000_000)
+        assertEquals(950L, selected.step(-50).valueMs)
+        assertNull(selected.step(-50).cueStartUs)
+        assertEquals(-125L, selected.edit("-125").valueMs)
+        assertNull(selected.edit("-125").cueStartUs)
+        assertNull(selected.edit("-").valueMs)
+        assertEquals(MAX_SUBTITLE_DELAY_MS, SubtitleDelayDraft(MAX_SUBTITLE_DELAY_MS.toString()).step(50).valueMs)
+        assertEquals(-MAX_SUBTITLE_DELAY_MS, SubtitleDelayDraft((-MAX_SUBTITLE_DELAY_MS).toString()).step(-50).valueMs)
+    }
 }
