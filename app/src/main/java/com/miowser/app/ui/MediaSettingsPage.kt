@@ -115,7 +115,7 @@ internal fun MediaSettingsPage(
         }
         SettingsSection("Video") {
             SettingRow("Background playback",
-                "Keep headphone mode playing when Miowser is minimized or the screen is off.",
+                "Keep webpage audio and headphone mode playing when Miowser is minimized or the screen is off.",
                 settings.backgroundPlaybackEnabled) { enabled ->
                 AppSettings.update(context) { it.copy(backgroundPlaybackEnabled = enabled) }
             }

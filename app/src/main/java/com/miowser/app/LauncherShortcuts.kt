@@ -26,5 +26,7 @@ data class LauncherShortcutRequest(
     val action: String,
     val url: String? = null,
     val query: String? = null,
-    val localVideo: Uri? = null
+    val localVideo: Uri? = null,
+    /** Process-local media notification target, validated before constructing this request. */
+    val tabId: Long? = null
 )

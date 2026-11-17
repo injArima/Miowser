@@ -47,6 +47,8 @@ import com.miowser.app.grabber.GrabberBridge
 import com.miowser.app.grabber.MediaProbe
 import com.miowser.app.grabber.installVideoSnifferScript
 import com.miowser.app.browser.video.LiveVideoTracker
+import com.miowser.app.browser.media.PageMediaCoordinator
+import com.miowser.app.browser.media.PageMediaTracker
 import com.miowser.app.browser.video.FullscreenCallbackLease
 import com.miowser.app.browser.video.VideoAssistantButtonPolicy
 import com.miowser.app.browser.video.BrowserVideoController
@@ -216,6 +218,7 @@ class Tab(
     private var grabberBridge: GrabberBridge? = null
     private var elementPickerBridge: ElementPickerBridge? = null
     private var liveVideoTracker: LiveVideoTracker? = null
+    private var pageMediaTracker: PageMediaTracker? = null
     internal val browserVideoPlayer = BrowserVideoController()
     internal var companionVideoKey by mutableStateOf<com.miowser.app.browser.video.CompanionVideoKey?>(null)
         private set
@@ -377,6 +380,7 @@ class Tab(
         detectionGeneration.incrementAndGet()
         grabberBridge?.reset()
         liveVideoTracker?.onNavigationStarted()
+        pageMediaTracker?.onNavigationStarted()
         hasPlayingMedia = false
         probeHandles.toList().forEach { it.cancel() }
         probeHandles.clear()
@@ -503,7 +507,8 @@ class Tab(
 
     /** Invalidates page-bound bridge tokens before releasing the underlying WebView. */
     internal val canRetireEngine: Boolean get() = !destroyed && !rendererUnavailable &&
-        !isLoading && !hasPlayingMedia && rendererTransferCount == 0 && popupProxies.isEmpty() &&
+        !isLoading && !hasPlayingMedia && !PageMediaCoordinator.keepsRenderer(id) &&
+        rendererTransferCount == 0 && popupProxies.isEmpty() &&
         com.miowser.app.downloader.DownloadQueue.downloads.none {
             it.kind == com.miowser.app.downloader.DownloadKind.WEBVIEW_RESOURCE &&
                 it.rendererTransfer != null && it.pageUrl == url &&
@@ -836,6 +841,12 @@ class Tab(
                         android.widget.Toast.LENGTH_LONG).show()
                 }).also { it.install() }
 
+            pageMediaTracker = PageMediaTracker(this@Tab.id, this, isPrivate,
+                onChanged = PageMediaCoordinator::changed).also { tracker ->
+                PageMediaCoordinator.register(tabContext, tracker)
+                tracker.install()
+            }
+
             // A deliberate depth threshold: ordinary small scrolls should not grow another floating
             // control over the page. One visible WebView height is an intuitive "about one screen"
             // threshold and naturally adapts to portrait, landscape, and split-screen layouts.
@@ -966,7 +977,10 @@ class Tab(
                     }
                 },
                 onNewPageStarted = { clearDetections() },
-                onPageCommitted = { liveVideoTracker?.onPageCommitted() },
+                onPageCommitted = {
+                    liveVideoTracker?.onPageCommitted()
+                    pageMediaTracker?.onPageCommitted()
+                },
                 onPageStarted = {
                     isLoading = true
                     pageError = null
@@ -1039,6 +1053,7 @@ class Tab(
                 onPageLoadFinished = { loadedUrl, loadedTitle ->
                     isLoading = false
                     liveVideoTracker?.onPageCommitted()
+                    pageMediaTracker?.onPageCommitted()
                     if (isDesktopMode && desktopViewportScript == null) {
                         view.applyDesktopViewportNow()
                     }
@@ -1067,6 +1082,11 @@ class Tab(
                 grabberBridge?.retire()
                 liveVideoTracker?.retire()
                 liveVideoTracker = null
+                pageMediaTracker?.let { tracker ->
+                    PageMediaCoordinator.unregister(tracker)
+                    tracker.retire()
+                }
+                pageMediaTracker = null
                 client.retire()
                 bridge.retire("The originating page is no longer available. Reload it and start the download again.")
                 permissionRequests.toList().forEach { request ->
@@ -1329,6 +1349,8 @@ class Tab(
 
     /** Stops page-owned media before Miowser's rich player takes over audio/video playback. */
     fun pausePageMedia() {
+        // The system-media owner can live in a cross-origin frame, outside querySelectorAll.
+        pageMediaTracker?.command("pause")
         liveWebView?.evaluateJavascript(
             """
             (() => {

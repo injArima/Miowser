@@ -113,6 +113,7 @@ import com.miowser.app.adblock.SiteElementRule
 import com.miowser.app.adblock.ElementRuleAction
 import com.miowser.app.bookmarks.BookmarkList
 import com.miowser.app.browser.video.VideoAssistantButtonPolicy
+import com.miowser.app.browser.media.PageMediaCoordinator
 import com.miowser.app.browser.video.NativeVideoAssistantDisplay
 import com.miowser.app.browser.video.releaseVideoAssistantHost
 import com.miowser.app.browser.video.BrowserVideoPlayerOverlay
@@ -1267,6 +1268,8 @@ fun BrowserScreen(
         val request = shortcutRequest ?: return@LaunchedEffect
         if (request.localVideo != null || !recordsReady) return@LaunchedEffect
         when (request.action) {
+            com.miowser.app.browser.video.BrowserPlaybackService.ACTION_OPEN_PAGE ->
+                request.tabId?.takeIf { id -> tabs.any { it.id == id } }?.let { activeTabId = it }
             com.miowser.app.LauncherShortcuts.NEW_TAB ->
                 activeTabId = createAndInsertTab(configuredBrowserHomeTarget(), null).id
             Intent.ACTION_VIEW -> request.url?.let { url ->
@@ -1996,7 +1999,7 @@ fun BrowserScreen(
             if (tab.id == id) {
                 tab.liveWebView?.onResume()
                 tab.liveWebView?.requestFocus()
-            } else {
+            } else if (!PageMediaCoordinator.keepsRenderer(tab.id)) {
                 tab.liveWebView?.onPause()
             }
         }
@@ -4005,7 +4008,16 @@ fun BrowserScreen(
     // WebView.onPause can suspend JavaScript), then pause the WebView itself. Returning from the
     // player resumes the WebView engine but leaves the page's media element paused so two players
     // cannot immediately begin speaking at once.
+    SideEffect {
+        PageMediaCoordinator.configure(backgroundPlaybackEnabled,
+            suppressed = playbackRequest != null || fullscreenVideo != null,
+            pauseForNative = playbackRequest != null, tabIds = tabs.map { it.id }.toSet(),
+            fullscreenTabId = fullscreenVideo?.tabId,
+            fullscreenAudioTabId = fullscreenVideo?.tabId.takeIf { browserVideoAudioOnly && playbackRequest == null })
+    }
+    val pageMediaRetainedTabs = tabs.map { it.id to PageMediaCoordinator.keepsRenderer(it.id) }
     LaunchedEffect(activeTabId, showingHub, playbackRequest, companionTabId, fullscreenVideo, startupReady, activeScreen,
+        pageMediaRetainedTabs,
         activeTab?.isShowingHome, activeTab?.rendererUnavailable, rendererTransferActivity) {
         if (startupReady && !showingHub && activeScreen == null && playbackRequest == null &&
             activeTab != null && !activeTab.rendererUnavailable) {
@@ -4018,10 +4030,11 @@ fun BrowserScreen(
         tabs.forEach { tab ->
             val visibleBrowser = !showingHub && activeScreen == null &&
                 playbackRequest == null && tab.id == activeTabId
-            val shouldRunBrowser = visibleBrowser || tab.id == companionTabId ||
+            val keepPageMedia = PageMediaCoordinator.keepsRenderer(tab.id)
+            val shouldRunBrowser = visibleBrowser || keepPageMedia || tab.id == companionTabId ||
                 tab.id == fullscreenVideo?.tabId || tab.rendererTransferCount > 0
             if (shouldRunBrowser) {
-                if (!visibleBrowser && tab.id != companionTabId && tab.id != fullscreenVideo?.tabId)
+                if (!visibleBrowser && !keepPageMedia && tab.id != companionTabId && tab.id != fullscreenVideo?.tabId)
                     tab.pausePageMedia()
                 tab.liveWebView?.onResume()
             } else {
@@ -4094,6 +4107,7 @@ fun BrowserScreen(
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_RESUME -> {
+                    PageMediaCoordinator.setForeground(true)
                     videoButtonForeground = true
                     tabController.onForeground()
                     if (!showingHub && activeScreen == null && playbackRequest == null) {
@@ -4102,6 +4116,7 @@ fun BrowserScreen(
                     tabs.forEach { it.resumeBrowserVideoHost() }
                 }
                 Lifecycle.Event.ON_PAUSE -> {
+                    PageMediaCoordinator.setForeground(false)
                     videoButtonForeground = false
                     if (!showingHub) tabs.firstOrNull { it.id == activeTabId }?.markActive()
                     val pipOwner = (context.findBrowserActivity() as? com.miowser.app.MainActivity)?.browserVideoPipOwner
@@ -4110,7 +4125,7 @@ fun BrowserScreen(
                             fullscreenVideo?.tabId, tab.id, tab.browserVideoPlayer.state.value)
                         val keepForPip = keepBrowserRendererForPip(pipOwner, fullscreenVideo?.tabId, tab.id, tab.browserVideoPlayer.state.value)
                         if (!keepForAudio) tab.pauseBrowserVideoHost(keepForPip)
-                        if (keepForPip || keepForAudio) {
+                        if (keepForPip || keepForAudio || PageMediaCoordinator.keepsRenderer(tab.id)) {
                             tab.liveWebView?.onResume()
                         } else tab.liveWebView?.onPause()
                     }

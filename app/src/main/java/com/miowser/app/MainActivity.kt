@@ -123,7 +123,11 @@ class MainActivity : ComponentActivity() {
 
     private fun receiveShortcut(intent: Intent?) {
         val action = intent?.action
-        if (LauncherShortcuts.isSupported(action)) {
+        val mediaTab = intent?.let(com.miowser.app.browser.video.BrowserPlaybackService::notificationTab)
+        if (mediaTab != null) {
+            shortcutRequest = LauncherShortcutRequest(++shortcutSequence,
+                com.miowser.app.browser.video.BrowserPlaybackService.ACTION_OPEN_PAGE, tabId = mediaTab)
+        } else if (LauncherShortcuts.isSupported(action)) {
             shortcutRequest = LauncherShortcutRequest(++shortcutSequence, requireNotNull(action))
         } else if (action == Intent.ACTION_VIEW) {
             val data = intent.data
