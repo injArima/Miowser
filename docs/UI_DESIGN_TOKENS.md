@@ -1,5 +1,11 @@
 # Miowser UI design tokens
 
+For theme source colors, component color usage, and editing locations, see the
+[theme color reference](THEME_COLOR_REFERENCE.md). Each custom theme has four
+input slots (three accents and one neutral), producing 44 non-error Material
+roles. The four shared semantic error/delete roles are excluded from that count
+and should remain separate from ordinary palette changes.
+
 The Compose UI uses these shared values. Changes to a token update its consumers together. The component values below apply to the browser, hub, settings, sheets, and other non-player UI. The migration preserves existing measurements and colors.
 
 Brand typography is centralized in `BrandTypography` in `Type.kt`: the name
