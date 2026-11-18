@@ -1,7 +1,6 @@
 package com.miowser.app.adblock
 
 import android.content.Context
-import android.util.Log
 import android.webkit.WebResourceResponse
 import java.net.URI
 import java.util.concurrent.Executors
@@ -19,6 +18,7 @@ class AdBlockEngine {
         val origins: FilterRuleOrigins = FilterRuleOrigins()
     ) {
         @Volatile var domainIndex: MappedDomainIndex? = null
+        var readyStatus = "Saved filter selection active"
         val decisions = BoundedFilterCache<DecisionKey, FilterDecision>(2_048, 1_048_576) { key, _ ->
             (key.page.length + key.host.length + key.url.length) * 2 + 64
         }
@@ -31,11 +31,10 @@ class AdBlockEngine {
     }
     val loadStatus = kotlinx.coroutines.flow.MutableStateFlow("Basic protection active; preparing filter lists")
     val revision = kotlinx.coroutines.flow.MutableStateFlow(0L)
-    private var startupScheduled = false
     @Volatile private var installedFingerprint: String? = null
     private val publicationLock = Any()
-    private var requestedGeneration = 0L
     @Volatile private var state = stateWithCuratedFallback().also { it.origins.freeze() }
+    /** Installed saved selection, with an EasyList baseline when selected; missing downloads are reported. */
     @Volatile var isFullyLoaded: Boolean = false
         private set
     @Volatile var lastReloadError: String? = null
@@ -43,45 +42,57 @@ class AdBlockEngine {
 
     fun loadEasyListInBackground(context: Context) = reloadInBackground(context)
 
-    /** Schedule once per process. The browser never waits for parsing or network updates. */
+    private val readiness = FilterReadiness({ isFullyLoaded }, { requestReload(checkNotNull(startupContext)) }, { lastReloadError })
+    @Volatile private var startupContext: Context? = null
+
+    /** Start saved restoration off-main; no network refresh is part of readiness. */
     fun start(context: Context) {
-        synchronized(publicationLock) {
-            if (startupScheduled || isFullyLoaded) return
-            startupScheduled = true
-            reloadInBackground(context)
+        if (isFullyLoaded) return
+        startupContext = context.applicationContext
+        readiness.start()
+    }
+
+    /** A usable saved generation is required before the first protected navigation. */
+    suspend fun awaitReady(context: Context) {
+        if (isFullyLoaded || !com.miowser.app.settings.AppSettings.current.adBlockEnabled) return
+        startupContext = context.applicationContext
+        try {
+            readiness.awaitWhileEnabled(androidx.compose.runtime.snapshotFlow {
+                com.miowser.app.settings.AppSettings.current.adBlockEnabled
+            })
+        }
+        catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (error: Exception) {
+            if (!isFullyLoaded) {
+                lastReloadError = error.message ?: "Saved filter loading failed; retry browser preparation"
+                loadStatus.value = lastReloadError!!
+            }
+            throw error
         }
     }
 
-    private class Reload(val inputs: Pair<Long, String>, @Volatile var generation: Long,
-        val receipt: java.util.concurrent.CompletableFuture<Boolean> = java.util.concurrent.CompletableFuture())
+    private class Reload(val inputs: Pair<Long, String>)
     private val preparing = Executors.newSingleThreadExecutor { Thread(it, "adblock-inputs") }
-    private val inFlight = mutableMapOf<Pair<Long, String>, Reload>()
+    private val builds = SharedFilterBuilds<Pair<Long, String>>(reloadExecutor)
 
     private fun requestReload(context: Context): java.util.concurrent.CompletableFuture<Boolean> {
-        val generation = synchronized(publicationLock) { ++requestedGeneration }
         val receipt = java.util.concurrent.CompletableFuture<Boolean>()
         val app = context.applicationContext
         preparing.execute {
             try {
                 val inputs = AdBlockFilters.stableInputs(app)
-                val (reload, created) = synchronized(publicationLock) {
-                    val existing = inFlight[inputs]
-                    if (existing != null) {
-                        existing.generation = maxOf(existing.generation, generation)
-                        existing to false
-                    } else Reload(inputs, generation).also { inFlight[inputs] = it } to true
-                }
-                reload.receipt.whenComplete { value, error ->
+                builds.submit(inputs) { rebuild(app, Reload(inputs)) }.whenComplete { value, error ->
                     if (error != null) receipt.completeExceptionally(error) else receipt.complete(value)
                 }
-                if (created) reloadExecutor.execute {
-                    val success = runCatching { rebuild(app, reload) }.getOrDefault(false)
-                    synchronized(publicationLock) {
-                        if (inFlight[inputs] === reload) inFlight.remove(inputs)
-                    }
-                    reload.receipt.complete(success)
-                }
-            } catch (_: Exception) { receipt.complete(false) }
+            } catch (error: OutOfMemoryError) {
+                lastReloadError = "Not enough memory to read saved filter inputs; retry browser preparation"
+                loadStatus.value = lastReloadError!!
+                receipt.completeExceptionally(IllegalStateException(lastReloadError, error))
+            } catch (error: Exception) {
+                lastReloadError = error.message ?: "Could not read saved filter inputs"
+                loadStatus.value = lastReloadError!!
+                receipt.complete(false)
+            }
         }
         return receipt
     }
@@ -94,11 +105,14 @@ class AdBlockEngine {
         requestReload(context).whenComplete { loaded, error -> onComplete(error == null && loaded == true) }
     }
 
-    /** Fingerprint preparation and parsing have different owners; callers never block either. */
-    internal fun reloadNow(context: Context): Boolean = requestReload(context).get()
+    /** Off-main refresh receipt. False means superseded inputs or a failed candidate, never loss of installed rules. */
+    internal fun reloadNow(context: Context): Boolean {
+        check(android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) { "Filter reload must run off-main" }
+        return requestReload(context).get()
+    }
 
     private fun rebuild(context: Context, reload: Reload): Boolean {
-        if (synchronized(publicationLock) { reload.generation != requestedGeneration }) return false
+        lastReloadError = null
         loadStatus.value = if (isFullyLoaded) "Updating lists; installed protection remains active" else "Basic protection active; loading saved filter cache"
         var builtFingerprint: String? = null
         var needsSnapshot = false
@@ -108,13 +122,14 @@ class AdBlockEngine {
             if (FilterSubscriptionStore.inputRevision.ifCurrent(reload.inputs.first) { true } != true) return false
             if (AdBlockFilters.fingerprint(context) != fingerprint) return false
             if (fingerprint == installedFingerprint && isFullyLoaded) {
-                loadStatus.value = if (state.skippedSources == 0) "Filter lists active"
-                    else "Protection active; ${state.skippedSources} filter list(s) skipped due to limits or errors"
-                return FilterSubscriptionStore.inputRevision.ifCurrent(reload.inputs.first) {
-                    synchronized(publicationLock) { reload.generation == requestedGeneration }
-                } == true
+                loadStatus.value = state.readyStatus
+                return FilterSubscriptionStore.inputRevision.ifCurrent(reload.inputs.first) { true } == true
             }
             builtFingerprint = fingerprint
+            val rows = FilterSubscriptionStore.loadSubscriptions(context).filter { it.enabled }
+            val plan = SavedFilterPlan(rows.mapTo(HashSet()) { it.id }, rows.mapNotNullTo(HashSet()) { row ->
+                runCatching { FilterSubscriptionStore.cachedListFile(context, row.id) }.getOrNull()?.let { row.id }
+            })
             val suffixStart = android.os.SystemClock.elapsedRealtime()
             PublicSuffixDomains.warmUp()
             com.miowser.app.diagnostics.SafeLog.debug(TAG,
@@ -126,45 +141,36 @@ class AdBlockEngine {
             } ?: run {
                 loadStatus.value = if (isFullyLoaded) "Rebuilding changed filter rules; installed protection remains active"
                     else "Basic protection active; building changed filter rules"
-                buildState(context).also { needsSnapshot = true }
-            }
+                buildState(context, plan).also { needsSnapshot = true }
+            }.also { it.readyStatus = plan.status(it.skippedSources) }
         } catch (error: OutOfMemoryError) {
             // Last-resort containment. Normal builds stop at the headroom checks before OOM.
             synchronized(publicationLock) {
-                if (reload.generation == requestedGeneration) {
-                    startupScheduled = false
-                    lastReloadError = "Not enough memory to update filter lists; previous protection retained"
-                    loadStatus.value = lastReloadError!!
-                }
+                lastReloadError = "Not enough memory to update filter lists; previous protection retained"
+                loadStatus.value = lastReloadError!!
             }
             return false
         } catch (error: Exception) {
             synchronized(publicationLock) {
-                if (reload.generation == requestedGeneration) {
-                    startupScheduled = false
-                    lastReloadError = if (error is FilterMemoryPressureException) error.message
-                        else "${error.message ?: "Filter rebuild failed"}; previous protection retained"
-                    loadStatus.value = lastReloadError!!
-                }
+                lastReloadError = if (error is FilterMemoryPressureException) error.message
+                    else "${error.message ?: "Filter rebuild failed"}; previous protection retained"
+                loadStatus.value = lastReloadError!!
             }
             com.miowser.app.diagnostics.SafeLog.error(TAG, "Filter rebuild failed; keeping the installed ruleset", error)
             return false
         }
         if (AdBlockFilters.fingerprint(context) != builtFingerprint) return false
         val applied = FilterSubscriptionStore.inputRevision.ifCurrent(reload.inputs.first) { synchronized(publicationLock) {
-            if (reload.generation != requestedGeneration) false else {
-                state = built
-                installedFingerprint = builtFingerprint
-                isFullyLoaded = true
-                lastReloadError = null
-                loadStatus.value = if (built.skippedSources == 0) "Filter lists active"
-                    else "Protection active; ${built.skippedSources} filter list(s) skipped due to limits or errors"
-                revision.value = revision.value + 1
-                true
-            }
+            state = built
+            installedFingerprint = builtFingerprint
+            isFullyLoaded = true
+            lastReloadError = null
+            loadStatus.value = built.readyStatus
+            revision.value = revision.value + 1
+            true
         } } == true
         // Activate the rules before paying disk serialization cost. Cache writes are optional.
-        if (applied) {
+        if (applied) reloadExecutor.execute {
             val fingerprint = builtFingerprint
             if (AdBlockFilters.fingerprint(context) == fingerprint) {
                 if (needsSnapshot) runCatching { writeSnapshot(context, fingerprint, built) }
@@ -177,8 +183,16 @@ class AdBlockEngine {
         return applied
     }
 
-    private fun buildState(context: Context): EngineState {
+    private fun buildState(context: Context, plan: SavedFilterPlan): EngineState = buildSavedFilterCandidate(
+        hasWorkingGeneration = { isFullyLoaded },
+        onSkipped = { error -> com.miowser.app.diagnostics.SafeLog.warning(TAG,
+            "Skipping saved source ${error.id}; rebuilding with bundled baseline", error) }
+    ) { excluded -> buildState(context, plan, excluded) }
+
+    private fun buildState(context: Context, plan: SavedFilterPlan, excluded: Set<String>): EngineState {
         val built = stateWithCuratedFallback()
+        built.skippedSources = excluded.size
+        var baselineLoaded = false
         var networkCount = CuratedFallbackList.RULES.size
         var cosmeticCount = 0
         var skipped = 0
@@ -186,9 +200,12 @@ class AdBlockEngine {
         val cosmeticsSeen = HashSet<CosmeticRule>().apply { addAll(built.cosmeticGeneric) }
         cosmeticCount = cosmeticsSeen.size
         AdBlockFilters.forEachEnabledSource(context) { source ->
+            if (source.source != FilterSource.MANUAL && source.id !in plan.enabledIds) return@forEachEnabledSource
+            if (source.id in excluded && source.id != EASYLIST_ID) return@forEachEnabledSource
             val origin = built.origins.register(FilterRuleSource(source.id, source.label, source.url))
             val parsed = try {
-                source.open().use { reader ->
+                (if (source.id == EASYLIST_ID && source.id in excluded)
+                    context.assets.open("easylist.txt").bufferedReader() else source.open()).use { reader ->
                     FilterListParser.scan(reader, source.source,
                         acceptLine = { line -> accumulator.accept(line, source.source, origin) },
                         onNetwork = { rule -> accumulator.add(rule, origin); networkCount++ },
@@ -200,14 +217,16 @@ class AdBlockEngine {
                 catch (error: FilterMemoryPressureException) { throw error }
                 // A bad archive can fail at EOF, after some rules were delivered. Never publish
                 // that partial generation; reload retains the previously installed protection.
-                catch (error: FilterSourceIntegrityException) { throw error }
                 catch (error: Exception) {
-                    built.skippedSources++
-                    com.miowser.app.diagnostics.SafeLog.warning(TAG, "Skipping ${source.label}: ${error.message}")
-                    return@forEachEnabledSource
+                    throw UnreadableSavedFilter(source.id, error)
                 }
+            if (source.id == EASYLIST_ID) {
+                if (parsed.networkRules == 0) throw UnreadableSavedFilter(source.id, IllegalStateException("EasyList baseline is empty"))
+                baselineLoaded = true
+            }
             skipped += parsed.skippedRegex + parsed.skippedMalformed + parsed.skippedUnsupported
         }
+        check(!plan.requiresEasyList || baselineLoaded) { "Saved filter generation has no usable EasyList baseline" }
         // The frequency pass only needs final rule objects; release builder maps first.
         accumulator.release()
         cosmeticsSeen.clear()
@@ -219,7 +238,7 @@ class AdBlockEngine {
         return built
     }
 
-    // Disposable, app-private cache. Schema/install/input changes invalidate it; corruption falls back to streamed sources.
+    // Disposable cache. Format/parser/content changes invalidate it; compatible APK updates do not.
     private fun readSnapshot(context: Context, fingerprint: String): EngineState? = try {
         val file = java.io.File(context.filesDir, "adblock/${CompiledFilterSnapshot.FILE_NAME}")
         if (!file.isFile) return null

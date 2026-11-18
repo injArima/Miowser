@@ -4,6 +4,7 @@ import android.util.Log
 import android.webkit.WebView
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import com.miowser.app.adblock.MusicAdProtection
 
 private const val TAG = "Miowser/DocStart"
 
@@ -43,16 +44,22 @@ private const val COSMETIC_INJECTION_SCRIPT = """
     })();
 """
 
-/** Registers early CSS injection before navigation, with a page-finish fallback. */
+/** Registers the trusted Music resource before page JS, followed by general cosmetic CSS. */
 fun WebView.installCosmeticInjectionScript() {
     if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+        runCatching {
+            WebViewCompat.addDocumentStartJavaScript(this, MusicAdProtection.documentStartScript, setOf("https://music.youtube.com"))
+        }.onFailure {
+            com.miowser.app.diagnostics.SafeLog.warning(TAG, "Music document-start resource unavailable; using page-finish fallback")
+        }
         WebViewCompat.addDocumentStartJavaScript(this, COSMETIC_INJECTION_SCRIPT, setOf("*"))
     } else {
         com.miowser.app.diagnostics.SafeLog.warning(TAG, "DOCUMENT_START_SCRIPT not supported by this WebView provider — using page-finish cosmetic scheduling")
     }
 }
 
-/** Refreshes or removes CSS on an open page when filter settings change. */
+/** Refreshes/removes CSS and reversible Music hooks on an open page after policy changes. */
 fun WebView.applyCosmeticFiltersNow() {
+    evaluateJavascript(MusicAdProtection.documentStartScript, null)
     evaluateJavascript(COSMETIC_INJECTION_SCRIPT, null)
 }

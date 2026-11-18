@@ -613,6 +613,7 @@ fun BrowserScreen(
     fun retireCompanionTabs(ids: Set<Long>) {
         val owned = companionCleanup.ownedCandidates(ids)
         tabs.filter { it.id in owned }.forEach { tab ->
+            tab.cancelPendingNavigation()
             tab.setCompanionTracking(false)
             tab.pausePageMedia()
             tab.liveWebView?.onPause()
@@ -1132,12 +1133,6 @@ fun BrowserScreen(
     var recordRetry by remember { mutableIntStateOf(0) }
     var startupReady by remember { mutableStateOf(false) }
     var browserStartupError by remember { mutableStateOf(false) }
-    val filterRevision by AdBlock.engine.revision.collectAsState()
-    var remindRefreshWhenFiltersReady by remember { mutableStateOf(false) }
-    val defaultFilters = AdBlockFilters.subscriptions.filter { it.isBuiltIn }
-    val defaultFiltersReady = defaultFilters.size == 3 && defaultFilters.all {
-        it.networkRuleCount + it.cosmeticRuleCount > 0
-    } && AdBlock.engine.isFullyLoaded
     var browserRetry by remember { mutableIntStateOf(0) }
     var browserRequested by remember { mutableStateOf(!showingHub) }
     var libraryIdle by remember { mutableStateOf(false) }
@@ -1151,10 +1146,6 @@ fun BrowserScreen(
         playbackRequest = null
         playbackFromLibrary = false
         showOverflowMenu = false
-    }
-    LaunchedEffect(showingHub) {
-        if (!showingHub && AppSettings.current.adBlockEnabled && !defaultFiltersReady)
-            remindRefreshWhenFiltersReady = true
     }
     // Only after a rendered, settled Library; stop issuing stages when it is hidden/busy.
     LaunchedEffect(libraryIdle, recordsReady, showingHub, hubSection, deviceVideosSelected, playbackRequest,
@@ -1297,13 +1288,6 @@ fun BrowserScreen(
     }
 
     val activeTab = tabs.firstOrNull { it.id == activeTabId }
-    LaunchedEffect(filterRevision, defaultFiltersReady, showingHub, startupReady, activeTab?.isShowingHome) {
-        if (remindRefreshWhenFiltersReady && filterRevision > 0 && defaultFiltersReady &&
-            !showingHub && startupReady && activeTab?.isShowingHome == false) {
-            remindRefreshWhenFiltersReady = false
-            Toast.makeText(context, "Filter lists are ready. Refresh this tab for full protection.", Toast.LENGTH_LONG).show()
-        }
-    }
     val findView = activeTab?.liveWebView.takeIf { activeTabId == findOwnerId }
     DisposableEffect(findOwnerId, findView) {
         val view = findView
@@ -2011,9 +1995,11 @@ fun BrowserScreen(
     // state, not the possibly-one-frame-stale Compose-tracked copy (Tab.canGoBack/canGoForward) —
     // belt-and-suspenders against ever trying to navigate a direction that isn't actually there.
     fun goBack() {
+        activeTab?.cancelPendingNavigation()
         activeTab?.liveWebView?.let { if (it.canGoBack()) it.goBack() }
     }
     fun goForward() {
+        activeTab?.cancelPendingNavigation()
         activeTab?.liveWebView?.let { if (it.canGoForward()) it.goForward() }
     }
     fun tabNavigationHistory(forward: Boolean): List<TabNavigationEntry> {
@@ -2042,6 +2028,7 @@ fun BrowserScreen(
         // page that merely inherited the selected entry's old numeric position.
         if (target.url.orEmpty() != entry.url) return
         val offset = entry.index - snapshot.currentIndex
+        activeTab?.cancelPendingNavigation()
         if (offset == 0) view.reload()
         else if (view.canGoBackOrForward(offset)) view.goBackOrForward(offset)
     }
@@ -2172,10 +2159,7 @@ fun BrowserScreen(
                             activeTab.liveWebView?.requestFocus()
                         },
                         onReload = { activeTab.reload() },
-                        onStop = {
-                            activeTab.liveWebView?.stopLoading()
-                            activeTab.isLoading = false
-                        },
+                        onStop = { activeTab.stopLoading() },
                         isLoading = activeTab.isLoading,
                         searchEngine = AppSettings.current.searchEngine,
                         suggestionsEnabled = activeScreen == null && playbackRequest == null &&
@@ -3469,7 +3453,8 @@ fun BrowserScreen(
                     onSiteModeChanged = { mode ->
                         if (host != null) {
                             SiteProtection.set(context, host, mode)
-                            siteTab.liveWebView?.reload()
+                            tabs.forEach { it.liveWebView?.applyCosmeticFiltersNow() }
+                            siteTab.reload()
                         }
                     },
                     onOpenPageLinksHereChanged = { enabled ->

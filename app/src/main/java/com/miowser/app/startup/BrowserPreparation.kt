@@ -37,6 +37,7 @@ internal object BrowserPreparation {
         com.miowser.app.persistence.Persistence.requireOwner()
         if (passiveFailed || pipeline?.ready == true || constrained(context)) return
         try {
+            startSavedFilters(context)
             pipeline(context).prepare {
                 if (constrained(context)) throw CancellationException("Defer browser preparation under memory pressure")
                 awaitMainIdle()
@@ -50,8 +51,13 @@ internal object BrowserPreparation {
 
     suspend fun ensureSavedData(context: Context) {
         com.miowser.app.persistence.Persistence.requireOwner()
+        startSavedFilters(context)
         pipeline(context).prepare()
         // A setting change after passive preparation may have enabled protection.
+        if (AppSettings.current.adBlockEnabled) com.miowser.app.adblock.AdBlock.engine.awaitReady(context.applicationContext)
+    }
+
+    private fun startSavedFilters(context: Context) {
         if (AppSettings.current.adBlockEnabled) com.miowser.app.adblock.AdBlock.engine.start(context.applicationContext)
     }
 

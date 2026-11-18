@@ -16,7 +16,8 @@ object SiteProtection {
     @Volatile private var overrides: Map<String, SiteProtectionMode> = emptyMap()
     @Volatile private var sameTabHosts: Set<String> = emptySet()
     @Volatile private var mediaMinimums: Map<String, Int> = emptyMap()
-    private var loaded = false
+    @Volatile private var loaded = false
+    internal val initialized: Boolean get() = loaded
     var revision by mutableIntStateOf(0)
         private set
     fun host(url: String): String? = runCatching { URI(url).host }.getOrNull()?.let(::canonicalHostname)

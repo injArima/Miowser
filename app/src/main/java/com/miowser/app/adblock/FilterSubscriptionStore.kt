@@ -101,7 +101,7 @@ object FilterSubscriptionStore {
         ).map { (id, name, url) ->
             // A changed built-in source must refresh even if its old URL updated recently.
             val previous = saved.firstOrNull { it.id == id && it.url == url }
-            FilterSubscription(id, previous?.name ?: name, url, isBuiltIn = true, enabled = true,
+            FilterSubscription(id, previous?.name ?: name, url, isBuiltIn = true, enabled = previous?.enabled ?: true,
                 lastUpdatedAt = previous?.lastUpdatedAt ?: 0L,
                 lastError = previous?.lastError,
                 networkRuleCount = previous?.networkRuleCount ?: 0,
@@ -236,20 +236,38 @@ object FilterSubscriptionStore {
 
     internal fun cachedBytes(context: Context, id: String): Long = cachedListFile(context, id)?.length() ?: 0L
 
+    @Volatile private var shippedIdentity: FilterCacheIdentity? = null
+    private val scriptletResourceDigest by lazy { MusicAdProtection.resourceDigest() }
+    private fun shippedIdentity(context: Context): String {
+        val app = context.applicationContext
+        val identity = shippedIdentity ?: synchronized(this) {
+            shippedIdentity ?: FilterCacheIdentity {
+                listOf(
+                    "easylist" to { app.assets.open("easylist.txt") },
+                    "public-suffix" to { checkNotNull(PublicSuffixDomains::class.java.getResourceAsStream("/public_suffix_list.dat")) {
+                        "Bundled Public Suffix List is missing"
+                    } }
+                )
+            }.also { shippedIdentity = it }
+        }
+        return identity.digest
+    }
+
     internal fun fingerprint(context: Context, rows: List<FilterSubscription>): String {
         val manual = File(directory(context), MANUAL_RULES_FILE)
-        @Suppress("DEPRECATION")
-        val installed = context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime
-        val data = buildString {
-            append("engine-schema-3|").append(installed)
+        return FilterCacheIdentity.fingerprint(buildList {
+            add(CompiledFilterSnapshot.FILE_NAME)
+            add(FilterCacheIdentity.SNAPSHOT_COMPATIBILITY)
+            add(FilterCacheIdentity.PARSER_COMPATIBILITY)
+            add(shippedIdentity(context))
+            add(scriptletResourceDigest)
+            addAll(CuratedFallbackList.RULES)
             rows.filter { it.enabled }.forEach {
                 val file = cachedListFile(context, it.id)
-                append('|').append(it.id).append(':').append(file?.length() ?: 0L).append(':').append(file?.lastModified() ?: 0L)
+                addAll(FilterCacheIdentity.subscriptionParts(it, file?.extension, file?.length() ?: 0L, file?.lastModified() ?: 0L))
             }
-            append("|manual:").append(manual.length()).append(':').append(manual.lastModified())
-        }
-        return java.security.MessageDigest.getInstance("SHA-256").digest(data.toByteArray())
-            .joinToString("") { "%02x".format(it) }
+            add("manual:${manual.length()}:${manual.lastModified()}")
+        })
     }
 
     private fun lists(context: Context) = FilterListFiles(directory(context))

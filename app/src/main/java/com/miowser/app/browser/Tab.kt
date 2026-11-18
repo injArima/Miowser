@@ -36,6 +36,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.input.TextFieldValue
 import com.miowser.app.adblock.AdBlock
+import com.miowser.app.adblock.AdBlockFilters
 import com.miowser.app.adblock.CosmeticBridge
 import com.miowser.app.downloader.Download
 import com.miowser.app.downloader.RendererResourceDownloader
@@ -65,6 +66,10 @@ import java.util.Collections
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 
 
 data class SiteProtectionStats(
@@ -161,7 +166,7 @@ class Tab(
             requestUserAgent?.set(settings.userAgentString)
             settings.useWideViewPort = enabled
             settings.loadWithOverviewMode = enabled
-            view.reload()
+            reload()
         }
     }
 
@@ -276,6 +281,15 @@ class Tab(
     var rendererTransferCount by mutableIntStateOf(0)
         private set
     private var destroyed = false
+    private var deferredPageTarget: String? = null
+    private val navigationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val protectedPageLoad = ProtectedPageLoad(navigationScope,
+        ready = { com.miowser.app.adblock.SiteProtection.initialized &&
+            (!AppSettings.current.adBlockEnabled || AdBlock.engine.isFullyLoaded) },
+        prepare = {
+            AdBlockFilters.initializeAsync(tabContext.applicationContext)
+            if (AppSettings.current.adBlockEnabled) AdBlock.engine.awaitReady(tabContext.applicationContext)
+        })
     private var retireEngineCallbacks: (() -> Unit)? = null
     private val popupProxies = mutableMapOf<WebView, () -> Unit>()
     private var interceptingPopupUntil = 0L
@@ -539,6 +553,8 @@ class Tab(
     fun destroy() {
         if (destroyed) return
         destroyed = true
+        protectedPageLoad.cancel()
+        navigationScope.cancel()
         controller.takeNavigation(id)
         previewCaptureGeneration++
         mainHandler.removeCallbacks(previewCaptureRunnable)
@@ -580,13 +596,36 @@ class Tab(
     /** Recovery is explicit; switching to an affected tab must not silently reload it. */
     fun reload() {
         if (destroyed || isShowingHome) return
+        val target = deferredPageTarget ?: url
         blockedPageInfo = null
         rendererUnavailable = false
         pageError = null
         lastFinishedUrl = null
         clearDetections()
+        isLoading = true
         val view = liveWebView
-        if (view != null) view.reload() else ensureWebView()
+        if (view != null) loadProtected(view, target) {
+            if (view.url != target) view.loadUrl(target)
+            else view.reload()
+        } else ensureWebView()
+    }
+
+    fun stopLoading() {
+        protectedPageLoad.cancel()
+        deferredPageTarget = null
+        liveWebView?.stopLoading()
+        isLoading = false
+        // A queued protected navigation may not have left the previous document yet.
+        // Reconnect its existing telemetry after clearDetections invalidated the old tokens.
+        liveVideoTracker?.onPageCommitted()
+        pageMediaTracker?.onPageCommitted()
+    }
+
+    internal fun cancelPendingNavigation() {
+        val wasWaiting = protectedPageLoad.waiting
+        protectedPageLoad.cancel()
+        deferredPageTarget = null
+        if (wasWaiting) isLoading = false
     }
 
     // Appends a new detection, or replaces an existing one sharing the same URL — needed because
@@ -729,6 +768,7 @@ class Tab(
     private fun createWebView(initialTarget: String): WebView {
         // A retained WebView keeps its actual scale across navigation; a newly created one does not.
         pageZoomFactor = 1f
+        com.miowser.app.adblock.ServiceWorkerAdBlock.install()
         val view = MiowserWebView(tabContext, onSearchSelectedText)
         val alive = AtomicBoolean(true)
         val permissionRequests = mutableSetOf<PermissionRequest>()
@@ -1079,6 +1119,7 @@ class Tab(
             webViewClient = client
             retireEngineCallbacks = {
                 alive.set(false)
+                protectedPageLoad.cancel()
                 grabberBridge?.retire()
                 liveVideoTracker?.retire()
                 liveVideoTracker = null
@@ -1236,16 +1277,19 @@ class Tab(
                     onInsecureNavigationRequested(this@Tab.id, initialTarget)
                 } else {
                     val state = controller.takeNavigation(this@Tab.id)
-                    val restored = state?.let { runCatching { restoreState(it) }.getOrNull() }
-                    if (restored == null) {
-                        // Publish feedback in the same frame that accepted the navigation. Waiting
-                        // for Chromium's onPageStarted callback made a successful search look idle.
-                        isLoading = true
-                        loadUrl(initialTarget)
-                    }
-                    else {
-                        this@Tab.canGoBack = canGoBack()
-                        this@Tab.canGoForward = canGoForward()
+                    isLoading = true
+                    deferredPageTarget = initialTarget
+                    protectedPageLoad.execute(
+                        alive = { alive.get() && !destroyed && !rendererUnavailable },
+                        failure = ::protectionLoadFailed
+                    ) {
+                        val restored = state?.let { runCatching { restoreState(it) }.getOrNull() }
+                        if (restored == null) loadUrl(initialTarget)
+                        else {
+                            this@Tab.canGoBack = canGoBack()
+                            this@Tab.canGoForward = canGoForward()
+                        }
+                        deferredPageTarget = null
                     }
                 }
             }
@@ -1285,11 +1329,30 @@ class Tab(
         addressBarText = TextFieldValue(if (isShowingHome) "" else targetUrl)
         if (!isShowingHome) isLoading = true
         val engine = liveWebView
-        if (engine != null) engine.loadUrl(targetUrl)
+        if (engine != null && isShowingHome) {
+            protectedPageLoad.cancel()
+            deferredPageTarget = null
+            engine.loadUrl(targetUrl)
+        } else if (engine != null) loadProtected(engine, targetUrl) { engine.loadUrl(targetUrl) }
         else if (!isShowingHome) ensureWebView()
     }
 
     fun showHome() = navigateTo(BROWSER_HOME_URL)
+
+    private fun loadProtected(engine: WebView, target: String, navigate: () -> Unit) {
+        deferredPageTarget = target
+        protectedPageLoad.execute(
+            alive = { !destroyed && !rendererUnavailable && liveWebView === engine },
+            failure = ::protectionLoadFailed,
+            navigate = { navigate(); deferredPageTarget = null }
+        )
+    }
+
+    private fun protectionLoadFailed(error: Exception) {
+        isLoading = false
+        pageError = "Couldn't prepare ad protection. Reload to retry."
+        com.miowser.app.diagnostics.SafeLog.warning("Miowser/AdBlock", "Protected page load deferred", error)
+    }
 
     fun markActive(now: Long = System.currentTimeMillis()) {
         controller.touch(id)
