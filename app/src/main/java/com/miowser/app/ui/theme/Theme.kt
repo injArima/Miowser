@@ -10,6 +10,7 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
@@ -93,17 +94,19 @@ private fun androidx.compose.material3.ColorScheme.amoled() = copy(
 )
 
 /**
- * Dynamic wallpaper color remains the first choice; these fallbacks cover older devices.
+ * Palette selection is independent of light/dark mode; wallpaper color remains the default.
  */
 @Composable
 fun MiowserTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = true,
     amoled: Boolean = false,
+    colorTheme: AppColorTheme = AppThemePreference.colorTheme,
     content: @Composable () -> Unit
 ) {
-    val baseColorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+    val paletteScheme = remember(colorTheme, darkTheme) { colorTheme.paletteColorScheme(darkTheme) }
+    val baseColorScheme = paletteScheme ?: when {
+        colorTheme == AppColorTheme.WALLPAPER && dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
@@ -129,10 +132,12 @@ fun MiowserTheme(
 fun MiowserPlayerTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = true,
+    colorTheme: AppColorTheme = AppThemePreference.colorTheme,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+    val paletteScheme = remember(colorTheme, darkTheme) { colorTheme.paletteColorScheme(darkTheme) }
+    val colorScheme = paletteScheme ?: when {
+        colorTheme == AppColorTheme.WALLPAPER && dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }

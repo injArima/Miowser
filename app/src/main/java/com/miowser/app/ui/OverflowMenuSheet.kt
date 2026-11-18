@@ -47,7 +47,6 @@ import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.Web
 import androidx.compose.material.icons.rounded.ZoomIn
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -61,7 +60,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import com.miowser.app.ui.AppText as Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -95,7 +93,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import kotlin.math.floor
 import kotlinx.coroutines.launch
-import com.miowser.app.ui.theme.AppThemeMode
 import com.miowser.app.ui.theme.AppThemePreference
 import com.miowser.app.ui.theme.LocalMotionPolicy
 import com.miowser.app.ui.theme.MotionTokens
@@ -413,8 +410,10 @@ fun OverflowMenuSheet(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(UiSpacing.m),
                 modifier = Modifier.fillMaxWidth().padding(top = UiSpacing.m, bottom = UiSpacing.xl)) {
-                MenuSmallAction(Icons.Rounded.Palette, "Theme", AppThemePreference.mode.label, true,
-                    onClick = { showThemePicker = true }, modifier = Modifier.weight(1f))
+                MenuSmallAction(Icons.Rounded.Palette, "Theme",
+                    "${AppThemePreference.colorTheme.label}\n${AppThemePreference.mode.label}", true,
+                    onClick = { showThemePicker = true }, modifier = Modifier.weight(1f),
+                    detailMaxLines = Int.MAX_VALUE)
                 MenuSmallAction(Icons.Rounded.PictureAsPdf, "Print / PDF", "Save or print",
                     pageActionsEnabled, onClick = { onDismiss(); onPrint() }, modifier = Modifier.weight(1f))
             }
@@ -423,28 +422,7 @@ fun OverflowMenuSheet(
       }
     }
     if (showThemePicker) {
-        AlertDialog(onDismissRequest = { showThemePicker = false },
-            title = { Text("Theme") },
-            text = {
-                Column {
-                    AppThemeMode.entries.forEach { mode ->
-                        Row(Modifier.fillMaxWidth().clip(UiCorners.r12)
-                            .clickable {
-                                AppThemePreference.set(context, mode)
-                                showThemePicker = false
-                            }.padding(UiSpacing.m), verticalAlignment = Alignment.CenterVertically) {
-                            Text(mode.label,
-                                modifier = Modifier.weight(1f))
-                            if (AppThemePreference.mode == mode) {
-                                Icon(Icons.Rounded.Check, "Selected",
-                                    tint = MaterialTheme.colorScheme.primary)
-                            }
-                        }
-                    }
-                }
-            }, confirmButton = {
-                TextButton(onClick = { showThemePicker = false }) { Text("Close") }
-            })
+        ThemePalettePicker(onDismissRequest = { showThemePicker = false })
     }
 }
 
@@ -572,7 +550,8 @@ private fun MenuActionRow(icon: ImageVector, title: String, detail: String,
 
 @Composable
 private fun MenuSmallAction(icon: ImageVector, title: String, detail: String,
-                            enabled: Boolean, onClick: () -> Unit, modifier: Modifier) {
+                            enabled: Boolean, onClick: () -> Unit, modifier: Modifier,
+                            detailMaxLines: Int = 1) {
     val color = if (enabled) MaterialTheme.colorScheme.onSurface
         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f)
     Surface(modifier = modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick),
@@ -583,7 +562,7 @@ private fun MenuSmallAction(icon: ImageVector, title: String, detail: String,
                 Text(title, style = MaterialTheme.typography.labelLarge, color = color,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(detail, style = MaterialTheme.typography.labelSmall, color = color,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    maxLines = detailMaxLines, overflow = TextOverflow.Ellipsis)
             }
         }
     }

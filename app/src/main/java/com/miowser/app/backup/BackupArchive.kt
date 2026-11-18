@@ -27,8 +27,12 @@ internal val BACKUP_PREFERENCE_NAMES = listOf(
     "settings", "hub_settings", "bookmarks", "browser_speed_dials", "media_library",
     "library_folders", "downloads", "failed_video_log", "site_protection", "site_permissions",
     "site_element_rules", "adblock_filters", "browser_overflow_menu", "player_display_preferences",
-    "player_subtitle_style", "player_track_preferences", "local_playback_progress"
+    "player_subtitle_style", "player_track_preferences", "local_playback_progress", "appearance"
 )
+
+/** Older archives predate theme backups; every other previously required store stays required. */
+internal fun supportedBackupPreferenceNames(names: Set<String>): Boolean =
+    BACKUP_PREFERENCE_NAMES.containsAll(names) && names.containsAll(BACKUP_PREFERENCE_NAMES - "appearance")
 
 data class BackupSource(val name: String, val open: () -> InputStream)
 data class BackupSummary(val createdAt: Long, val fileCount: Int, val skippedArtwork: Int = 0)

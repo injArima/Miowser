@@ -185,11 +185,16 @@ internal fun MediaSettingsPage(
 @Composable
 internal fun MediaInterfaceSettingsPage(onBack: () -> Unit) {
     val context = LocalContext.current
+    var showThemePicker by rememberSaveable { mutableStateOf(false) }
     MediaSettingsLayout("Interface", onBack) {
         SettingsSection("Appearance and motion") {
-            MediaChoiceRow("Appearance", "Choose the theme for the Hub and browser.",
+            MediaChoiceRow("Appearance", "Choose System, Light, Dark or AMOLED independently of the color theme.",
                 AppThemeMode.entries, AppThemePreference.mode, { it.label }) { mode ->
                 AppThemePreference.set(context, mode)
+            }
+            SectionDivider()
+            NavigationRow("Color theme", AppThemePreference.colorTheme.label) {
+                showThemePicker = true
             }
             SectionDivider()
             SettingRow("Reduce motion", "Use simpler transitions. Android's remove-animations setting is always respected.",
@@ -197,6 +202,9 @@ internal fun MediaInterfaceSettingsPage(onBack: () -> Unit) {
                 AppSettings.update(context) { it.copy(reduceMotion = enabled) }
             }
         }
+    }
+    if (showThemePicker) {
+        ThemePalettePicker(onDismissRequest = { showThemePicker = false })
     }
 }
 

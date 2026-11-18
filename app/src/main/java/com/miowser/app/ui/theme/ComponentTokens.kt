@@ -174,3 +174,13 @@ object SubtitlePanelTokens {
     val colorBorder = 1.dp
     val selectedColorBorder = 3.dp
 }
+
+/** Compact source-color previews and scalable, accessible theme-choice rows. */
+object ThemePickerTokens {
+    const val listHeightFraction = 0.75f
+    val minimumHeight = UiControlSize.touchTarget
+    val rowPadding = UiSpacing.m
+    val choiceGap = UiSpacing.xs
+    val previewWidth = UiControlSize.touchTarget
+    val previewHeight = UiSpacing.xxxl
+}

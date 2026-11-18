@@ -104,8 +104,10 @@ object BackupEngine {
         val stream = context.contentResolver.openInputStream(uri) ?: error("Could not open the backup file.")
         val prepared = stream.use { BackupArchive.read(it, destination) }
         try {
-            require(prepared.files.keys.filter { it.startsWith("prefs/") }.map { it.removePrefix("prefs/").removeSuffix(".json") }
-                .toSet() == PREF_NAMES.toSet()) { "Backup settings are incomplete or unsupported." }
+            require(supportedBackupPreferenceNames(prepared.files.keys.filter { it.startsWith("prefs/") }
+                .map { it.removePrefix("prefs/").removeSuffix(".json") }.toSet())) {
+                "Backup settings are incomplete or unsupported."
+            }
             prepared.files.keys.forEach { name ->
                 if (name.startsWith("prefs/")) {
                     require(name.removePrefix("prefs/").removeSuffix(".json") in PREF_NAMES)
@@ -151,10 +153,13 @@ object BackupEngine {
     }
 
     private fun applyGeneration(app: Context, prepared: PreparedBackup) {
-        val restoredPrefs = PREF_NAMES.associateWith { name ->
+        val present = prepared.files.keys.filter { it.startsWith("prefs/") }
+            .map { it.removePrefix("prefs/").removeSuffix(".json") }.toSet()
+        require(supportedBackupPreferenceNames(present)) { "Backup settings are incomplete or unsupported." }
+        // An older archive has no appearance store: leave the current selection intact.
+        val restoredPrefs = PREF_NAMES.filter { it in present }.associateWith { name ->
             decodePreferences(requireNotNull(prepared.files["prefs/$name.json"]).readText())
         }
-        require(prepared.files.keys.filter { it.startsWith("prefs/") }.size == PREF_NAMES.size)
         prepared.files.filterKeys { it.startsWith("files/") }.forEach { (name, source) ->
             val target = File(app.filesDir, name.removePrefix("files/"))
             require(target.canonicalPath.startsWith(app.filesDir.canonicalPath + File.separator))
