@@ -79,7 +79,7 @@ class PaletteColorSchemesTest {
             AppColorTheme.COTTON_CANDY to "BEAEE2 CDF0EA F7DBF0",
             AppColorTheme.GRASS to "5F8D4E A4BE7B E5D9B6",
             AppColorTheme.ICE_CREAM to "00B7CD DF301C FF9100",
-            AppColorTheme.NIGHT to "1B2CC1 7692FF ABD2FA",
+            AppColorTheme.NIGHT to "ABD2FA 7692FF 1B2CC1",
             AppColorTheme.UMBRELLA to "2391FF F70063 FFF83F"
         )
         sources.forEach { (theme, hex) ->

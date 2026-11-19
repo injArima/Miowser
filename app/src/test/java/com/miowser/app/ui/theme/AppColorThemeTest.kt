@@ -7,6 +7,16 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class AppColorThemeTest {
+    @Test fun galleryShowsNumberedFamiliesFirstWithoutDroppingAnySourceSwatches() {
+        assertEquals(listOf(0xFFABD2FA, 0xFF7692FF, 0xFF1B2CC1, 0xFF091540).map { Color(it).toArgb() },
+            AppColorTheme.NIGHT.familyOrderedSwatches().map { it.toArgb() })
+        AppColorTheme.entries.forEach { theme ->
+            val preview = theme.familyOrderedSwatches()
+            assertEquals(theme.name, theme.swatches.toSet(), preview.toSet())
+            assertEquals(theme.name, theme.swatches.size, preview.size)
+        }
+    }
+
     @Test fun catalogPreservesPreferenceIdsLabelsAndReferenceOrder() {
         assertEquals(
             listOf("WALLPAPER", "MIOWSER", "SEA", "AMBER", "BLACK_GOLD", "SUMMER_OCEAN",

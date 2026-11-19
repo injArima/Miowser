@@ -43,6 +43,7 @@ These named contracts are in `ComponentTokens.kt`. When changing a component's d
 | Sheet handle | Top corner 28 dp; handle 32 × 4 dp; top/bottom clearance 7/18 dp | Shared bottom sheet rim and drag handle |
 | Confirmation dialog | Horizontal/vertical inset 22/26 dp; action minimum height 52 dp and gap 10 dp; border and fill emphasis alpha for revealed, caution, and normal actions | Shared confirmation prompts |
 | Snackbar | Horizontal inset 12 dp; action inset 8 dp; content gap 12 dp; mark 28 dp | Shared snackbar host |
+| Theme gallery (`ThemePickerTokens`) | Card width 160 dp, minimum height 144 dp; gap 12 dp, inset 16 dp; individual swatch pills 24 × 32 dp with 4 dp gaps; up to four pills per row; borders 1/3 dp unselected/selected | Shared theme picker in Interface settings and browser menu. Cards grow together for larger text and palettes; swatches follow families 1–4 before any remaining source colors. |
 | History row | Minimum height 80 dp; site icon 44 dp with 14 dp corners; segmented outer/inner corners 24/6 dp, row gap 2 dp; date header 48 dp | Browser history list |
 | Tab history menu | Width 260–320 dp; maximum height 376 dp | Long press navigation popup |
 | Hub library | Grid minimum cell 168 dp, inset 12 dp, bottom clearance 80 dp; folder rail height 56 dp | Library and download grids, folder rail |

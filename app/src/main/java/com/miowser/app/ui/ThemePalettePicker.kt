@@ -1,22 +1,30 @@
 package com.miowser.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -29,9 +37,11 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.miowser.app.ui.AppText as Text
 import com.miowser.app.ui.theme.AppColorTheme
@@ -40,6 +50,7 @@ import com.miowser.app.ui.theme.AppThemePreference
 import com.miowser.app.ui.theme.ThemePickerTokens
 import com.miowser.app.ui.theme.UiIconSize
 import com.miowser.app.ui.theme.UiSpacing
+import com.miowser.app.ui.theme.familyOrderedSwatches
 
 /** Shared picker; palette and light/dark mode are saved independently and applied immediately. */
 @Composable
@@ -82,13 +93,8 @@ internal fun ThemePalettePicker(onDismissRequest: () -> Unit) {
             item(key = "palettes", contentType = "heading") {
                 ThemePickerSectionHeading("Color theme")
             }
-            items(AppColorTheme.entries, key = { it.name }, contentType = { "palette" }) { palette ->
-                ThemePickerChoice(
-                    label = palette.label,
-                    selected = AppThemePreference.colorTheme == palette,
-                    onClick = { AppThemePreference.setColorTheme(context, palette) },
-                    preview = { ThemePaletteSwatches(palette.swatches) }
-                )
+            item(key = "palette-gallery", contentType = "gallery") {
+                ThemePaletteGallery()
             }
         }
         TextButton(
@@ -112,8 +118,7 @@ private fun ThemePickerSectionHeading(label: String) {
 private fun ThemePickerChoice(
     label: String,
     selected: Boolean,
-    onClick: () -> Unit,
-    preview: (@Composable () -> Unit)? = null
+    onClick: () -> Unit
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -131,7 +136,6 @@ private fun ThemePickerChoice(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(UiSpacing.m)
         ) {
-            preview?.invoke()
             // Let names wrap and rows grow with the user's font size.
             Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
             Box(Modifier.size(UiIconSize.standard), contentAlignment = Alignment.Center) {
@@ -141,16 +145,76 @@ private fun ThemePickerChoice(
     }
 }
 
-/** Catalog source colors are decorative previews, never text or control colors. */
+/** Equal-height cards grow with font scale and the palette with the most swatches. */
+@Composable
+private fun ThemePaletteGallery() {
+    val context = LocalContext.current
+    val initialScroll = with(LocalDensity.current) {
+        ((ThemePickerTokens.cardWidth + ThemePickerTokens.cardGap) * AppThemePreference.colorTheme.ordinal)
+            .roundToPx()
+    }
+    val scrollState = rememberScrollState(initialScroll)
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .horizontalScroll(scrollState)
+            .height(IntrinsicSize.Min)
+            .padding(vertical = UiSpacing.xs)
+            .selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(ThemePickerTokens.cardGap)
+    ) {
+        AppColorTheme.entries.forEach { palette ->
+            val selected = AppThemePreference.colorTheme == palette
+            Surface(
+                modifier = Modifier.width(ThemePickerTokens.cardWidth).fillMaxHeight(),
+                shape = MaterialTheme.shapes.large,
+                color = if (selected) MaterialTheme.colorScheme.surfaceContainer
+                    else MaterialTheme.colorScheme.surfaceContainerLow,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                border = BorderStroke(
+                    if (selected) ThemePickerTokens.selectedBorderWidth else ThemePickerTokens.borderWidth,
+                    if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                )
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxHeight()
+                        .heightIn(min = ThemePickerTokens.cardMinimumHeight)
+                        .selectable(selected = selected, role = Role.RadioButton,
+                            onClick = { AppThemePreference.setColorTheme(context, palette) })
+                        .padding(ThemePickerTokens.cardPadding),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(UiSpacing.m, Alignment.CenterVertically)
+                ) {
+                    if (palette == AppColorTheme.WALLPAPER) {
+                        Box(Modifier.size(ThemePickerTokens.swatchHeight), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Rounded.Wallpaper, contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary)
+                        }
+                    } else {
+                        ThemePaletteSwatches(palette.familyOrderedSwatches())
+                    }
+                    Text(palette.label, modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center, style = MaterialTheme.typography.titleSmall)
+                }
+            }
+        }
+    }
+}
+
+/** Every source color has its own pill; extra colors wrap instead of shrinking away. */
 @Composable
 private fun ThemePaletteSwatches(swatches: List<Color>) {
-    Row(
-        modifier = Modifier.size(ThemePickerTokens.previewWidth, ThemePickerTokens.previewHeight)
-            .clip(MaterialTheme.shapes.small)
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        maxItemsInEachRow = ThemePickerTokens.swatchesPerRow,
+        horizontalArrangement = Arrangement.spacedBy(ThemePickerTokens.swatchGap, Alignment.CenterHorizontally),
+        verticalArrangement = Arrangement.spacedBy(ThemePickerTokens.swatchGap)
     ) {
         swatches.forEach { color ->
-            Box(Modifier.weight(1f).fillMaxHeight().background(color))
+            Box(Modifier.size(ThemePickerTokens.swatchWidth, ThemePickerTokens.swatchHeight)
+                .clip(ThemePickerTokens.swatchShape)
+                .background(color)
+                .border(ThemePickerTokens.borderWidth, MaterialTheme.colorScheme.outlineVariant,
+                    ThemePickerTokens.swatchShape))
         }
     }
 }

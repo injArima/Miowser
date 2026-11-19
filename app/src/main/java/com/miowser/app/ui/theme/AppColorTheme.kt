@@ -4,7 +4,7 @@ import androidx.compose.ui.graphics.Color
 
 /** Stable preference IDs and unmodified reference-image colors, in reference order. */
 enum class AppColorTheme(val label: String, val swatches: List<Color>) {
-    // Wallpaper has no static source swatches; its preview is supplied by the system.
+    // Wallpaper has no static source swatches; the picker identifies it with an icon.
     WALLPAPER("Wallpaper", emptyList()),
     MIOWSER("Miowser", listOf(MiowserBlue, MiowserTeal, MiowserWarm)),
     SEA("Sea", swatches(0x0F2854, 0x1C4D8D, 0x4988C4, 0xBDE8F5)),

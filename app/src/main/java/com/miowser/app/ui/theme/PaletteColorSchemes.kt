@@ -9,6 +9,12 @@ import kotlin.math.pow
 internal fun AppColorTheme.paletteColorScheme(darkTheme: Boolean): ColorScheme? =
     paletteDefinitions[this]?.let { if (darkTheme) it.dark else it.light }
 
+/** Show families 1–4 first, then any remaining source swatches; never omit a color. */
+internal fun AppColorTheme.familyOrderedSwatches(): List<Color> =
+    paletteDefinitions[this]?.let {
+        (listOf(it.primary, it.secondary, it.tertiary, it.neutral) + swatches).distinct()
+    } ?: swatches
+
 // Indices refer to the exact swatches in AppColorTheme. Each accent family has its own
 // source; surface tinting is independent so a multicolor palette never becomes one hue.
 private val paletteDefinitions = mapOf(
@@ -24,7 +30,7 @@ private val paletteDefinitions = mapOf(
     AppColorTheme.COTTON_CANDY to AppColorTheme.COTTON_CANDY.palette(3, 0, 2, 3),
     AppColorTheme.GRASS to AppColorTheme.GRASS.palette(2, 1, 0, 3),
     AppColorTheme.ICE_CREAM to AppColorTheme.ICE_CREAM.palette(3, 0, 1, 2),
-    AppColorTheme.NIGHT to AppColorTheme.NIGHT.palette(1, 2, 3, 0),
+    AppColorTheme.NIGHT to AppColorTheme.NIGHT.palette(3, 2, 1, 0),
     AppColorTheme.UMBRELLA to AppColorTheme.UMBRELLA.palette(0, 3, 1, 2)
 )
 

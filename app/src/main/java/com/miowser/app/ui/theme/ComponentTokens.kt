@@ -175,12 +175,21 @@ object SubtitlePanelTokens {
     val selectedColorBorder = 3.dp
 }
 
-/** Compact source-color previews and scalable, accessible theme-choice rows. */
+/** Theme gallery cards, individual swatch pills, and accessible appearance-choice rows. */
 object ThemePickerTokens {
     const val listHeightFraction = 0.75f
     val minimumHeight = UiControlSize.touchTarget
     val rowPadding = UiSpacing.m
     val choiceGap = UiSpacing.xs
-    val previewWidth = UiControlSize.touchTarget
-    val previewHeight = UiSpacing.xxxl
+    val cardWidth = 160.dp
+    val cardMinimumHeight = 144.dp
+    val cardGap = UiSpacing.m
+    val cardPadding = UiSpacing.l
+    val swatchWidth = UiSpacing.xxl
+    val swatchHeight = UiSpacing.xxxl
+    val swatchGap = UiSpacing.xs
+    const val swatchesPerRow = 4
+    val borderWidth = 1.dp
+    val selectedBorderWidth = 3.dp
+    val swatchShape = RoundedCornerShape(percent = 50)
 }

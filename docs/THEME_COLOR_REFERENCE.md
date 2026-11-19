@@ -1,7 +1,22 @@
 # Miowser theme color reference
 
 Reference for the 14 palette themes introduced in 0.1.84. This describes the
-current implementation; it does not change the app's colors.
+current implementation, including Night's updated family assignments in 0.1.85.
+
+## Numbered family convention
+
+Use these numbers when requesting component or theme color changes:
+
+| Number | Family | Night source color |
+| --- | --- | --- |
+| **1** | Primary | `#ABD2FA` (light blue) |
+| **2** | Secondary | `#7692FF` (periwinkle) |
+| **3** | Tertiary | `#1B2CC1` (royal blue) |
+| **4** | Neutral | `#091540` (navy) |
+
+These are family numbers, not source-list indices. Component foregrounds,
+containers, and light/dark tones continue to derive from the assigned family.
+Delete/error colors remain separate.
 
 ## How many colors do we use?
 
@@ -50,7 +65,7 @@ are **zero-based indices** into the theme's `swatches` list.
 | Cotton Candy | 4 | 3 | `#BEAEE2` | `#CDF0EA` | `#F7DBF0` | `#BEAEE2` | `3, 0, 2, 3` |
 | Grass | 4 | 4 | `#5F8D4E` | `#A4BE7B` | `#E5D9B6` | `#285430` | `2, 1, 0, 3` |
 | Ice Cream | 4 | 4 | `#00B7CD` | `#DF301C` | `#FF9100` | `#FFF1D1` | `3, 0, 1, 2` |
-| Night | 4 | 4 | `#1B2CC1` | `#7692FF` | `#ABD2FA` | `#091540` | `1, 2, 3, 0` |
+| Night | 4 | 4 | `#ABD2FA` | `#7692FF` | `#1B2CC1` | `#091540` | `3, 2, 1, 0` |
 | Umbrella | 4 | 4 | `#2391FF` | `#F70063` | `#FFF83F` | `#FFCD54` | `0, 3, 1, 2` |
 
 The primary/secondary/tertiary colors are adjusted only when their original
@@ -89,8 +104,8 @@ disabled, or focus state. A different component variant can use different roles.
 | Standard outlined action (current Material 3 library) | `onSurfaceVariant`, `outlineVariant`; the host supplies the background | 2 plus host |
 | Shared settings section/card with body and supporting text | `surfaceContainerLow`, `onSurface`, `onSurfaceVariant` | 3 |
 | Shared bottom sheet with title and supporting text | `surface`, `onSurface`, `onSurfaceVariant` | 3 |
-| Selected theme-picker row | `secondaryContainer`, `onSecondaryContainer` | 2, plus decorative source swatches |
-| Unselected theme-picker row | `surfaceContainerLow`, `onSurface` | 2, plus decorative source swatches |
+| Selected theme card | `surfaceContainer`, `onSurface`, `primary` border | 3, plus decorative source swatches |
+| Unselected theme card | `surfaceContainerLow`, `onSurface`, `outlineVariant` border | 3, plus decorative source swatches |
 | Shared snackbar with action and dismiss control | `surfaceContainerHigh`, `onSurface`, `primary`, `onSurfaceVariant` | 4 |
 | Standard checkbox or switch | Selected/unselected track, thumb, outline, and content roles come from Material defaults | Varies by state |
 | Browser bottom-bar surface and home pressed highlight | `surfaceContainerLow`, `primaryContainer`; icons/buttons add their own roles | 2 plus controls |
@@ -103,6 +118,13 @@ Source examples:
 [theme picker](../app/src/main/java/com/miowser/app/ui/ThemePalettePicker.kt),
 [snackbars](../app/src/main/java/com/miowser/app/ui/MiowserSnackbarHost.kt),
 [download progress](../app/src/main/java/com/miowser/app/browser/HubPage.kt).
+
+Theme choices appear as a horizontal gallery of equal-height rounded cards.
+Every source swatch gets its own pill. Families appear in order 1, 2, 3, 4,
+with repeated source colors shown once; any additional image swatches follow.
+Larger palettes wrap their pills within the card, so Amber retains all ten
+colors. Wallpaper is identified with an icon because its colors are generated
+by Android rather than stored as fixed source swatches.
 
 ### Exceptions to keep in mind
 
