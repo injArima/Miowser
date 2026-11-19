@@ -1,5 +1,6 @@
 package com.miowser.app.ui
 
+import com.miowser.app.ui.theme.AppSelectionColors
 import androidx.compose.foundation.clickable
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
@@ -542,7 +543,7 @@ private fun MenuActionRow(icon: ImageVector, title: String, detail: String,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (toggleChecked != null) {
-            Switch(checked = toggleChecked, onCheckedChange = { onClick() }, enabled = enabled)
+            Switch(colors = AppSelectionColors.switchColors(), checked = toggleChecked, onCheckedChange = { onClick() }, enabled = enabled)
         } else if (enabled) Icon(Icons.Rounded.ChevronRight, null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }

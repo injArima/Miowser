@@ -118,8 +118,8 @@ fun HubVideoCard(
             thumbnail = LibraryThumbnailStore.loadVisible(context.applicationContext, uri)
         }
     }
-    val placeholderStart = MaterialTheme.colorScheme.primaryContainer
-    val placeholderEnd = MaterialTheme.colorScheme.tertiaryContainer
+    val placeholderStart = MaterialTheme.colorScheme.surfaceContainerLow
+    val placeholderEnd = MaterialTheme.colorScheme.surfaceContainerHighest
     val placeholderBrush = remember(placeholderStart, placeholderEnd) {
         Brush.linearGradient(listOf(placeholderStart, placeholderEnd))
     }
@@ -270,7 +270,7 @@ fun HubVideoCard(
                         tint = if (renderedThumbnail != null) {
                             androidx.compose.ui.graphics.Color.White
                         } else {
-                            MaterialTheme.colorScheme.onPrimaryContainer
+                            MaterialTheme.colorScheme.onSurface
                         },
                         modifier = Modifier.size(UiControlSize.action)
                     )

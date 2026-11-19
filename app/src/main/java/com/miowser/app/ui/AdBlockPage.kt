@@ -1,5 +1,6 @@
 package com.miowser.app.ui
 
+import com.miowser.app.ui.theme.AppSelectionColors
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -153,7 +154,7 @@ fun AdBlockPage(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Switch(checked = enabled, onCheckedChange = onEnabledChange)
+                        Switch(colors = AppSelectionColors.switchColors(), checked = enabled, onCheckedChange = onEnabledChange)
                     }
                 }
             }
@@ -174,7 +175,7 @@ fun AdBlockPage(
                             Text("Changes reload this page. Strict adds extra ad-element hiding; use Standard or Off if a site breaks.", style = MaterialTheme.typography.bodySmall)
                             com.miowser.app.adblock.SiteProtectionMode.entries.forEach { mode ->
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    androidx.compose.material3.RadioButton(selected = mode == siteMode,
+                                    androidx.compose.material3.RadioButton(colors = AppSelectionColors.radioColors(), selected = mode == siteMode,
                                         enabled = enabled, onClick = { onSiteModeChanged(siteHost, mode) })
                                     Text(mode.label)
                                 }
@@ -429,6 +430,7 @@ private fun SubscriptionRow(
                 }
                 if (allowControls) {
                     Switch(
+                        colors = AppSelectionColors.switchColors(),
                         checked = subscription.enabled,
                         onCheckedChange = onEnabledChange
                     )

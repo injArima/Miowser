@@ -48,8 +48,8 @@ fun ElementPickerPrompt(onCancel: () -> Unit, modifier: Modifier = Modifier) {
         ) {
             Surface(
                 shape = UiCorners.r14,
-                color = colors.primaryContainer,
-                contentColor = colors.onPrimaryContainer
+                color = colors.surfaceContainer,
+                contentColor = colors.tertiary
             ) {
                 Box(Modifier.size(UiControlSize.action), contentAlignment = Alignment.Center) {
                     Icon(Icons.Rounded.SelectAll, contentDescription = null, modifier = Modifier.size(UiIconSize.standard))

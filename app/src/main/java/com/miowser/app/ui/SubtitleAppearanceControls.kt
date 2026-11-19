@@ -63,7 +63,7 @@ internal fun SubtitleAppearanceControls(
             Surface(onClick = {
                 onChange(style.copy(preset = preset, textColor = null, outlineEnabled = null))
             }, shape = UiCorners.r8,
-                color = if (style.preset == preset) MaterialTheme.colorScheme.primaryContainer
+                color = if (style.preset == preset) MaterialTheme.colorScheme.secondaryContainer
                     else unselected) {
                 Text(preset.label, modifier = Modifier.padding(horizontal = UiSpacing.compact, vertical = UiSpacing.s),
                     style = MaterialTheme.typography.labelSmall)
@@ -76,7 +76,7 @@ internal fun SubtitleAppearanceControls(
         CaptionFontChoice.entries.forEach { font ->
             Surface(onClick = { onChange(style.copy(font = font)) },
                 shape = UiCorners.r8,
-                color = if (style.font == font) MaterialTheme.colorScheme.primaryContainer
+                color = if (style.font == font) MaterialTheme.colorScheme.secondaryContainer
                     else unselected) {
                 Text(font.label, modifier = Modifier.padding(horizontal = UiSpacing.compact, vertical = UiSpacing.s),
                     style = MaterialTheme.typography.labelSmall)

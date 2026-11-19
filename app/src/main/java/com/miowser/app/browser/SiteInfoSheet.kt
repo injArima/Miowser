@@ -1,5 +1,6 @@
 package com.miowser.app.browser
 
+import com.miowser.app.ui.theme.AppSelectionColors
 import android.net.http.SslCertificate
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
@@ -508,7 +509,7 @@ private fun DashboardToggle(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+        Switch(colors = AppSelectionColors.switchColors(), checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
     }
 }
 

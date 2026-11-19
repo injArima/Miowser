@@ -167,12 +167,13 @@ private fun ThemePaletteGallery() {
             Surface(
                 modifier = Modifier.width(ThemePickerTokens.cardWidth).fillMaxHeight(),
                 shape = MaterialTheme.shapes.large,
-                color = if (selected) MaterialTheme.colorScheme.surfaceContainer
+                color = if (selected) MaterialTheme.colorScheme.secondaryContainer
                     else MaterialTheme.colorScheme.surfaceContainerLow,
-                contentColor = MaterialTheme.colorScheme.onSurface,
+                contentColor = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
+                    else MaterialTheme.colorScheme.onSurface,
                 border = BorderStroke(
                     if (selected) ThemePickerTokens.selectedBorderWidth else ThemePickerTokens.borderWidth,
-                    if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                    if (selected) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.outlineVariant
                 )
             ) {
                 Column(

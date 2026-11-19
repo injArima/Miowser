@@ -261,7 +261,7 @@ private fun DetectorFilterPill(label: String, count: Int, selected: Boolean, onC
         onClick = onClick,
         shape = CircleShape,
         color = if (selected) colors.secondaryContainer else colors.surfaceContainerLow,
-        border = BorderStroke(1.dp, if (selected) colors.secondary else colors.outlineVariant)
+        border = BorderStroke(1.dp, if (selected) colors.outline else colors.outlineVariant)
     ) {
         Row(
             modifier = Modifier.padding(horizontal = UiSpacing.m, vertical = 7.dp),
@@ -339,14 +339,14 @@ private fun DetectedMediaRow(
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Surface(shape = RoundedCornerShape(7.dp),
-                    color = MaterialTheme.colorScheme.secondaryContainer) {
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                     Text(item.type.label(), modifier = Modifier.padding(horizontal = 7.dp, vertical = UiSpacing.xxs),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 item.resolution?.let { resolution ->
                     Text(resolution, style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                 }
                 if (item.isEncrypted) Icon(Icons.Rounded.Lock, contentDescription = "Encrypted",
                     modifier = Modifier.size(15.dp), tint = MaterialTheme.colorScheme.tertiary)

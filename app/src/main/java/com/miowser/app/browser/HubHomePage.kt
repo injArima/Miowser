@@ -550,8 +550,8 @@ internal fun HubBottomNavigation(
         ) { active ->
             with(density) { segmentWidth(active, active).roundToPx().toDp() }
         }
-        val pillColor = MaterialTheme.colorScheme.primaryContainer
-        val pillHighlight = MaterialTheme.colorScheme.onPrimaryContainer
+        val pillColor = MaterialTheme.colorScheme.secondaryContainer
+        val pillHighlight = MaterialTheme.colorScheme.onSecondaryContainer
         val pillBrush = remember(pillColor, pillHighlight) {
             Brush.horizontalGradient(listOf(pillColor, lerp(pillColor, pillHighlight, 0.06f)))
         }
@@ -755,7 +755,7 @@ private fun HubNavigationItem(
         label = "Hub navigation press"
     )
     val contentColor = animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+        targetValue = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
         else MaterialTheme.colorScheme.onSurfaceVariant,
         animationSpec = motion.spec(MotionTokens.selection),
         label = "Hub navigation content"
@@ -890,6 +890,7 @@ private fun HubDownloadsTabContent(
         ) {
             HubDownloadSection.entries.forEachIndexed { index, section ->
                 ToggleButton(
+                    colors = com.miowser.app.ui.theme.AppSelectionColors.toggleColors(),
                     modifier = Modifier.weight(1f)
                         .testTag("hub_downloads_${section.name.lowercase()}")
                         .semantics { role = Role.RadioButton },

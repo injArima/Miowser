@@ -363,23 +363,14 @@ private fun HistorySiteIcon(entry: HistoryEntry) {
         value = SpeedDialSiteMetadataStore.cachedIcon(context, entry.url)
     }
     val host = remember(entry.url) { hostName(entry.url) }
-    val paletteIndex = remember(host) { (host.hashCode() and Int.MAX_VALUE) % 3 }
-    val container = when (paletteIndex) {
-        0 -> MaterialTheme.colorScheme.primaryContainer
-        1 -> MaterialTheme.colorScheme.secondaryContainer
-        else -> MaterialTheme.colorScheme.tertiaryContainer
-    }
-    val content = when (paletteIndex) {
-        0 -> MaterialTheme.colorScheme.onPrimaryContainer
-        1 -> MaterialTheme.colorScheme.onSecondaryContainer
-        else -> MaterialTheme.colorScheme.onTertiaryContainer
-    }
+    val container = MaterialTheme.colorScheme.surfaceContainerHigh
+    val content = MaterialTheme.colorScheme.onSurface
 
     Surface(
         modifier = Modifier.size(HistoryRowTokens.siteIconSize),
         shape = HistoryRowTokens.siteIconShape,
         color = container,
-        border = BorderStroke(1.dp, content.copy(alpha = 0.24f))
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Box(contentAlignment = Alignment.Center) {
             if (favicon != null) {
@@ -421,7 +412,7 @@ private fun DateHeader(date: LocalDate, isFirst: Boolean, onDelete: () -> Unit) 
                     text = relativeDateLabel(date),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
                     text = date.format(SHORT_DATE_FORMAT),

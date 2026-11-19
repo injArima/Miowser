@@ -1,5 +1,6 @@
 package com.miowser.app.ui
 
+import com.miowser.app.ui.theme.AppSelectionColors
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -73,7 +74,7 @@ fun BrowsingDataPage(onClear: (BrowsingDataSelection) -> Unit, onBack: () -> Uni
 private fun DataChoice(label: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
     Row(modifier = Modifier.fillMaxWidth().toggleable(value = checked, role = Role.Checkbox, onValueChange = onChecked)
         .padding(vertical = UiSpacing.xs), verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(checked = checked, onCheckedChange = null)
+        Checkbox(colors = AppSelectionColors.checkboxColors(), checked = checked, onCheckedChange = null)
         Text(label, modifier = Modifier.padding(start = UiSpacing.s))
     }
 }

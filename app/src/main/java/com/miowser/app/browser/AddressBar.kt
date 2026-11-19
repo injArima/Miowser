@@ -129,8 +129,7 @@ internal fun AddressBar(
         SiteSecurity.OTHER -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val addressBarShape = MaterialTheme.shapes.extraLarge
-    val chromeColor = if (isPrivate) MaterialTheme.colorScheme.secondaryContainer
-        else MaterialTheme.colorScheme.background
+    val chromeColor = MaterialTheme.colorScheme.background
     val suggestions = rememberBrowserSuggestions(
         textState.text.toString(),
         searchEngine,
@@ -188,7 +187,7 @@ internal fun AddressBar(
                 if (isPrivate) Icon(
                     Icons.Rounded.VisibilityOff,
                     contentDescription = "Private tab",
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    tint = MaterialTheme.colorScheme.tertiary,
                     modifier = Modifier.padding(horizontal = UiSpacing.xs)
                 )
                 Box(modifier = Modifier.weight(1f)) {

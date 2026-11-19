@@ -10,6 +10,27 @@ import kotlin.math.abs
 import kotlin.math.sqrt
 
 class PaletteColorSchemesTest {
+    @Test fun nightSurfacesTextAndBordersStayInTheRequestedNeutralFamily() {
+        val neutral = Color(0xFF091540)
+        for (dark in listOf(false, true)) {
+            val c = requireNotNull(AppColorTheme.NIGHT.paletteColorScheme(dark))
+            val neutralRoles = c.surfaces().map { it.second } + listOf(
+                c.onBackground, c.onSurface, c.onSurfaceVariant, c.outline, c.outlineVariant,
+                c.inverseSurface, c.inverseOnSurface, c.surfaceTint,
+                c.onPrimary, c.onPrimaryContainer, c.onSecondary, c.onSecondaryContainer,
+                c.onTertiary, c.onTertiaryContainer,
+                c.onPrimaryFixed, c.onPrimaryFixedVariant, c.onSecondaryFixed,
+                c.onSecondaryFixedVariant, c.onTertiaryFixed, c.onTertiaryFixedVariant
+            )
+            neutralRoles.forEach { color ->
+                assertTrue("Night neutral family replaced for dark=$dark: $color", onSourceLine(color, neutral))
+            }
+            // Navy remains visibly blue rather than becoming an almost-gray surface.
+            assertTrue(c.surface.blue > c.surface.red)
+            assertTrue(c.surface.blue > c.surface.green)
+        }
+    }
+
     private val customThemes = AppColorTheme.entries.filter {
         it != AppColorTheme.WALLPAPER && it != AppColorTheme.MIOWSER
     }
@@ -127,7 +148,6 @@ class PaletteColorSchemesTest {
                 val expected = if (dark) listOf(0xFFFFB4AB, 0xFF690005, 0xFF93000A, 0xFFFFDAD6)
                     else listOf(0xFFBA1A1A, 0xFFFFFFFF, 0xFFFFDAD6, 0xFF410002)
                 assertEquals(expected.map { Color(it) }, listOf(scheme.error, scheme.onError, scheme.errorContainer, scheme.onErrorContainer))
-                assertEquals(scheme.primary, scheme.surfaceTint)
                 assertEquals(Color.Black, scheme.scrim)
             }
         }

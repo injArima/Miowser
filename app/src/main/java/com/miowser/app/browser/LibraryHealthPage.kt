@@ -230,8 +230,7 @@ private fun HealthSummary(report: LibraryHealthReport) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = UiCorners.r24,
-        color = if (healthy) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.tertiaryContainer
+        color = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         Row(
             modifier = Modifier.padding(UiSpacing.xl),

@@ -199,7 +199,7 @@ fun BrowserHomePage(
                     if (isPrivate) "Private browsing" else "Miowser",
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(bottom = UiSpacing.roomy)
                 )
                 Box(modifier = Modifier.fillMaxWidth()) {
@@ -554,12 +554,12 @@ private fun SpeedDialFolderTile(
     Box {
         CompactDialTile(folder.name, false, onOpen, { menuExpanded = true }) {
             Box(contentAlignment = Alignment.Center, modifier = Modifier.size(38.dp)) {
-                Icon(Icons.Rounded.Folder, contentDescription = null, modifier = Modifier.size(34.dp))
+                Icon(Icons.Rounded.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(34.dp))
                 if (itemCount > 0) {
                     Text(
                         if (itemCount > 99) "99+" else itemCount.toString(),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primaryContainer,
+                        color = MaterialTheme.colorScheme.onTertiary,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.align(Alignment.Center).offset(y = 4.dp)
                     )
@@ -594,8 +594,8 @@ private fun CompactDialTile(
 ) {
     val motion = LocalMotionPolicy.current
     val tileColor = animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.tertiaryContainer
-        else MaterialTheme.colorScheme.primaryContainer,
+        targetValue = if (selected) MaterialTheme.colorScheme.secondaryContainer
+        else MaterialTheme.colorScheme.surfaceContainerHigh,
         animationSpec = motion.spec(MotionTokens.selection),
         label = "Speed dial selection"
     )
@@ -612,11 +612,11 @@ private fun CompactDialTile(
             shape = MaterialTheme.shapes.medium,
             color = Color.Transparent,
             contentColor = if (selected) {
-                MaterialTheme.colorScheme.onTertiaryContainer
+                MaterialTheme.colorScheme.onSecondaryContainer
             } else {
-                MaterialTheme.colorScheme.onPrimaryContainer
+                MaterialTheme.colorScheme.onSurface
             },
-            border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+            border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.outline) else null
         ) {
             Box(Modifier.fillMaxSize().drawBehind { drawRect(tileColor.value) },
                 contentAlignment = Alignment.Center) { icon() }

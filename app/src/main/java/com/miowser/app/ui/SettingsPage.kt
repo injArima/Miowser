@@ -1,5 +1,6 @@
 package com.miowser.app.ui
 
+import com.miowser.app.ui.theme.AppSelectionColors
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -200,7 +201,7 @@ fun SettingsPage(
             SettingsSection("Downloads") {
                 OptionBlock("Minimum media length", "Hide detected media shorter than this. Unknown lengths are hidden when a minimum is set.") {
                     Text(if (minimumSeconds == 0) "Off" else formatDuration(minimumSeconds),
-                        color = MaterialTheme.colorScheme.primary,
+                        color = MaterialTheme.colorScheme.onSurface,
                         style = MaterialTheme.typography.labelLarge)
                     ChoiceRow(listOf(0, 60, 300, 600), minimumSeconds,
                         { if (it == 0) "Off" else formatDuration(it) }) { seconds ->
@@ -330,7 +331,7 @@ internal fun SettingRow(label: String, description: String, checked: Boolean, on
             Text(label, style = MaterialTheme.typography.bodyLarge)
             Description(description)
         }
-        Switch(checked = checked, onCheckedChange = null)
+        Switch(colors = AppSelectionColors.switchColors(), checked = checked, onCheckedChange = null)
     }
 }
 

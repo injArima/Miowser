@@ -1,7 +1,7 @@
 # Miowser theme color reference
 
 Reference for the 14 palette themes introduced in 0.1.84. This describes the
-current implementation, including Night's updated family assignments in 0.1.85.
+current implementation, including the component-role corrections in 0.1.86.
 
 ## Numbered family convention
 
@@ -18,6 +18,18 @@ These are family numbers, not source-list indices. Component foregrounds,
 containers, and light/dark tones continue to derive from the assigned family.
 Delete/error colors remain separate.
 
+The component contract is **1 main actions/highlights/progress**, **2 tonal
+buttons/selected controls**, **3 complementary accents**, and **4 backgrounds,
+cards, ordinary text, and borders**. Selected controls may have a family-2 fill;
+that does not authorize tinting ordinary cards or page backgrounds with family
+2. Action-colored text/icons communicate their action; body text stays neutral.
+Text placed on filled accent surfaces uses a contrasting neutral-family shade.
+
+For Night, Light mode uses pale-blue neutral surfaces and Dark mode uses navy
+neutral surfaces. The neutral source is no longer mixed with gray before
+generating tones. AMOLED retains its explicitly requested black/gray override.
+See the [component audit](THEME_COMPONENT_AUDIT_0.1.86.md) for corrected controls.
+
 ## How many colors do we use?
 
 Each theme has **four input slots: primary, secondary, tertiary, and neutral**.
@@ -29,8 +41,9 @@ component color.
 
 The inputs generate **48 Material color roles per appearance**. Excluding the
 four semantic error/delete roles leaves **44 roles**. Roles are named purposes,
-not 44 unique hex colors: for example, `surfaceTint` equals `primary`, and
-`background` equals `surface`. The number of distinct rendered colors also
+not 44 unique hex colors: for example, `background` equals `surface`.
+`surfaceTint` now derives from neutral so elevated neutral surfaces do not
+acquire a primary-family tint. The number of distinct rendered colors also
 depends on light/dark/AMOLED mode, transparency, disabled states, and overlays.
 
 No single component uses all 44 roles. Components consume a small selection,
@@ -71,8 +84,9 @@ are **zero-based indices** into the theme's `swatches` list.
 The primary/secondary/tertiary colors are adjusted only when their original
 values cannot meet the configured contrast target against the relevant
 surfaces. Containers and foregrounds use derived tones. Neutral colors are
-mixed with gray before deriving surfaces and text; backgrounds therefore do
-not reproduce a bright source swatch at full intensity.
+used directly for deriving surfaces, text, and borders. Tones vary with
+appearance, so backgrounds do not reproduce every source swatch at full
+intensity; they preserve its hue instead of first desaturating it with gray.
 
 ## The 44 non-error roles
 
@@ -104,12 +118,12 @@ disabled, or focus state. A different component variant can use different roles.
 | Standard outlined action (current Material 3 library) | `onSurfaceVariant`, `outlineVariant`; the host supplies the background | 2 plus host |
 | Shared settings section/card with body and supporting text | `surfaceContainerLow`, `onSurface`, `onSurfaceVariant` | 3 |
 | Shared bottom sheet with title and supporting text | `surface`, `onSurface`, `onSurfaceVariant` | 3 |
-| Selected theme card | `surfaceContainer`, `onSurface`, `primary` border | 3, plus decorative source swatches |
+| Selected theme card | `secondaryContainer`, `onSecondaryContainer`, `outline` border | 3, plus decorative source swatches |
 | Unselected theme card | `surfaceContainerLow`, `onSurface`, `outlineVariant` border | 3, plus decorative source swatches |
 | Shared snackbar with action and dismiss control | `surfaceContainerHigh`, `onSurface`, `primary`, `onSurfaceVariant` | 4 |
-| Standard checkbox or switch | Selected/unselected track, thumb, outline, and content roles come from Material defaults | Varies by state |
+| App checkbox, switch, radio, Downloads toggle | Checked fill/selection uses secondary; text/thumb and boundaries use neutral roles through `AppSelectionColors` | Varies by state |
 | Browser bottom-bar surface and home pressed highlight | `surfaceContainerLow`, `primaryContainer`; icons/buttons add their own roles | 2 plus controls |
-| Multi-connection download chunks, excluding semantic red | `primary`, `tertiary`, `secondary` | 3; currently also cycles through `error` |
+| Multi-connection download chunks | `primary`, with translucent track; gaps separate connections | 1 family |
 | Delete action | `error`, or `errorContainer` with `onErrorContainer`, depending on style | Excluded |
 
 Source examples:
@@ -129,9 +143,8 @@ by Android rather than stored as fixed source swatches.
 ### Exceptions to keep in mind
 
 - The semantic error family is not exclusive to delete buttons: it also shows
-  failures and warnings, and the multi-connection download progress bar
-  currently uses `error` as its fourth chunk color. That is existing behavior;
-  this reference does not alter it.
+  failures and caution actions. Download progress no longer borrows error,
+  secondary, or tertiary colors.
 - Player overlays have fixed `PlayerUiColors` for white text, dark panels,
   directional seek feedback, and other cues. Player Material controls can use
   the selected palette, but those fixed overlay colors are outside the
@@ -151,7 +164,8 @@ by Android rather than stored as fixed source swatches.
 | --- | --- | --- |
 | Change a theme's source hex colors or displayed name | [`AppColorTheme.kt`](../app/src/main/java/com/miowser/app/ui/theme/AppColorTheme.kt) | Updates that theme's source colors and picker swatches. Preserve enum IDs so saved selections survive. |
 | Choose which swatch controls each family | `paletteDefinitions` in [`PaletteColorSchemes.kt`](../app/src/main/java/com/miowser/app/ui/theme/PaletteColorSchemes.kt) | Changes primary, secondary, tertiary, or neutral mapping for that theme only. |
-| Change surface tint strength, container tones, or contrast handling | `PaletteDefinition.scheme`, `tone`, `accent`, `inkOn` in `PaletteColorSchemes.kt` | Changes the derived roles across the 14 themes. Check both appearances. |
+| Change neutral tones, container tones, or contrast handling | `PaletteDefinition.scheme`, `tone`, `accent`, `inkOn` in `PaletteColorSchemes.kt` | Changes the derived roles across the 14 themes. Keep neutral hue intact and check both appearances. |
+| Change selected-control colors | [`AppSelectionColors.kt`](../app/src/main/java/com/miowser/app/ui/theme/AppSelectionColors.kt) | Central colors for app switches, checkboxes, radios, and Downloads toggles; checked states use family 2. |
 | Change AMOLED black/gray surfaces or existing fallback behavior | [`Theme.kt`](../app/src/main/java/com/miowser/app/ui/theme/Theme.kt) and [`Color.kt`](../app/src/main/java/com/miowser/app/ui/theme/Color.kt) | Changes AMOLED or the existing Miowser/fallback schemes. |
 | Change which role a shared component consumes | The shared component file, such as `MiowserActionButton.kt` or `MiowserSnackbarHost.kt` | Updates that component's instances together. Use a Material role rather than a local hex value. |
 | Change player or HTTPS semantic cues | [`ExpressiveTokens.kt`](../app/src/main/java/com/miowser/app/ui/theme/ExpressiveTokens.kt) | Separate fixed player/status colors; not the named theme palettes. |

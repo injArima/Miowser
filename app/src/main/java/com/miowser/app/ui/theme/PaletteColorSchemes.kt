@@ -47,8 +47,10 @@ private class PaletteDefinition(
     val dark: ColorScheme by lazy { scheme(dark = true) }
 
     fun scheme(dark: Boolean): ColorScheme {
-        val neutralSeed = neutral.mix(Color.Gray, 0.82f)
-        val variantSeed = neutral.mix(Color.Gray, 0.68f)
+        // Family 4 owns surfaces, text, and boundaries. Preserve its hue instead
+        // of replacing most of the requested color with gray.
+        val neutralSeed = neutral
+        val variantSeed = neutral
         val surface = neutralSeed.tone(if (dark) 6f else 98f)
         val surfaceDim = neutralSeed.tone(if (dark) 6f else 87f)
         val surfaceBright = neutralSeed.tone(if (dark) 24f else 98f)
@@ -80,25 +82,25 @@ private class PaletteDefinition(
         // Use the complete constructor: no Material default accent can leak through.
         return ColorScheme(
             primary = p,
-            onPrimary = primary.inkOn(p),
+            onPrimary = neutral.inkOn(p),
             primaryContainer = pc,
-            onPrimaryContainer = primary.inkOn(pc),
+            onPrimaryContainer = neutral.inkOn(pc),
             inversePrimary = primary.accent(inverseSurface, !dark),
             secondary = s,
-            onSecondary = secondary.inkOn(s),
+            onSecondary = neutral.inkOn(s),
             secondaryContainer = sc,
-            onSecondaryContainer = secondary.inkOn(sc),
+            onSecondaryContainer = neutral.inkOn(sc),
             tertiary = t,
-            onTertiary = tertiary.inkOn(t),
+            onTertiary = neutral.inkOn(t),
             tertiaryContainer = tc,
-            onTertiaryContainer = tertiary.inkOn(tc),
+            onTertiaryContainer = neutral.inkOn(tc),
             background = surface,
             onBackground = neutralSeed.tone(if (dark) 90f else 10f),
             surface = surface,
             onSurface = neutralSeed.tone(if (dark) 90f else 10f),
             surfaceVariant = variant,
             onSurfaceVariant = variantSeed.tone(if (dark) 80f else 30f),
-            surfaceTint = p,
+            surfaceTint = neutral.tone(if (dark) 80f else 40f),
             inverseSurface = inverseSurface,
             inverseOnSurface = neutralSeed.tone(if (dark) 20f else 95f),
             error = if (dark) ErrorDark else ErrorLight,
@@ -118,16 +120,16 @@ private class PaletteDefinition(
             surfaceContainerLowest = lowest,
             primaryFixed = pf,
             primaryFixedDim = pfd,
-            onPrimaryFixed = primary.tone(10f),
-            onPrimaryFixedVariant = primary.tone(30f),
+            onPrimaryFixed = neutral.tone(10f),
+            onPrimaryFixedVariant = neutral.tone(30f),
             secondaryFixed = sf,
             secondaryFixedDim = sfd,
-            onSecondaryFixed = secondary.tone(10f),
-            onSecondaryFixedVariant = secondary.tone(30f),
+            onSecondaryFixed = neutral.tone(10f),
+            onSecondaryFixedVariant = neutral.tone(30f),
             tertiaryFixed = tf,
             tertiaryFixedDim = tfd,
-            onTertiaryFixed = tertiary.tone(10f),
-            onTertiaryFixedVariant = tertiary.tone(30f)
+            onTertiaryFixed = neutral.tone(10f),
+            onTertiaryFixedVariant = neutral.tone(30f)
         )
     }
 }

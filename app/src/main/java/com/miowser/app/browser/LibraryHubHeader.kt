@@ -35,8 +35,8 @@ internal fun LibraryHubTopBar(
                 Surface(
                     modifier = Modifier.padding(start = UiSpacing.l, end = UiSpacing.m),
                     shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.tertiary
                 ) {
                     Box(Modifier.size(UiControlSize.compact), contentAlignment = Alignment.Center) {
                         Icon(painterResource(R.drawable.ic_miowser_mark), contentDescription = null,

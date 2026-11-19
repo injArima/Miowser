@@ -6,6 +6,14 @@ input slots (three accents and one neutral), producing 44 non-error Material
 roles. The four shared semantic error/delete roles are excluded from that count
 and should remain separate from ordinary palette changes.
 
+Family assignment is semantic: **1 Primary** for main actions/highlights/progress,
+**2 Secondary** for tonal buttons and selected controls, **3 Tertiary** for
+complementary accents, and **4 Neutral** for backgrounds, cards, ordinary text,
+and borders. `AppSelectionColors` centralizes switch, checkbox, radio, and
+Downloads-toggle colors. Neutral tones preserve the selected source hue;
+AMOLED alone overrides surfaces with black/gray. See the
+[0.1.86 component audit](THEME_COMPONENT_AUDIT_0.1.86.md) for corrected locations.
+
 The Compose UI uses these shared values. Changes to a token update its consumers together. The component values below apply to the browser, hub, settings, sheets, and other non-player UI. The migration preserves existing measurements and colors.
 
 Brand typography is centralized in `BrandTypography` in `Type.kt`: the name

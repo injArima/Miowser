@@ -162,8 +162,8 @@ fun TabsPage(
                     colors = IconButtonDefaults.filledTonalIconToggleButtonColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainer,
                         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        checkedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        checkedContentColor = MaterialTheme.colorScheme.onPrimaryContainer)
+                        checkedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        checkedContentColor = MaterialTheme.colorScheme.onSecondaryContainer)
                 ) {
                     Icon(Icons.Rounded.Language, contentDescription = "Browsing tabs")
                 }
@@ -175,11 +175,11 @@ fun TabsPage(
                     colors = IconButtonDefaults.filledTonalIconToggleButtonColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainer,
                         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        checkedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        checkedContentColor = MaterialTheme.colorScheme.onPrimaryContainer)
+                        checkedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        checkedContentColor = MaterialTheme.colorScheme.onSecondaryContainer)
                 ) {
                     IncognitoIcon(
-                        tint = if (section == 1) MaterialTheme.colorScheme.onPrimaryContainer
+                        tint = if (section == 1) MaterialTheme.colorScheme.onSecondaryContainer
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(UiIconSize.standard).semantics { contentDescription = "Private tabs" }
                     )
@@ -442,7 +442,7 @@ private fun InactiveTabList(
                         Text(
                             "${if (record.reason == InactiveTabReason.DUPLICATE) "Duplicate" else "Unused"} · ${formatInactiveDate(record.archivedAt)}",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 5.dp)
                         )
                     }
@@ -466,13 +466,12 @@ private fun TabPreviewCard(tab: Tab, isActive: Boolean, onClick: () -> Unit, onC
     val shape = MaterialTheme.shapes.medium
     Card(
         modifier = Modifier.fillMaxWidth().testTag("tab_card")
-            .let { if (isActive) it.border(2.dp, MaterialTheme.colorScheme.primary, shape) else it }
+            .let { if (isActive) it.border(2.dp, MaterialTheme.colorScheme.outline, shape) else it }
             .clip(shape)
             .clickable(onClick = onClick),
         shape = shape,
         colors = CardDefaults.cardColors(
-            containerColor = if (isActive) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surfaceContainer
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
         )
     ) {
         Box(
@@ -491,9 +490,9 @@ private fun TabPreviewCard(tab: Tab, isActive: Boolean, onClick: () -> Unit, onC
             if (tab.isPrivate) {
                 Icon(
                     Icons.Rounded.VisibilityOff, contentDescription = "Private tab",
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    tint = MaterialTheme.colorScheme.tertiary,
                     modifier = Modifier.align(Alignment.TopStart)
-                        .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(bottomEnd = 10.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(bottomEnd = 10.dp))
                         .padding(7.dp)
                 )
             }
@@ -501,8 +500,12 @@ private fun TabPreviewCard(tab: Tab, isActive: Boolean, onClick: () -> Unit, onC
                 Icon(Icons.Rounded.Close, contentDescription = "Close ${tab.title}")
             }
         }
-        Column(modifier = Modifier.padding(horizontal = UiSpacing.m, vertical = UiSpacing.compact)) {
+        Column(modifier = Modifier.fillMaxWidth()
+            .background(if (isActive) MaterialTheme.colorScheme.secondaryContainer
+                else MaterialTheme.colorScheme.surfaceContainer)
+            .padding(horizontal = UiSpacing.m, vertical = UiSpacing.compact)) {
             Text(tab.title.ifBlank { "New tab" }, fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
+                color = if (isActive) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (!tab.isShowingHome && tab.url.isNotBlank()) {
                 Text(tab.url, style = MaterialTheme.typography.bodySmall,
@@ -521,7 +524,7 @@ private fun HomeTabPreview(modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text("Miowser", style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.padding(top = UiSpacing.xxl, bottom = UiSpacing.comfortable))
         Row(
             modifier = Modifier.fillMaxWidth()
@@ -541,10 +544,10 @@ private fun HomeTabPreview(modifier: Modifier = Modifier) {
             dials.forEach { dial ->
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(Modifier.size(30.dp)
-                        .background(MaterialTheme.colorScheme.primaryContainer, UiCorners.r10),
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh, UiCorners.r10),
                         contentAlignment = Alignment.Center) {
                         Text(dial.title.take(1).uppercase(), style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            color = MaterialTheme.colorScheme.onSurface)
                     }
                     Text(dial.title, style = MaterialTheme.typography.labelSmall, maxLines = 1,
                         overflow = TextOverflow.Ellipsis)

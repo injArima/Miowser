@@ -1,5 +1,6 @@
 package com.miowser.app.ui
 
+import com.miowser.app.ui.theme.AppSelectionColors
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -127,7 +128,7 @@ private fun DeviceStorageDirectories(
                 verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
                 if (sourceId == null) {
                     item {
-                        Text("Storages", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                        Text("Storages", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     item {
                         Text("Folders are included automatically. Uncheck a folder to hide its videos and subfolders from Device.",
@@ -183,7 +184,7 @@ private fun DeviceDirectoryRow(
             supportingContent = if (!included) ({ Text("Excluded from Device") }) else null,
             leadingContent = { Icon(if (storage) Icons.Rounded.Storage else Icons.Rounded.Folder, null) },
             trailingContent = {
-                Checkbox(checked = included, enabled = enabled, onCheckedChange = onIncludedChange,
+                Checkbox(colors = AppSelectionColors.checkboxColors(), checked = included, enabled = enabled, onCheckedChange = onIncludedChange,
                     modifier = Modifier.semantics { contentDescription = "Include $label" })
             },
             modifier = Modifier.clickable(onClickLabel = "Browse $label", onClick = onOpen),

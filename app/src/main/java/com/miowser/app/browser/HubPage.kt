@@ -338,9 +338,9 @@ private fun DownloadTimingText(download: Download, visible: Boolean) {
  * share of the file (a thread covering more bytes gets a proportionally wider chunk) and filled
  * independently by that thread's own progress — closer to how IDM/FDM actually render a
  * multi-connection download than N separate bars would be, and it reads at a glance as "one
- * download happening in parallel pieces" rather than "several unrelated downloads." Colors just
- * cycle through the app's own Material You accents — there's no meaning attached to which thread
- * gets which color, only to keeping adjacent chunks visually distinct.
+ * download happening in parallel pieces" rather than "several unrelated downloads." Primary-family color
+ * communicates progress; the gaps keep adjacent connections distinct without borrowing
+ * selection, decorative, or error colors.
  */
 @Composable
 private fun MultiThreadProgressBar(download: Download, visible: Boolean, modifier: Modifier = Modifier) {
@@ -375,7 +375,7 @@ private fun MultiThreadProgressBar(download: Download, visible: Boolean, modifie
 @Composable
 private fun threadChunkColors(): List<Color> {
     val scheme = MaterialTheme.colorScheme
-    return listOf(scheme.primary, scheme.tertiary, scheme.secondary, scheme.error)
+    return listOf(scheme.primary)
 }
 
 private fun statusLabel(download: Download, includeProgress: Boolean): String {

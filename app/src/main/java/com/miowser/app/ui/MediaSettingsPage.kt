@@ -291,8 +291,8 @@ private fun MediaCategoryRow(label: String, icon: ImageVector, onClick: () -> Un
         leadingContent = {
             Surface(
                 shape = MaterialTheme.shapes.small,
-                color = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                contentColor = MaterialTheme.colorScheme.tertiary
             ) {
                 Box(Modifier.size(UiControlSize.compact), contentAlignment = Alignment.Center) {
                     Icon(icon, contentDescription = null, modifier = Modifier.size(UiIconSize.standard))
