@@ -90,7 +90,7 @@ class PaletteColorSchemesTest {
         val sources = mapOf(
             AppColorTheme.SEA to "1C4D8D 4988C4 BDE8F5",
             AppColorTheme.AMBER to "F48C06 D00000 FFBA08",
-            AppColorTheme.BLACK_GOLD to "FCA311 14213D E5E5E5",
+            AppColorTheme.BLACK_GOLD to "FCA311 14213D FFFFFF",
             AppColorTheme.SUMMER_OCEAN to "457B9D E63946 A8DADC",
             AppColorTheme.HALLOWEEN to "FF0000 830000 000000",
             AppColorTheme.RETRO to "728E6D E5CD82 15370D",

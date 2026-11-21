@@ -1,7 +1,8 @@
 # Miowser theme color reference
 
 Reference for the 14 palette themes introduced in 0.1.84. This describes the
-current implementation, including the component-role corrections in 0.1.86.
+current implementation, including the component-role corrections in 0.1.86
+and the four-source-color limit in 0.1.87.
 
 ## Numbered family convention
 
@@ -35,9 +36,11 @@ See the [component audit](THEME_COMPONENT_AUDIT_0.1.86.md) for corrected control
 Each theme has **four input slots: primary, secondary, tertiary, and neutral**.
 These are three accent families and one background/text family. Some themes
 reuse a source color in two slots, so they have three distinct inputs rather
-than four. The supplied images contain 4, 5, or 10 original swatches; keeping
-those swatches in the catalog does not mean every swatch becomes an independent
-component color.
+than four. The supplied images contain 4, 5, or 10 original swatches. From
+0.1.87, each of the 14 custom palettes retains only four prominent source
+colors. The picker shows those four colors in individual pills; there are no
+additional stored swatches outside that retained set. Wallpaper and the
+existing Miowser fallback are separate choices.
 
 The inputs generate **48 Material color roles per appearance**. Excluding the
 four semantic error/delete roles leaves **44 roles**. Roles are named purposes,
@@ -64,12 +67,12 @@ These are the exact RGB inputs before contrast and tonal adjustment. The slot
 order in code is `palette(primary, secondary, tertiary, neutral)`; its numbers
 are **zero-based indices** into the theme's `swatches` list.
 
-| Theme | Image swatches | Distinct inputs | Primary | Secondary | Tertiary | Neutral | Index mapping |
+| Theme | Retained swatches | Distinct inputs | Primary | Secondary | Tertiary | Neutral | Index mapping |
 | --- | ---: | ---: | --- | --- | --- | --- | --- |
 | Sea | 4 | 4 | `#1C4D8D` | `#4988C4` | `#BDE8F5` | `#0F2854` | `1, 2, 3, 0` |
-| Amber | 10 | 4 | `#F48C06` | `#D00000` | `#FFBA08` | `#03071E` | `7, 4, 9, 0` |
-| Black Gold | 5 | 4 | `#FCA311` | `#14213D` | `#E5E5E5` | `#000000` | `2, 1, 3, 0` |
-| Summer Ocean | 5 | 4 | `#457B9D` | `#E63946` | `#A8DADC` | `#1D3557` | `3, 0, 2, 4` |
+| Amber | 4 | 4 | `#F48C06` | `#D00000` | `#FFBA08` | `#03071E` | `2, 1, 3, 0` |
+| Black Gold | 4 | 4 | `#FCA311` | `#14213D` | `#FFFFFF` | `#000000` | `2, 1, 3, 0` |
+| Summer Ocean | 4 | 4 | `#457B9D` | `#E63946` | `#A8DADC` | `#1D3557` | `2, 0, 1, 3` |
 | Halloween | 4 | 3 | `#FF0000` | `#830000` | `#000000` | `#000000` | `3, 1, 0, 0` |
 | Retro | 4 | 3 | `#728E6D` | `#E5CD82` | `#15370D` | `#15370D` | `1, 2, 0, 0` |
 | Sunset | 4 | 3 | `#FF6F3C` | `#155263` | `#FFC93C` | `#155263` | `1, 0, 3, 0` |
@@ -134,10 +137,13 @@ Source examples:
 [download progress](../app/src/main/java/com/miowser/app/browser/HubPage.kt).
 
 Theme choices appear as a horizontal gallery of equal-height rounded cards.
-Every source swatch gets its own pill. Families appear in order 1, 2, 3, 4,
-with repeated source colors shown once; any additional image swatches follow.
-Larger palettes wrap their pills within the card, so Amber retains all ten
-colors. Wallpaper is identified with an icon because its colors are generated
+Every retained source swatch gets its own pill. Families appear in order 1, 2,
+3, 4, with repeated source colors shown once; any other retained source color
+follows. Each custom theme shows exactly four pills. Amber keeps its distinct
+orange/red/gold/deep-navy anchors instead of the intermediate warm gradient
+steps; Black Gold keeps white instead of the similar light gray; Summer Ocean
+keeps aqua instead of the near-white cream. Wallpaper is identified with an
+icon because its colors are generated
 by Android rather than stored as fixed source swatches.
 
 ### Exceptions to keep in mind

@@ -9,7 +9,7 @@ import kotlin.math.pow
 internal fun AppColorTheme.paletteColorScheme(darkTheme: Boolean): ColorScheme? =
     paletteDefinitions[this]?.let { if (darkTheme) it.dark else it.light }
 
-/** Show families 1–4 first, then any remaining source swatches; never omit a color. */
+/** Show families 1–4 first, followed by any other retained source colors. */
 internal fun AppColorTheme.familyOrderedSwatches(): List<Color> =
     paletteDefinitions[this]?.let {
         (listOf(it.primary, it.secondary, it.tertiary, it.neutral) + swatches).distinct()
@@ -19,9 +19,9 @@ internal fun AppColorTheme.familyOrderedSwatches(): List<Color> =
 // source; surface tinting is independent so a multicolor palette never becomes one hue.
 private val paletteDefinitions = mapOf(
     AppColorTheme.SEA to AppColorTheme.SEA.palette(1, 2, 3, 0),
-    AppColorTheme.AMBER to AppColorTheme.AMBER.palette(7, 4, 9, 0),
+    AppColorTheme.AMBER to AppColorTheme.AMBER.palette(2, 1, 3, 0),
     AppColorTheme.BLACK_GOLD to AppColorTheme.BLACK_GOLD.palette(2, 1, 3, 0),
-    AppColorTheme.SUMMER_OCEAN to AppColorTheme.SUMMER_OCEAN.palette(3, 0, 2, 4),
+    AppColorTheme.SUMMER_OCEAN to AppColorTheme.SUMMER_OCEAN.palette(2, 0, 1, 3),
     AppColorTheme.HALLOWEEN to AppColorTheme.HALLOWEEN.palette(3, 1, 0, 0),
     AppColorTheme.RETRO to AppColorTheme.RETRO.palette(1, 2, 0, 0),
     AppColorTheme.SUNSET to AppColorTheme.SUNSET.palette(1, 0, 3, 0),

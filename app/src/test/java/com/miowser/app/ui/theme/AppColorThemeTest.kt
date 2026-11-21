@@ -35,9 +35,9 @@ class AppColorThemeTest {
     @Test fun swatchesAreExactOpaqueSourceRgbWithoutTonalAdjustment() {
         val expected = mapOf(
             AppColorTheme.SEA to "0F2854 1C4D8D 4988C4 BDE8F5",
-            AppColorTheme.AMBER to "03071E 370617 6A040F 9D0208 D00000 DC2F02 E85D04 F48C06 FAA307 FFBA08",
-            AppColorTheme.BLACK_GOLD to "000000 14213D FCA311 E5E5E5 FFFFFF",
-            AppColorTheme.SUMMER_OCEAN to "E63946 F1FAEE A8DADC 457B9D 1D3557",
+            AppColorTheme.AMBER to "03071E D00000 F48C06 FFBA08",
+            AppColorTheme.BLACK_GOLD to "000000 14213D FCA311 FFFFFF",
+            AppColorTheme.SUMMER_OCEAN to "E63946 A8DADC 457B9D 1D3557",
             AppColorTheme.HALLOWEEN to "000000 830000 BC0202 FF0000",
             AppColorTheme.RETRO to "15370D 728E6D E5CD82 FFF2B4",
             AppColorTheme.SUNSET to "155263 FF6F3C FF9A3C FFC93C",
@@ -51,6 +51,8 @@ class AppColorThemeTest {
         )
         assertEquals(14, expected.size)
         expected.forEach { (theme, hex) ->
+            assertEquals("${theme.name} should retain exactly four prominent source colors", 4, theme.swatches.size)
+            assertEquals("${theme.name} gallery must show exactly four pills", 4, theme.familyOrderedSwatches().size)
             assertEquals(theme.name, hex.split(' ').map { Color(0xFF000000 or it.toLong(16)).toArgb() },
                 theme.swatches.map { it.toArgb() })
         }
