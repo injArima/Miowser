@@ -1,5 +1,6 @@
 package com.miowser.app.ui
 
+import com.miowser.app.ui.theme.SegmentedListTokens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
@@ -75,17 +76,16 @@ internal fun ThemePalettePicker(onDismissRequest: () -> Unit) {
                 )
             }
             item(key = "mode", contentType = "mode") {
-                Column(
-                    modifier = Modifier.selectableGroup(),
-                    verticalArrangement = Arrangement.spacedBy(ThemePickerTokens.choiceGap)
-                ) {
+                Column {
                     ThemePickerSectionHeading("Appearance")
-                    AppThemeMode.entries.forEach { mode ->
-                        ThemePickerChoice(
-                            label = mode.label,
-                            selected = AppThemePreference.mode == mode,
-                            onClick = { AppThemePreference.set(context, mode) }
-                        )
+                    SegmentedListGroup(modifier = Modifier.selectableGroup()) {
+                        AppThemeMode.entries.forEach { mode ->
+                            ThemePickerChoice(
+                                label = mode.label,
+                                selected = AppThemePreference.mode == mode,
+                                onClick = { AppThemePreference.set(context, mode) }
+                            )
+                        }
                     }
                 }
             }
@@ -121,7 +121,7 @@ private fun ThemePickerChoice(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
+        shape = if (selected) SegmentedListTokens.outerShape else segmentedListItemShape(),
         color = if (selected) MaterialTheme.colorScheme.secondaryContainer
             else MaterialTheme.colorScheme.surfaceContainerLow,
         contentColor = if (selected) MaterialTheme.colorScheme.onSecondaryContainer

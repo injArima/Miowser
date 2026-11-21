@@ -1,9 +1,11 @@
 package com.miowser.app.ui
 
+import com.miowser.app.ui.theme.SegmentedListTokens
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
@@ -29,20 +31,22 @@ import com.miowser.app.ui.theme.UiSpacing
 // HistoryPage's own bulk-delete dialogs for the operations that actually warrant one) — the
 // lightweight icon matches the lightweight, easily-undone-by-just-revisiting-the-page stakes.
 @Composable
-internal fun LibraryRow(title: String, subtitle: String, onClick: () -> Unit, onRemove: () -> Unit) {
+internal fun LibraryRow(title: String, subtitle: String, onClick: () -> Unit, onRemove: () -> Unit,
+    index: Int = 0, count: Int = 1) {
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.m, vertical = UiSpacing.xs),
-        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth(),
+        shape = segmentedListShape(index, count),
         color = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
+            modifier = Modifier.fillMaxWidth().heightIn(min = SegmentedListTokens.minRowHeight)
+                .clickable(onClick = onClick)
                 .padding(start = UiSpacing.l, end = UiSpacing.xs, top = UiSpacing.s, bottom = UiSpacing.s),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f).padding(end = UiSpacing.s)) {
                 Text(text = title, style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(
                     text = subtitle,
                     maxLines = 1,

@@ -1,9 +1,13 @@
 package com.miowser.app.ui
 
+import com.miowser.app.ui.theme.UiSpacing
+import com.miowser.app.ui.theme.SegmentedListTokens
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.ui.Alignment
@@ -29,13 +33,16 @@ fun BookmarksPage(
             }
             return@SimplePageScaffold
         }
-        LazyColumn(modifier = modifier) {
-            items(bookmarks, key = { it.url }) { bookmark ->
+        LazyColumn(modifier = modifier,
+            contentPadding = PaddingValues(UiSpacing.l),
+            verticalArrangement = Arrangement.spacedBy(SegmentedListTokens.gap)) {
+            itemsIndexed(bookmarks, key = { _, bookmark -> bookmark.url }) { index, bookmark ->
                 LibraryRow(
                     title = bookmark.title,
                     subtitle = bookmark.url,
                     onClick = { onOpenUrl(bookmark.url) },
-                    onRemove = { onRemove(bookmark) }
+                    onRemove = { onRemove(bookmark) },
+                    index = index, count = bookmarks.size
                 )
             }
         }

@@ -1,11 +1,15 @@
 package com.miowser.app.ui
 
+import com.miowser.app.ui.theme.SegmentedListTokens
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import com.miowser.app.ui.AppText as Text
@@ -34,18 +38,21 @@ fun SitePermissionsPage(
     onBack: () -> Unit
 ) {
     SimplePageScaffold(title = "Site permissions", onBack = onBack) { modifier ->
-        LazyColumn(modifier = modifier) {
+        LazyColumn(modifier = modifier, contentPadding = PaddingValues(UiSpacing.l),
+            verticalArrangement = Arrangement.spacedBy(SegmentedListTokens.gap)) {
             if (decisions.isEmpty()) item {
-                Text("No remembered site decisions", modifier = Modifier.padding(UiSpacing.xl))
+                Text("No remembered site decisions")
             }
-            items(decisions, key = { "${it.origin}|${it.resource}" }) { item ->
+            itemsIndexed(decisions, key = { _, item -> "${item.origin}|${item.resource}" }) { index, item ->
                 Surface(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.m, vertical = UiSpacing.xs),
-                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = segmentedListShape(index, decisions.size),
                     color = MaterialTheme.colorScheme.surfaceContainerLow
                 ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.l, vertical = UiSpacing.s),
+                    modifier = Modifier.fillMaxWidth()
+                        .heightIn(min = SegmentedListTokens.minRowHeight)
+                        .padding(horizontal = UiSpacing.l, vertical = UiSpacing.s),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {

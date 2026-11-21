@@ -33,24 +33,28 @@ fun BrowsingDataPage(onClear: (BrowsingDataSelection) -> Unit, onBack: () -> Uni
     SimplePageScaffold(title = "Clear browsing data", onBack = onBack) { modifier ->
         Column(modifier = modifier.verticalScroll(rememberScrollState()).padding(UiSpacing.xl)) {
             Text("Choose exactly what to erase", style = MaterialTheme.typography.titleMedium)
-            DataChoice("History", selected.history) { selected = selected.copy(history = it) }
-            DataChoice("Cookies and website storage", selected.cookiesAndSiteStorage) {
-                selected = selected.copy(cookiesAndSiteStorage = it)
-            }
-            DataChoice("Page cache", selected.cache) { selected = selected.copy(cache = it) }
-            DataChoice("WebView form suggestions", selected.formData) { selected = selected.copy(formData = it) }
-            DataChoice("Site permission decisions", selected.sitePermissions) {
-                selected = selected.copy(sitePermissions = it)
+            SegmentedListGroup(modifier = Modifier.padding(top = UiSpacing.m)) {
+                DataChoice("History", selected.history) { selected = selected.copy(history = it) }
+                DataChoice("Cookies and website storage", selected.cookiesAndSiteStorage) {
+                    selected = selected.copy(cookiesAndSiteStorage = it)
+                }
+                DataChoice("Page cache", selected.cache) { selected = selected.copy(cache = it) }
+                DataChoice("WebView form suggestions", selected.formData) { selected = selected.copy(formData = it) }
+                DataChoice("Site permission decisions", selected.sitePermissions) {
+                    selected = selected.copy(sitePermissions = it)
+                }
             }
             Text("Saved app records", style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(top = UiSpacing.l))
             Text("Downloaded files stay on your device. These choices remove their app records only.",
                 style = MaterialTheme.typography.bodySmall)
-            DataChoice("Download records", selected.downloadRecords) {
-                selected = selected.copy(downloadRecords = it)
-            }
-            DataChoice("Library records", selected.libraryRecords) {
-                selected = selected.copy(libraryRecords = it)
+            SegmentedListGroup(modifier = Modifier.padding(top = UiSpacing.m)) {
+                DataChoice("Download records", selected.downloadRecords) {
+                    selected = selected.copy(downloadRecords = it)
+                }
+                DataChoice("Library records", selected.libraryRecords) {
+                    selected = selected.copy(libraryRecords = it)
+                }
             }
             MiowserActionButton(onClick = { confirm = true }, enabled = selected.hasSelection(),
                 style = AppButtonStyle.CAUTION,
@@ -72,9 +76,11 @@ fun BrowsingDataPage(onClear: (BrowsingDataSelection) -> Unit, onBack: () -> Uni
 
 @Composable
 private fun DataChoice(label: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth().toggleable(value = checked, role = Role.Checkbox, onValueChange = onChecked)
-        .padding(vertical = UiSpacing.xs), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier = Modifier.segmentedListItem(selected = checked)
+        .toggleable(value = checked, role = Role.Checkbox, onValueChange = onChecked)
+        .padding(horizontal = UiSpacing.s, vertical = UiSpacing.xs), verticalAlignment = Alignment.CenterVertically) {
         Checkbox(colors = AppSelectionColors.checkboxColors(), checked = checked, onCheckedChange = null)
-        Text(label, modifier = Modifier.padding(start = UiSpacing.s))
+        Text(label, modifier = Modifier.padding(start = UiSpacing.s),
+            color = if (checked) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface)
     }
 }

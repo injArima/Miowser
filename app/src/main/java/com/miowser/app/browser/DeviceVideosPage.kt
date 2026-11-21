@@ -252,7 +252,7 @@ internal fun DeviceVideosPage(
                     }
                 }
             }
-            LibraryOptionsGroup("Storage access", Icons.Rounded.FolderOpen) {
+            LibraryOptionsGroup("Storage access", Icons.Rounded.FolderOpen, segmentedActions = true) {
                 LibraryOptionAction("Open video file", Icons.Rounded.FolderOpen) {
                     onDismissLibrarySettings()
                     onOpenVideo()

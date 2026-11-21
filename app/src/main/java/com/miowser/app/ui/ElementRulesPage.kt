@@ -66,11 +66,6 @@ fun ElementRulesPage(
                     )
                 }
                 items(groups, key = { it.first }) { (host, siteRules) ->
-                    Surface(
-                        shape = MaterialTheme.shapes.large,
-                        color = MaterialTheme.colorScheme.surfaceContainerLow,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
                         Column(Modifier.padding(vertical = UiSpacing.s)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.l, vertical = 6.dp),
@@ -84,15 +79,12 @@ fun ElementRulesPage(
                                     Text("Revert all")
                                 }
                             }
-                            siteRules.forEachIndexed { index, rule ->
-                                if (index > 0) HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = UiSpacing.l),
-                                    color = MaterialTheme.colorScheme.outlineVariant
-                                )
-                                ElementRuleManagementRow(rule, onActionChanged, onRevert)
+                            SegmentedListGroup {
+                                siteRules.forEach { rule ->
+                                    ElementRuleManagementRow(rule, onActionChanged, onRevert)
+                                }
                             }
                         }
-                    }
                 }
                 item { Spacer(Modifier.height(UiSpacing.s)) }
             }
@@ -107,7 +99,7 @@ private fun ElementRuleManagementRow(
     onRevert: (SiteElementRule) -> Unit
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.l, vertical = UiSpacing.m),
+        modifier = Modifier.segmentedListItem().padding(horizontal = UiSpacing.l, vertical = UiSpacing.m),
         verticalArrangement = Arrangement.spacedBy(UiSpacing.s)
     ) {
         Text(

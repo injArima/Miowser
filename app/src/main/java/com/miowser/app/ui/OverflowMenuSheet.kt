@@ -393,20 +393,22 @@ fun OverflowMenuSheet(
                 Column(Modifier.padding(UiSpacing.l)) {
                     MenuSectionTitle("PAGE ACTIONS")
                     Spacer(Modifier.height(UiSpacing.s))
-                    MenuActionRow(Icons.Rounded.Share, "Share page", "Send or copy the page link",
-                        shareEnabled, onClick = { onDismiss(); onShare() })
-                    MenuActionRow(Icons.Rounded.Search, "Find in page", "Search text on this page",
-                        pageActionsEnabled, onClick = { onDismiss(); onFind() })
-                    MenuActionRow(Icons.Rounded.TextFields, "Text size", "Adjust text on this page",
-                        pageActionsEnabled, onClick = { onDismiss(); onTextSize() })
-                    MenuActionRow(Icons.Rounded.DeleteSweep, "Clear browser cache", "Cached files for all websites",
-                        true, onClick = { onDismiss(); onClearCache() })
-                    MenuActionRow(Icons.Rounded.Cookie, "Clear cookies and site data", "All websites; may sign you out",
-                        true, onClick = { onDismiss(); onClearCookiesAndSiteData() })
-                    MenuActionRow(Icons.Rounded.Web, "Request desktop website",
-                        if (desktopMode) "Desktop site on" else "Show the desktop layout",
-                        pageActionsEnabled, onClick = onToggleDesktopMode,
-                        toggleChecked = desktopMode)
+                    SegmentedListGroup {
+                        MenuActionRow(Icons.Rounded.Share, "Share page", "Send or copy the page link",
+                            shareEnabled, onClick = { onDismiss(); onShare() })
+                        MenuActionRow(Icons.Rounded.Search, "Find in page", "Search text on this page",
+                            pageActionsEnabled, onClick = { onDismiss(); onFind() })
+                        MenuActionRow(Icons.Rounded.TextFields, "Text size", "Adjust text on this page",
+                            pageActionsEnabled, onClick = { onDismiss(); onTextSize() })
+                        MenuActionRow(Icons.Rounded.DeleteSweep, "Clear browser cache", "Cached files for all websites",
+                            true, onClick = { onDismiss(); onClearCache() })
+                        MenuActionRow(Icons.Rounded.Cookie, "Clear cookies and site data", "All websites; may sign you out",
+                            true, onClick = { onDismiss(); onClearCookiesAndSiteData() })
+                        MenuActionRow(Icons.Rounded.Web, "Request desktop website",
+                            if (desktopMode) "Desktop site on" else "Show the desktop layout",
+                            pageActionsEnabled, onClick = onToggleDesktopMode,
+                            toggleChecked = desktopMode)
+                    }
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(UiSpacing.m),
@@ -527,10 +529,10 @@ private fun MenuActionRow(icon: ImageVector, title: String, detail: String,
                           toggleChecked: Boolean? = null) {
     val color = if (enabled) MaterialTheme.colorScheme.onSurface
         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f)
-    Row(Modifier.fillMaxWidth().clip(UiCorners.r16)
+    Row(Modifier.segmentedListItem()
         .clickable(enabled = enabled, role = if (toggleChecked == null) Role.Button else Role.Switch,
             onClick = onClick)
-        .padding(vertical = UiSpacing.compact, horizontal = UiSpacing.xs),
+        .padding(vertical = UiSpacing.compact, horizontal = UiSpacing.m),
         verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(BrowserMenuTokens.actionIconContainerSize).clip(UiCorners.r14)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
@@ -538,9 +540,8 @@ private fun MenuActionRow(icon: ImageVector, title: String, detail: String,
             Icon(icon, null, tint = color, modifier = Modifier.size(BrowserMenuTokens.actionIconSize))
         }
         Column(Modifier.weight(1f).padding(start = UiSpacing.comfortable)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, color = color)
-            Text(detail, style = MaterialTheme.typography.bodySmall, color = color,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, style = MaterialTheme.typography.bodyLarge, color = color)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = color)
         }
         if (toggleChecked != null) {
             Switch(colors = AppSelectionColors.switchColors(), checked = toggleChecked, onCheckedChange = { onClick() }, enabled = enabled)

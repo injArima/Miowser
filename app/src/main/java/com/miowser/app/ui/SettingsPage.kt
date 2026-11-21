@@ -1,5 +1,11 @@
 package com.miowser.app.ui
 
+import androidx.compose.material.icons.automirrored.rounded.HelpOutline
+import androidx.compose.material.icons.rounded.Backup
+import androidx.compose.material.icons.rounded.VideoLibrary
+import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.DeleteSweep
 import com.miowser.app.ui.theme.AppSelectionColors
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,7 +29,8 @@ import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -135,7 +142,6 @@ fun SettingsPage(
                         Description("Brave Search requires an API key for autocomplete, so suggestions are unavailable.")
                     }
                 }
-                SectionDivider()
                 OptionBlock("Browser home page", "Choose the page shown when opening a new browser tab.") {
                     ChoiceRow(HomePageMode.entries, settings.homePageMode, { it.label }) {
                         onUpdate(settings.copy(homePageMode = it))
@@ -161,7 +167,6 @@ fun SettingsPage(
                     settings.restoreTabsOnStartup) {
                     onUpdate(settings.copy(restoreTabsOnStartup = it))
                 }
-                SectionDivider()
                 OptionBlock("Delete archived inactive tabs", "Keep archived tabs until you remove them, or delete them after a chosen period.") {
                     ChoiceRow(InactiveTabRetention.entries, settings.inactiveTabRetention, { it.label }) { period ->
                         if (period == InactiveTabRetention.NEVER) {
@@ -169,7 +174,6 @@ fun SettingsPage(
                         } else if (period != settings.inactiveTabRetention) pendingRetention = period
                     }
                 }
-                SectionDivider()
                 OptionBlock("Confirm before opening a new tab", "Choose when page-created tabs need your approval.") {
                     ChoiceRow(NewTabConfirmation.entries, settings.newTabConfirmation, { it.label }) {
                         onUpdate(settings.copy(newTabConfirmation = it))
@@ -179,20 +183,16 @@ fun SettingsPage(
 
             SettingsSection("Privacy & security") {
                 NavigationRow("Clear browsing data", "Choose history, cookies, and other data to erase.",
-                    destructive = true, onClick = onOpenBrowsingData)
-                SectionDivider()
-                NavigationRow("Site permissions", "Review access granted to websites.", onClick = onOpenSitePermissions)
-                SectionDivider()
+                    destructive = true, leadingIcon = Icons.Rounded.DeleteSweep, onClick = onOpenBrowsingData)
+                NavigationRow("Site permissions", "Review access granted to websites.", leadingIcon = Icons.Rounded.Security, onClick = onOpenSitePermissions)
                 NavigationRow(
                     "Blocked page elements",
                     "Review elements you have hidden or deleted on individual websites.",
-                    onClick = onOpenElementRules
+                    leadingIcon = Icons.Rounded.VisibilityOff, onClick = onOpenElementRules
                 )
-                SectionDivider()
                 SettingRow("Cookies", "Allow websites to remember sign-ins and preferences.", settings.cookiesEnabled) {
                     onUpdate(settings.copy(cookiesEnabled = it))
                 }
-                SectionDivider()
                 SettingRow("Allow popups", "Let websites open new windows; tab confirmation still applies.", settings.popupsEnabled) {
                     onUpdate(settings.copy(popupsEnabled = it))
                 }
@@ -223,7 +223,7 @@ fun SettingsPage(
 
             SettingsSection("Media") {
                 NavigationRow("Media settings", "Manage the media library, player preferences, and download connections.",
-                    onClick = onOpenMediaSettings)
+                    leadingIcon = Icons.Rounded.VideoLibrary, onClick = onOpenMediaSettings)
             }
 
             SettingsSection("Advanced") {
@@ -234,17 +234,16 @@ fun SettingsPage(
             }
             SettingsSection("Data") {
                 NavigationRow("Backup & restore", "Save your browser data or restore a previous backup.",
-                    onClick = onOpenBackupRestore)
+                    leadingIcon = Icons.Rounded.Backup, onClick = onOpenBackupRestore)
             }
             SettingsSection("About") {
                 NavigationRow(
                     "Getting started",
                     "Review the guide to browsing, media playback, downloads, and the Library.",
-                    onClick = onOpenOnboarding
+                    leadingIcon = Icons.AutoMirrored.Rounded.HelpOutline, onClick = onOpenOnboarding
                 )
-                SectionDivider()
                 Row(
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.segmentedListItem()
                         .padding(horizontal = UiSpacing.l, vertical = UiSpacing.l),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(UiSpacing.m)
@@ -279,18 +278,8 @@ internal fun SettingsSection(title: String, content: @Composable ColumnScope.() 
         Text(title.uppercase(), style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = UiSpacing.xs))
-        Surface(shape = MaterialTheme.shapes.large,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-            modifier = Modifier.fillMaxWidth()) {
-            Column(content = content)
-        }
+        SegmentedListGroup(content = content)
     }
-}
-
-@Composable
-internal fun SectionDivider() {
-    HorizontalDivider(modifier = Modifier.padding(horizontal = UiSpacing.l),
-        color = MaterialTheme.colorScheme.outlineVariant)
 }
 
 @Composable
@@ -301,7 +290,7 @@ private fun Description(text: String) {
 
 @Composable
 internal fun OptionBlock(title: String, description: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = UiSpacing.l, vertical = UiSpacing.comfortable),
+    Column(Modifier.segmentedListItem().padding(horizontal = UiSpacing.l, vertical = UiSpacing.comfortable),
         verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
         Text(title, style = MaterialTheme.typography.bodyLarge)
         Description(description)
@@ -322,7 +311,7 @@ internal fun <T> ChoiceRow(options: List<T>, selected: T, label: (T) -> String, 
 @Composable
 internal fun SettingRow(label: String, description: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().toggleable(value = checked, role = Role.Switch, onValueChange = onChecked)
+        modifier = Modifier.segmentedListItem().toggleable(value = checked, role = Role.Switch, onValueChange = onChecked)
             .padding(horizontal = UiSpacing.l, vertical = UiSpacing.comfortable),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(UiSpacing.m)
@@ -335,20 +324,26 @@ internal fun SettingRow(label: String, description: String, checked: Boolean, on
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun NavigationRow(label: String, description: String, destructive: Boolean = false, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = UiSpacing.l, vertical = UiSpacing.l),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(UiSpacing.m)
-    ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(label, style = MaterialTheme.typography.bodyLarge,
-                color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
-            Description(description)
+internal fun NavigationRow(label: String, description: String, destructive: Boolean = false,
+    leadingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null, onClick: () -> Unit) {
+    ListItem(
+        onClick = onClick,
+        modifier = Modifier.segmentedListItem(nativeSurface = true),
+        shapes = segmentedListShapes(),
+        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        leadingContent = if (leadingIcon != null) ({
+            Icon(leadingIcon, contentDescription = null,
+                tint = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary)
+        }) else null,
+        supportingContent = { Description(description) },
+        trailingContent = {
+            Icon(Icons.Rounded.ChevronRight, contentDescription = null,
+                tint = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Icon(Icons.Rounded.ChevronRight, contentDescription = null,
-            tint = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyLarge,
+            color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
     }
 }

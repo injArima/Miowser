@@ -1,5 +1,9 @@
 package com.miowser.app.ui
 
+import androidx.compose.material.icons.rounded.BugReport
+import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.FolderOpen
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
@@ -97,8 +101,7 @@ internal fun MediaSettingsPage(
     MediaSettingsLayout("Media settings", onBack) {
         SettingsSection("Media library") {
             NavigationRow("Media library folders", "Choose folders to include in Device Videos.",
-                onClick = onOpenDirectories)
-            SectionDivider()
+                leadingIcon = Icons.Rounded.FolderOpen, onClick = onOpenDirectories)
             SettingRow("Device video discovery",
                 "Find videos in device storage and linked folders. You can still open individual files when this is off.",
                 settings.deviceDiscoveryEnabled) { enabled ->
@@ -106,7 +109,6 @@ internal fun MediaSettingsPage(
                 DeviceCatalogSession.setDiscoveryEnabled(enabled)
             }
             if (settings.deviceDiscoveryEnabled) {
-                SectionDivider()
                 SettingRow("Auto rescan", "Check for new or removed device videos once at app startup.",
                     settings.deviceAutoRescanEnabled) { enabled ->
                     AppSettings.update(context) { it.copy(deviceAutoRescanEnabled = enabled) }
@@ -119,7 +121,6 @@ internal fun MediaSettingsPage(
                 settings.backgroundPlaybackEnabled) { enabled ->
                 AppSettings.update(context) { it.copy(backgroundPlaybackEnabled = enabled) }
             }
-            SectionDivider()
             MediaChoiceRow("Screen orientation", "Choose how both players open.",
                 PlayerOrientationMode.entries, orientation, { it.label }) { mode ->
                 orientation = mode
@@ -134,7 +135,7 @@ internal fun MediaSettingsPage(
             }
         }
         SettingsSection("Permissions") {
-            NavigationRow("Media permissions", "Review device video access and Android app permissions.") {
+            NavigationRow("Media permissions", "Review device video access and Android app permissions.", leadingIcon = Icons.Rounded.Security) {
                 showPermissions = true
             }
         }
@@ -149,27 +150,22 @@ internal fun MediaSettingsPage(
                 AppSettings.update(context) { it.copy(libraryBehavior = behavior) }
             }
             if (settings.libraryBehavior.isAvailable || settings.deviceDiscoveryEnabled) {
-                SectionDivider()
                 SettingRow("Resume video playback", "Start a video from its last saved position when available.",
                     settings.resumeSavedVideos) { enabled ->
                     AppSettings.update(context) { it.copy(resumeSavedVideos = enabled) }
                 }
             }
             if (settings.libraryBehavior.isAvailable && hasSavedMedia) {
-                SectionDivider()
-                NavigationRow("Clear Library", "Remove saved Library entries and playback progress.", destructive = true) {
+                NavigationRow("Clear Library", "Remove saved Library entries and playback progress.", destructive = true, leadingIcon = Icons.Rounded.DeleteSweep) {
                     confirmClear = true
                 }
             }
         }
         SettingsSection("Extra settings") {
-            MediaCategoryRow("Interface", Icons.Rounded.Palette, onOpenInterface)
-            SectionDivider()
-            MediaCategoryRow("Video", Icons.Rounded.Movie, onOpenVideo)
-            SectionDivider()
-            MediaCategoryRow("Subtitles", Icons.Rounded.Subtitles, onOpenSubtitles)
-            SectionDivider()
-            MediaCategoryRow("Advanced", Icons.Rounded.Build, onOpenAdvanced)
+            MediaCategoryRow("Interface", "Theme, colors, and motion", Icons.Rounded.Palette, onOpenInterface)
+            MediaCategoryRow("Video", "Playback layout and controls", Icons.Rounded.Movie, onOpenVideo)
+            MediaCategoryRow("Subtitles", "Appearance and preview", Icons.Rounded.Subtitles, onOpenSubtitles)
+            MediaCategoryRow("Advanced", "Optional features and diagnostics", Icons.Rounded.Build, onOpenAdvanced)
         }
     }
 
@@ -192,11 +188,9 @@ internal fun MediaInterfaceSettingsPage(onBack: () -> Unit) {
                 AppThemeMode.entries, AppThemePreference.mode, { it.label }) { mode ->
                 AppThemePreference.set(context, mode)
             }
-            SectionDivider()
-            NavigationRow("Color theme", AppThemePreference.colorTheme.label) {
+            NavigationRow("Color theme", AppThemePreference.colorTheme.label, leadingIcon = Icons.Rounded.Palette) {
                 showThemePicker = true
             }
-            SectionDivider()
             SettingRow("Reduce motion", "Use simpler transitions. Android's remove-animations setting is always respected.",
                 AppSettings.current.reduceMotion) { enabled ->
                 AppSettings.update(context) { it.copy(reduceMotion = enabled) }
@@ -225,7 +219,6 @@ internal fun MediaVideoSettingsPage(onBack: () -> Unit) {
                 aspectRatio = mode
                 PlayerDisplayPreferenceStore.saveScaleMode(context, mode.name)
             }
-            SectionDivider()
             OptionBlock("Brightness", "Use system brightness or set a starting level for both players.") {
                 ChoiceRow(listOf(false, true), brightness != null, { if (it) "Custom" else "System" }) { custom ->
                     val value = if (custom) brightness ?: 0.5f else null
@@ -266,9 +259,8 @@ internal fun MediaAdvancedSettingsPage(onOpenCrashReports: () -> Unit, onBack: (
                 settings.crashDiagnosticsEnabled) { enabled ->
                 AppSettings.update(context) { it.copy(crashDiagnosticsEnabled = enabled) }
             }
-            SectionDivider()
             NavigationRow("Crash reports", "View, copy, share, or clear reports stored on this device.",
-                onClick = onOpenCrashReports)
+                leadingIcon = Icons.Rounded.BugReport, onClick = onOpenCrashReports)
         }
     }
 }
@@ -285,23 +277,20 @@ private fun MediaSettingsLayout(title: String, onBack: () -> Unit, content: @Com
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MediaCategoryRow(label: String, icon: ImageVector, onClick: () -> Unit) {
+private fun MediaCategoryRow(label: String, description: String, icon: ImageVector, onClick: () -> Unit) {
     ListItem(
+        onClick = onClick,
         leadingContent = {
-            Surface(
-                shape = MaterialTheme.shapes.small,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                contentColor = MaterialTheme.colorScheme.tertiary
-            ) {
-                Box(Modifier.size(UiControlSize.compact), contentAlignment = Alignment.Center) {
-                    Icon(icon, contentDescription = null, modifier = Modifier.size(UiIconSize.standard))
-                }
-            }
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.size(UiIconSize.standard))
         },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        supportingContent = { Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        shapes = segmentedListShapes(),
         trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
-        modifier = Modifier.clickable(role = Role.Button, onClick = onClick)
+        modifier = Modifier.segmentedListItem(nativeSurface = true)
     ) { Text(label) }
 }
 
@@ -353,7 +342,7 @@ internal fun MediaSubtitleSettingsPage(onBack: () -> Unit) {
                     .testTag("subtitle_appearance_preview"))
                 Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
                     SettingsSection("Subtitle appearance") {
-                        Column(Modifier.fillMaxWidth().padding(ExpressiveTokens.pageGutter),
+                        Column(Modifier.segmentedListItem().padding(ExpressiveTokens.pageGutter),
                             verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
                             SubtitleAppearanceControls(style, onChange = { updated ->
                                 style = updated

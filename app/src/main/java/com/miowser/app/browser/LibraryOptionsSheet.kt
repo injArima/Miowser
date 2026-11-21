@@ -35,6 +35,9 @@ import com.miowser.app.ui.ExpressiveSheetHeading
 import com.miowser.app.ui.MiowserActionButton
 import com.miowser.app.ui.theme.ExpressiveTokens
 import com.miowser.app.ui.theme.UiSpacing
+import com.miowser.app.ui.SegmentedListGroup
+import com.miowser.app.ui.segmentedListItem
+import com.miowser.app.ui.segmentedListShapes
 
 @Composable
 internal fun LibraryOptionsSheet(
@@ -59,20 +62,24 @@ internal fun LibraryOptionsSheet(
 internal fun LibraryOptionsGroup(
     title: String,
     icon: ImageVector,
+    segmentedActions: Boolean = false,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    ExpressiveSectionCard(Modifier.fillMaxWidth()) {
-        Column(verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(UiSpacing.m),
-                verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Text(title, style = MaterialTheme.typography.titleSmall)
-            }
-            content()
+    Column(verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(UiSpacing.m),
+            verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
+            Text(title, style = MaterialTheme.typography.titleSmall)
+        }
+        SegmentedListGroup {
+            if (segmentedActions) content()
+            else Column(Modifier.segmentedListItem().padding(UiSpacing.l),
+                verticalArrangement = Arrangement.spacedBy(UiSpacing.s), content = content)
         }
     }
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 internal fun LibraryOptionAction(
     label: String,
@@ -87,10 +94,13 @@ internal fun LibraryOptionAction(
         else -> MaterialTheme.colorScheme.onSurface
     }
     ListItem(
+        onClick = onClick,
+        enabled = enabled,
         leadingContent = { Icon(icon, contentDescription = null, tint = tint) },
         trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = tint) },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        modifier = Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        shapes = segmentedListShapes(),
+        modifier = Modifier.segmentedListItem(nativeSurface = true)
     ) { Text(label, color = tint) }
 }
 

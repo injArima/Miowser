@@ -4,6 +4,24 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.unit.dp
 
+/** Material 3 Expressive segmented-list geometry; color comes from neutral theme roles. */
+object SegmentedListTokens {
+    val outerCorner = UiSpacing.l
+    val innerCorner = UiSpacing.xs
+    val gap = UiSpacing.xxs
+    val minRowHeight = UiControlSize.prominent
+    val outerShape = RoundedCornerShape(outerCorner)
+    val innerShape = RoundedCornerShape(innerCorner)
+    val firstShape = RoundedCornerShape(
+        topStart = outerCorner, topEnd = outerCorner,
+        bottomStart = innerCorner, bottomEnd = innerCorner
+    )
+    val lastShape = RoundedCornerShape(
+        topStart = innerCorner, topEnd = innerCorner,
+        bottomStart = outerCorner, bottomEnd = outerCorner
+    )
+}
+
 /** Shared component contracts. Keep layout values here when they belong to a component. */
 object AddressBarTokens {
     val fieldHeight = UiControlSize.touchTarget

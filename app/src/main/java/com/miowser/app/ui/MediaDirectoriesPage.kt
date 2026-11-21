@@ -1,5 +1,6 @@
 package com.miowser.app.ui
 
+import com.miowser.app.ui.theme.SegmentedListTokens
 import com.miowser.app.ui.theme.AppSelectionColors
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -12,8 +13,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -125,21 +128,22 @@ private fun DeviceStorageDirectories(
     ) { modifier ->
         key(sourceId, parent) {
             LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(UiSpacing.l),
-                verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
+                verticalArrangement = Arrangement.spacedBy(SegmentedListTokens.gap)) {
                 if (sourceId == null) {
                     item {
                         Text("Storages", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     item {
                         Text("Folders are included automatically. Uncheck a folder to hide its videos and subfolders from Device.",
-                            style = MaterialTheme.typography.bodyMedium)
+                            style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = UiSpacing.m))
                     }
                     if (storage.isEmpty()) item { Text("No storage is available in the library.") }
-                    items(storage, key = { it.id }) { volume ->
+                    itemsIndexed(storage, key = { _, volume -> volume.id }) { index, volume ->
                         val included = !isDeviceFolderExcluded(exclusions, volume.id, "")
                         DeviceDirectoryRow(volume.label, included, true, storage = true,
                             onOpen = { sourceId = volume.id },
-                            onIncludedChange = { setIncluded(volume.id, "", it) })
+                            onIncludedChange = { setIncluded(volume.id, "", it) },
+                            index = index, count = storage.size)
                     }
                     if (onManageLinks != null) item {
                         MiowserActionButton(style = AppButtonStyle.TEXT, onClick = onManageLinks) { Text("Linked folders") }
@@ -157,12 +161,13 @@ private fun DeviceStorageDirectories(
                     } else if (shown == null) item { MiowserLoadingIndicator() }
                     else if (shown.isEmpty()) item { Text("No subfolders.") }
                     val parentIncluded = !isDeviceFolderExcluded(exclusions, source.id, parent)
-                    items(shown.orEmpty(), key = { it }) { path ->
+                    itemsIndexed(shown.orEmpty(), key = { _, path -> path }) { index, path ->
                         DeviceDirectoryRow(path.substringAfterLast('/'),
                             included = !isDeviceFolderExcluded(exclusions, source.id, path),
                             enabled = parentIncluded, storage = false,
                             onOpen = { parents = ArrayList(parents + path) },
-                            onIncludedChange = { setIncluded(source.id, path, it) })
+                            onIncludedChange = { setIncluded(source.id, path, it) },
+                            index = index, count = shown.orEmpty().size)
                     }
                 }
             }
@@ -177,17 +182,21 @@ private fun DeviceDirectoryRow(
     enabled: Boolean,
     storage: Boolean,
     onOpen: () -> Unit,
-    onIncludedChange: (Boolean) -> Unit
+    onIncludedChange: (Boolean) -> Unit,
+    index: Int,
+    count: Int
 ) {
-    Surface(shape = MaterialTheme.shapes.large) {
+    Surface(shape = segmentedListShape(index, count)) {
         ListItem(
+            shapes = segmentedListShapes(index, count),
             supportingContent = if (!included) ({ Text("Excluded from Device") }) else null,
             leadingContent = { Icon(if (storage) Icons.Rounded.Storage else Icons.Rounded.Folder, null) },
             trailingContent = {
                 Checkbox(colors = AppSelectionColors.checkboxColors(), checked = included, enabled = enabled, onCheckedChange = onIncludedChange,
                     modifier = Modifier.semantics { contentDescription = "Include $label" })
             },
-            modifier = Modifier.clickable(onClickLabel = "Browse $label", onClick = onOpen),
+            modifier = Modifier.heightIn(min = SegmentedListTokens.minRowHeight)
+                .clickable(onClickLabel = "Browse $label", onClick = onOpen),
             colors = ListItemDefaults.colors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
         ) { Text(label) }
@@ -262,18 +271,21 @@ private fun LinkedMediaDirectories(onBack: () -> Unit) {
             val currentFolders = folders
             if (busy || (currentFolders == null && error == null)) MiowserLoadingIndicator()
             if (currentFolders?.isEmpty() == true) Text("No folders linked.")
-            currentFolders.orEmpty().forEach { (folder, hasReadAccess) ->
-                ExpressiveSectionCard(Modifier.fillMaxWidth()) {
-                    Text(folder.label, style = MaterialTheme.typography.titleMedium)
-                    Text(if (hasReadAccess) "Read access granted" else "Folder access needed",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
-                        MiowserActionButton(style = AppButtonStyle.OUTLINED, enabled = !busy, onClick = {
-                            relinkId = folder.id
-                            picker.launch(null)
-                        }) { Text("Relink") }
-                        MiowserActionButton(style = AppButtonStyle.CAUTION_OUTLINED, enabled = !busy,
-                            onClick = { unlink = folder }) { Text("Unlink") }
+            if (!currentFolders.isNullOrEmpty()) SegmentedListGroup {
+                currentFolders.forEach { (folder, hasReadAccess) ->
+                    Column(Modifier.segmentedListItem().padding(UiSpacing.l),
+                        verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
+                        Text(folder.label, style = MaterialTheme.typography.titleMedium)
+                        Text(if (hasReadAccess) "Read access granted" else "Folder access needed",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
+                            MiowserActionButton(style = AppButtonStyle.OUTLINED, enabled = !busy, onClick = {
+                                relinkId = folder.id
+                                picker.launch(null)
+                            }) { Text("Relink") }
+                            MiowserActionButton(style = AppButtonStyle.CAUTION_OUTLINED, enabled = !busy,
+                                onClick = { unlink = folder }) { Text("Unlink") }
+                        }
                     }
                 }
             }

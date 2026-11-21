@@ -154,7 +154,6 @@ import com.miowser.app.ui.ClearLibraryConfirmationDialog
 import com.miowser.app.ui.ChoiceRow
 import com.miowser.app.ui.ExpressiveChoiceSetting
 import com.miowser.app.ui.SettingsSection
-import com.miowser.app.ui.SectionDivider
 import com.miowser.app.ui.NavigationRow
 import com.miowser.app.ui.ExpressiveSectionCard
 import com.miowser.app.ui.ExpressiveSheetHeading
@@ -444,7 +443,7 @@ internal fun HubHomePage(
             LibraryOptionsGroup("Sort this folder", Icons.AutoMirrored.Rounded.Sort) {
                 ChoiceRow(HubLibrarySort.entries, librarySort, { it.label }, selectLibrarySort)
             }
-            LibraryOptionsGroup("Library tools", Icons.Rounded.Settings) {
+            LibraryOptionsGroup("Library tools", Icons.Rounded.Settings, segmentedActions = true) {
                 LibraryOptionAction("Library health", Icons.Rounded.HealthAndSafety) {
                     onDismissLibrarySettings()
                     onLibraryHealthVisibilityChanged(true)
@@ -851,7 +850,6 @@ private fun HubMoreContent(
         SettingsSection("Settings") {
             NavigationRow("Media settings", "Manage device folders, playback, downloads, and appearance.",
                 onClick = onOpenMediaSettings)
-            SectionDivider()
             NavigationRow("Backup & restore", "Save app data or restore a previous backup.",
                 onClick = onOpenBackupRestore)
         }

@@ -1,5 +1,6 @@
 package com.miowser.app.ui
 
+import com.miowser.app.ui.theme.SegmentedListTokens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -86,17 +88,18 @@ fun CrashDiagnosticsPage(onBack: () -> Unit) {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp),
-                    verticalArrangement = Arrangement.spacedBy(UiSpacing.m)
+                    verticalArrangement = Arrangement.spacedBy(SegmentedListTokens.gap)
                 ) {
                     item {
                         Text(
                             "Reports stay on this device until you share or clear them. Miowser removes URLs, local paths, page titles, searches, and browsing history.",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = UiSpacing.m)
                         )
                     }
-                    items(reports, key = CrashReportSummary::fileName) { report ->
-                        CrashReportRow(report) {
+                    itemsIndexed(reports, key = { _, report -> report.fileName }) { index, report ->
+                        CrashReportRow(report, index, reports.size) {
                             CrashReportStore.read(context, report.fileName)?.let { selected = report to it }
                         }
                     }
@@ -168,14 +171,15 @@ fun CrashDiagnosticsPage(onBack: () -> Unit) {
 }
 
 @Composable
-private fun CrashReportRow(report: CrashReportSummary, onClick: () -> Unit) {
+private fun CrashReportRow(report: CrashReportSummary, index: Int, count: Int, onClick: () -> Unit) {
     Surface(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        shape = UiCorners.r20,
-        color = MaterialTheme.colorScheme.surfaceContainer
+        modifier = Modifier.fillMaxWidth(),
+        shape = segmentedListShape(index, count),
+        color = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         Row(
-            modifier = Modifier.padding(UiSpacing.roomy),
+            modifier = Modifier.fillMaxWidth().heightIn(min = SegmentedListTokens.minRowHeight)
+                .clickable(onClick = onClick).padding(UiSpacing.roomy),
             horizontalArrangement = Arrangement.spacedBy(UiSpacing.comfortable),
             verticalAlignment = Alignment.CenterVertically
         ) {
