@@ -2,13 +2,11 @@ package com.miowser.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -43,6 +41,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.miowser.app.ui.AppText as Text
 import com.miowser.app.ui.theme.AppColorTheme
 import com.miowser.app.ui.theme.AppThemeMode
@@ -164,11 +163,12 @@ private fun ThemePaletteGallery() {
     ) {
         AppColorTheme.entries.forEach { palette ->
             val selected = AppThemePreference.colorTheme == palette
+            val containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer
+                else MaterialTheme.colorScheme.surfaceContainerLow
             Surface(
                 modifier = Modifier.width(ThemePickerTokens.cardWidth).fillMaxHeight(),
                 shape = MaterialTheme.shapes.large,
-                color = if (selected) MaterialTheme.colorScheme.secondaryContainer
-                    else MaterialTheme.colorScheme.surfaceContainerLow,
+                color = containerColor,
                 contentColor = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
                     else MaterialTheme.colorScheme.onSurface,
                 border = BorderStroke(
@@ -186,12 +186,13 @@ private fun ThemePaletteGallery() {
                     verticalArrangement = Arrangement.spacedBy(UiSpacing.m, Alignment.CenterVertically)
                 ) {
                     if (palette == AppColorTheme.WALLPAPER) {
-                        Box(Modifier.size(ThemePickerTokens.swatchHeight), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(ThemePickerTokens.swatchSize + ThemePickerTokens.swatchSeparatorWidth * 2),
+                            contentAlignment = Alignment.Center) {
                             Icon(Icons.Rounded.Wallpaper, contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary)
                         }
                     } else {
-                        ThemePaletteSwatches(palette.familyOrderedSwatches())
+                        ThemePaletteSwatches(palette.familyOrderedSwatches(), containerColor)
                     }
                     Text(palette.label, modifier = Modifier.fillMaxWidth(),
                         textAlign = TextAlign.Center, style = MaterialTheme.typography.titleSmall)
@@ -201,21 +202,24 @@ private fun ThemePaletteGallery() {
     }
 }
 
-/** Every source color has its own pill; extra colors wrap instead of shrinking away. */
+/** Front-to-back circular swatches; card-colored rims separate each overlap. */
 @Composable
-private fun ThemePaletteSwatches(swatches: List<Color>) {
-    FlowRow(
-        modifier = Modifier.fillMaxWidth(),
-        maxItemsInEachRow = ThemePickerTokens.swatchesPerRow,
-        horizontalArrangement = Arrangement.spacedBy(ThemePickerTokens.swatchGap, Alignment.CenterHorizontally),
-        verticalArrangement = Arrangement.spacedBy(ThemePickerTokens.swatchGap)
+private fun ThemePaletteSwatches(swatches: List<Color>, separatorColor: Color) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(-ThemePickerTokens.swatchOverlap),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        swatches.forEach { color ->
-            Box(Modifier.size(ThemePickerTokens.swatchWidth, ThemePickerTokens.swatchHeight)
+        swatches.forEachIndexed { index, color ->
+            Box(Modifier
+                .size(ThemePickerTokens.swatchSize + ThemePickerTokens.swatchSeparatorWidth * 2)
+                // The first family stays fully circular in front of the following colors.
+                // Row handles start/end placement for both LTR and RTL layouts.
+                .zIndex((swatches.size - index).toFloat())
                 .clip(ThemePickerTokens.swatchShape)
-                .background(color)
-                .border(ThemePickerTokens.borderWidth, MaterialTheme.colorScheme.outlineVariant,
-                    ThemePickerTokens.swatchShape))
+                .background(separatorColor)
+                .padding(ThemePickerTokens.swatchSeparatorWidth)
+                .clip(ThemePickerTokens.swatchShape)
+                .background(color))
         }
     }
 }

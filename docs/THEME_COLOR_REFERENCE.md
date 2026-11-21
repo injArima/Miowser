@@ -2,7 +2,7 @@
 
 Reference for the 14 palette themes introduced in 0.1.84. This describes the
 current implementation, including the component-role corrections in 0.1.86
-and the four-source-color limit in 0.1.87.
+and the overlapping circular previews in 0.1.88.
 
 ## Numbered family convention
 
@@ -38,7 +38,7 @@ These are three accent families and one background/text family. Some themes
 reuse a source color in two slots, so they have three distinct inputs rather
 than four. The supplied images contain 4, 5, or 10 original swatches. From
 0.1.87, each of the 14 custom palettes retains only four prominent source
-colors. The picker shows those four colors in individual pills; there are no
+colors. The picker shows those four colors as overlapping circles; there are no
 additional stored swatches outside that retained set. Wallpaper and the
 existing Miowser fallback are separate choices.
 
@@ -137,9 +137,13 @@ Source examples:
 [download progress](../app/src/main/java/com/miowser/app/browser/HubPage.kt).
 
 Theme choices appear as a horizontal gallery of equal-height rounded cards.
-Every retained source swatch gets its own pill. Families appear in order 1, 2,
+Every retained source swatch gets its own circle. Families appear in order 1, 2,
 3, 4, with repeated source colors shown once; any other retained source color
-follows. Each custom theme shows exactly four pills. Amber keeps its distinct
+follows. Each custom theme shows exactly four circles. The first circle sits
+in front of the next, with a card-colored rim separating the overlapping edges;
+the stack follows the reading direction in both LTR and RTL layouts. Diameter,
+overlap, separator width, and shape are centralized in `ThemePickerTokens`.
+Amber keeps its distinct
 orange/red/gold/deep-navy anchors instead of the intermediate warm gradient
 steps; Black Gold keeps white instead of the similar light gray; Summer Ocean
 keeps aqua instead of the near-white cream. Wallpaper is identified with an

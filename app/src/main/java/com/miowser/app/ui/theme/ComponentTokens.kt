@@ -1,6 +1,7 @@
 package com.miowser.app.ui.theme
 
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.unit.dp
 
 /** Shared component contracts. Keep layout values here when they belong to a component. */
@@ -175,7 +176,7 @@ object SubtitlePanelTokens {
     val selectedColorBorder = 3.dp
 }
 
-/** Theme gallery cards, individual swatch pills, and accessible appearance-choice rows. */
+/** Theme gallery cards, overlapping circular swatches, and accessible appearance-choice rows. */
 object ThemePickerTokens {
     const val listHeightFraction = 0.75f
     val minimumHeight = UiControlSize.touchTarget
@@ -185,11 +186,10 @@ object ThemePickerTokens {
     val cardMinimumHeight = 144.dp
     val cardGap = UiSpacing.m
     val cardPadding = UiSpacing.l
-    val swatchWidth = UiSpacing.xxl
-    val swatchHeight = UiSpacing.xxxl
-    val swatchGap = UiSpacing.xs
-    const val swatchesPerRow = 4
+    val swatchSize = UiSpacing.xxxl
+    val swatchSeparatorWidth = UiSpacing.xxs
+    val swatchOverlap = UiSpacing.m
     val borderWidth = 1.dp
     val selectedBorderWidth = 3.dp
-    val swatchShape = RoundedCornerShape(percent = 50)
+    val swatchShape = CircleShape
 }
