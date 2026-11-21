@@ -1,6 +1,7 @@
 package com.miowser.app.ui
 
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -28,30 +29,34 @@ fun SimplePageScaffold(
     title: String,
     onBack: () -> Unit,
     titleContent: (@Composable () -> Unit)? = null,
-    actions: @Composable RowScope.() -> Unit = { SettingsSearchAction() },
+    actions: @Composable RowScope.() -> Unit = {},
     content: @Composable (Modifier) -> Unit
 ) {
+    val backAction = settingsSearchBackAction(onBack)
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
-            TopAppBar(
-                title = {
-                    titleContent?.invoke() ?: Text(title, style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.settingsSearchAnchor(title))
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = actions,
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface
+            Column {
+                TopAppBar(
+                    title = {
+                        titleContent?.invoke() ?: Text(title, style = MaterialTheme.typography.titleLarge,
+                            modifier = Modifier.settingsSearchAnchor(title))
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = backAction) {
+                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                    actions = actions,
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface
+                    )
                 )
-            )
+                SettingsSearchField()
+            }
         }
     ) { innerPadding ->
-        content(Modifier.padding(innerPadding))
+        SettingsSearchContent(Modifier.padding(innerPadding), content)
     }
 }

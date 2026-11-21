@@ -1,21 +1,25 @@
-# Settings search — 0.1.90
+# Settings search — introduced 0.1.90, updated 0.1.91
 
-Browser settings and Media settings now have a toolbar search action. Media
+Browser settings and Media settings have a permanent inline search field beneath the title bar. Media
 search also covers Interface, Video, Subtitles, and Advanced. These are the six
 existing destinations hosted by the shared settings search controller.
 
 ## User flow
 
-- Tap Search, type a setting name or related term, and select a result. Results
-  show the settings path and a short explanation.
+- Tap the visible field to type on the same settings page; no separate Search
+  screen or autofocus navigation is used. Results replace the page body while
+  the query is nonblank and show a settings path and short explanation.
 - The existing destination opens, the target is brought into view, and a
   Primary-family outline gently pulses twice. Reduce motion uses a steady
   outline for the same brief interval instead.
 - Navigation/action entries focus their existing settings row; search does not
   execute Clear, Reset, permission, or backup actions automatically.
-- Back from search returns to the original page. Browser and Media queries are
-  retained separately as saveable UI state; they are not a new settings/history
-  preference store.
+- Clear or Back restores the original settings body and its scroll position.
+  The body stays composed while searching, and its accessibility nodes are
+  hidden beneath the results. Result selection clears the query and keyboard.
+  Queries use saveable UI state, not a new settings/history preference store,
+  and clear when leaving settings. Empty results use a full-width centered
+  icon, heading, and explanation beneath the persistent field.
 
 ## Coverage and matching
 
@@ -41,8 +45,8 @@ requesting an oversized rectangle.
 | Source | Responsibility |
 | --- | --- |
 | `settings/SettingsSearchIndex.kt` | Pure searchable catalog, normalization/ranking, and conditional availability. |
-| `ui/SettingsSearch.kt` | Search overlay, per-area query state, jump sequencing, scroll requests, timeout cleanup, and pulse drawing. |
-| `ui/SimplePageScaffold.kt` | Contextual search action and title anchors. Unrelated pages have no search action. |
+| `ui/SettingsSearch.kt` | Inline field/results, query/back state, jump sequencing, scroll requests, timeout cleanup, and pulse drawing. |
+| `ui/SimplePageScaffold.kt` | Contextual inline search field/body and title anchors. Unrelated pages have no search field. |
 | `ui/SettingsPage.kt` | Shared anchors for navigation, switch, and compound option rows, plus Version. |
 | `ui/SubtitleAppearanceControls.kt` | Individual subtitle-control anchors. |
 | `browser/BrowserScreen.kt` | Routes through existing screens and preserves the Browser-to-Media return path. |

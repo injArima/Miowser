@@ -5,7 +5,7 @@ package com.miowser.app.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,6 +25,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -37,9 +38,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -71,12 +72,15 @@ private data class SearchJump(val entry: SettingsSearchEntry, val sequence: Int)
 private data class SearchSession(
     val page: SettingsSearchPage,
     val jump: SearchJump?,
-    val open: () -> Unit,
+    val query: String,
+    val onQuery: (String) -> Unit,
+    val onChoose: (SettingsSearchEntry) -> Unit,
+    val hasSavedMedia: Boolean,
     val consume: (Int) -> Unit
 )
 private val LocalSettingsSearch = staticCompositionLocalOf<SearchSession?> { null }
 
-/** Keeps search and jump state above the existing settings destination/saveable-state owners. */
+/** Search belongs to the current settings page; it never creates a search destination. */
 @Composable
 internal fun SettingsSearchHost(
     page: SettingsSearchPage?,
@@ -84,7 +88,6 @@ internal fun SettingsSearchHost(
     onNavigate: (SettingsSearchPage) -> Unit,
     content: @Composable () -> Unit
 ) {
-    var openScope by rememberSaveable { mutableStateOf<String?>(null) }
     var browserQuery by rememberSaveable { mutableStateOf("") }
     var mediaQuery by rememberSaveable { mutableStateOf("") }
     var targetId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -95,7 +98,7 @@ internal fun SettingsSearchHost(
         { expected -> if (sequence == expected) targetId = null }
     }
     LaunchedEffect(page) {
-        if (page == null) openScope = null
+        if (page == null) { browserQuery = ""; mediaQuery = "" }
         if (sequence == jumpSequence && entry != null && entry.page != page) targetId = null
     }
     LaunchedEffect(targetId, jumpSequence) {
@@ -108,124 +111,139 @@ internal fun SettingsSearchHost(
         content()
         return
     }
-    val session = remember(page, entry, sequence) {
-        SearchSession(page, entry?.let { SearchJump(it, sequence) },
-            open = { targetId = null; openScope = page.scope.name }, consume = consume)
+    val query = if (page.scope == SettingsSearchScope.BROWSER) browserQuery else mediaQuery
+    val session = SearchSession(
+        page, entry?.let { SearchJump(it, sequence) }, query,
+        onQuery = { value ->
+            targetId = null
+            val bounded = value.take(SettingsSearchTokens.maxQueryLength)
+            if (page.scope == SettingsSearchScope.BROWSER) browserQuery = bounded else mediaQuery = bounded
+        },
+        onChoose = { chosen ->
+            browserQuery = ""
+            mediaQuery = ""
+            sequence++
+            targetId = chosen.id
+            onNavigate(chosen.page)
+        },
+        hasSavedMedia = hasSavedMedia,
+        consume = consume
+    )
+    CompositionLocalProvider(LocalSettingsSearch provides session, content = content)
+}
+
+/** Permanent field below the app bar; focusing it only opens the keyboard. */
+@Composable
+internal fun SettingsSearchField() {
+    val session = LocalSettingsSearch.current ?: return
+    OutlinedTextField(
+        value = session.query,
+        onValueChange = session.onQuery,
+        placeholder = { Text("Search ${session.page.scope.label.lowercase()}") },
+        leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+        trailingIcon = if (session.query.isNotEmpty()) ({
+            IconButton(onClick = { session.onQuery("") }) {
+                Icon(Icons.Rounded.Close, contentDescription = "Clear settings search")
+            }
+        }) else null,
+        singleLine = true,
+        shape = MaterialTheme.shapes.extraLarge,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.l, vertical = UiSpacing.s)
+            .testTag("settings_search_query")
+    )
+}
+
+/** Clear an active query before leaving settings, for both toolbar and system Back. */
+@Composable
+internal fun settingsSearchBackAction(onBack: () -> Unit): () -> Unit {
+    val session = LocalSettingsSearch.current
+    val focus = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val action = {
+        if (session != null && session.query.isNotEmpty()) {
+            focus.clearFocus()
+            keyboard?.hide()
+            session.onQuery("")
+        } else onBack()
     }
-    CompositionLocalProvider(LocalSettingsSearch provides session) {
-        Box(Modifier.fillMaxSize()) {
-            content()
-            val scope = SettingsSearchScope.entries.firstOrNull { it.name == openScope }
-            if (scope != null) {
-                val context = LocalContext.current
-                val settings = AppSettings.current
-                val outline = remember(scope) {
-                    scope != SettingsSearchScope.MEDIA || PlayerSubtitleStyleStore.load(context).resolvedOutlineEnabled()
-                }
-                val availability = SettingsSearchAvailability(
-                    discovery = settings.deviceDiscoveryEnabled,
-                    library = settings.libraryBehavior.isAvailable,
-                    savedMedia = hasSavedMedia,
-                    subtitleOutline = outline
-                )
-                SettingsSearchOverlay(
-                    scope = scope,
-                    query = if (scope == SettingsSearchScope.BROWSER) browserQuery else mediaQuery,
-                    onQuery = { if (scope == SettingsSearchScope.BROWSER) browserQuery = it else mediaQuery = it },
-                    availability = availability,
-                    onDismiss = { openScope = null },
-                    onChoose = { chosen ->
-                        openScope = null
-                        sequence++
-                        targetId = chosen.id
-                        onNavigate(chosen.page)
-                    }
-                )
+    BackHandler(enabled = session != null && session.query.isNotEmpty(), onBack = action)
+    return action
+}
+
+/** Keep the original settings composed while results occupy the same page's body. */
+@Composable
+internal fun SettingsSearchContent(modifier: Modifier, content: @Composable (Modifier) -> Unit) {
+    val session = LocalSettingsSearch.current
+    if (session == null) {
+        content(modifier)
+        return
+    }
+    val searching = session.query.isNotBlank()
+    Box(modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().then(if (searching) Modifier.clearAndSetSemantics {} else Modifier)) {
+            content(Modifier.fillMaxSize())
+        }
+        if (searching) {
+            Surface(Modifier.fillMaxSize().imePadding(), color = MaterialTheme.colorScheme.surface) {
+                SettingsSearchResults(session)
             }
         }
     }
 }
 
-/** Default scaffold action is visible only within the settings search host's six destinations. */
 @Composable
-internal fun SettingsSearchAction() {
-    val session = LocalSettingsSearch.current ?: return
-    IconButton(onClick = session.open, modifier = Modifier.testTag("settings_search_open")) {
-        Icon(Icons.Rounded.Search, contentDescription = "Search ${session.page.scope.label.lowercase()}")
+private fun SettingsSearchResults(session: SearchSession) {
+    val context = LocalContext.current
+    val settings = AppSettings.current
+    val scope = session.page.scope
+    val outline = remember(scope) {
+        scope != SettingsSearchScope.MEDIA || PlayerSubtitleStyleStore.load(context).resolvedOutlineEnabled()
     }
-}
-
-@Composable
-private fun SettingsSearchOverlay(
-    scope: SettingsSearchScope,
-    query: String,
-    onQuery: (String) -> Unit,
-    availability: SettingsSearchAvailability,
-    onDismiss: () -> Unit,
-    onChoose: (SettingsSearchEntry) -> Unit
-) {
-    val focus = remember { FocusRequester() }
-    val focusManager = LocalFocusManager.current
+    val availability = SettingsSearchAvailability(
+        discovery = settings.deviceDiscoveryEnabled,
+        library = settings.libraryBehavior.isAvailable,
+        savedMedia = session.hasSavedMedia,
+        subtitleOutline = outline
+    )
+    val results = remember(session.query, scope, availability) {
+        SettingsSearchIndex.search(session.query, scope, availability)
+    }
+    val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    fun dismiss() { focusManager.clearFocus(); keyboard?.hide(); onDismiss() }
-    BackHandler(onBack = ::dismiss)
-    val results = remember(query, scope, availability) { SettingsSearchIndex.search(query, scope, availability) }
-    LaunchedEffect(Unit) { focus.requestFocus() }
-    SimplePageScaffold(
-        title = "Search",
-        onBack = ::dismiss,
-        actions = {}
-    ) { modifier ->
-        Column(modifier.fillMaxSize().imePadding()) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { onQuery(it.take(SettingsSearchTokens.maxQueryLength)) },
-                label = { Text(scope.label) },
-                placeholder = { Text("Search settings") },
-                leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
-                trailingIcon = if (query.isNotEmpty()) ({
-                    IconButton(onClick = { onQuery("") }) {
-                        Icon(Icons.Rounded.Close, contentDescription = "Clear settings search")
-                    }
-                }) else null,
-                singleLine = true,
-                shape = MaterialTheme.shapes.extraLarge,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = UiSpacing.l, vertical = UiSpacing.s)
-                    .focusRequester(focus).testTag("settings_search_query")
+    if (results.isEmpty()) {
+        Box(Modifier.fillMaxSize().padding(UiSpacing.l), contentAlignment = Alignment.TopCenter) {
+            ExpressiveEmptyState(
+                "No matching settings", "Try a setting name or another related word.", Icons.Rounded.SearchOff,
+                modifier = Modifier.fillMaxWidth().testTag("settings_search_empty")
             )
-            if (results.isEmpty()) {
-                Box(Modifier.weight(1f).fillMaxWidth().padding(UiSpacing.l)) {
-                    ExpressiveEmptyState("No matching settings", "Try a setting name or another related word.", Icons.Rounded.SearchOff)
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.weight(1f).fillMaxWidth().testTag("settings_search_results"),
-                    contentPadding = PaddingValues(UiSpacing.l),
-                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(SegmentedListTokens.gap)
-                ) {
-                    item(key = "count") {
-                        Text(if (query.isBlank()) "All settings" else "${results.size} matching settings",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.labelMedium,
-                            modifier = Modifier.padding(bottom = UiSpacing.m))
+        }
+    } else {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().testTag("settings_search_results"),
+            contentPadding = PaddingValues(UiSpacing.l),
+            verticalArrangement = Arrangement.spacedBy(SegmentedListTokens.gap)
+        ) {
+            item(key = "count") {
+                Text("${results.size} matching settings",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(bottom = UiSpacing.m))
+            }
+            itemsIndexed(results, key = { _, result -> result.id }) { index, result ->
+                ListItem(
+                    onClick = {
+                        focus.clearFocus()
+                        keyboard?.hide()
+                        session.onChoose(result)
+                    },
+                    shapes = segmentedListShapes(index, results.size),
+                    modifier = Modifier.segmentedListItem(nativeSurface = true)
+                        .testTag("settings_search_result_${result.id}"),
+                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                    supportingContent = {
+                        Text("${result.path}\n${result.summary}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    itemsIndexed(results, key = { _, result -> result.id }) { index, result ->
-                        ListItem(
-                            onClick = {
-                                focusManager.clearFocus()
-                                keyboard?.hide()
-                                onChoose(result)
-                            },
-                            shapes = segmentedListShapes(index, results.size),
-                            modifier = Modifier.segmentedListItem(nativeSurface = true)
-                                .testTag("settings_search_result_${result.id}"),
-                            colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                            supportingContent = {
-                                Text("${result.path}\n${result.summary}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        ) { Text(result.title) }
-                    }
-                }
+                ) { Text(result.title) }
             }
         }
     }
