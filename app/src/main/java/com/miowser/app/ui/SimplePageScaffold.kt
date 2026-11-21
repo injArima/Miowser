@@ -28,7 +28,7 @@ fun SimplePageScaffold(
     title: String,
     onBack: () -> Unit,
     titleContent: (@Composable () -> Unit)? = null,
-    actions: @Composable RowScope.() -> Unit = {},
+    actions: @Composable RowScope.() -> Unit = { SettingsSearchAction() },
     content: @Composable (Modifier) -> Unit
 ) {
     Scaffold(
@@ -36,7 +36,8 @@ fun SimplePageScaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    titleContent?.invoke() ?: Text(title, style = MaterialTheme.typography.titleLarge)
+                    titleContent?.invoke() ?: Text(title, style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.settingsSearchAnchor(title))
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {

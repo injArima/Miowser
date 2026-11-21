@@ -1,5 +1,7 @@
 package com.miowser.app.browser
 
+import com.miowser.app.settings.SettingsSearchPage
+import com.miowser.app.ui.SettingsSearchHost
 import com.miowser.app.BuildConfig
 import android.content.Intent
 import android.Manifest
@@ -2505,6 +2507,30 @@ fun BrowserScreen(
         // even if a host is temporarily detached. Each SimplePageScaffold has an opaque background,
         // so it fully covers the
         // browser UI beneath rather than actually needing it hidden any other way.
+        SettingsSearchHost(
+            page = when (activeScreen) {
+                Screen.SETTINGS -> SettingsSearchPage.BROWSER
+                Screen.MEDIA_SETTINGS -> SettingsSearchPage.MEDIA
+                Screen.MEDIA_INTERFACE -> SettingsSearchPage.INTERFACE
+                Screen.MEDIA_VIDEO -> SettingsSearchPage.VIDEO
+                Screen.MEDIA_SUBTITLES -> SettingsSearchPage.SUBTITLES
+                Screen.MEDIA_ADVANCED -> SettingsSearchPage.ADVANCED
+                else -> null
+            },
+            hasSavedMedia = MediaLibrary.entries.isNotEmpty() || MediaLibrary.opaqueRecords.isNotEmpty(),
+            onNavigate = { destination ->
+                if (destination == SettingsSearchPage.MEDIA && activeScreen == Screen.SETTINGS) {
+                    openMediaSettings(Screen.SETTINGS)
+                } else activeScreen = when (destination) {
+                    SettingsSearchPage.BROWSER -> Screen.SETTINGS
+                    SettingsSearchPage.MEDIA -> Screen.MEDIA_SETTINGS
+                    SettingsSearchPage.INTERFACE -> Screen.MEDIA_INTERFACE
+                    SettingsSearchPage.VIDEO -> Screen.MEDIA_VIDEO
+                    SettingsSearchPage.SUBTITLES -> Screen.MEDIA_SUBTITLES
+                    SettingsSearchPage.ADVANCED -> Screen.MEDIA_ADVANCED
+                }
+            }
+        ) {
         when (activeScreen) {
             Screen.HUB -> Unit
             Screen.DETECTED -> if (activeTab != null) {
@@ -2791,6 +2817,7 @@ fun BrowserScreen(
                 onFinished = ::closeOnboarding
             )
             null -> Unit
+        }
         }
 
         pendingBlobAction?.takeIf { action ->

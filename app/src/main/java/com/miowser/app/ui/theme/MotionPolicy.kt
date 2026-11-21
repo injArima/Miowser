@@ -38,6 +38,8 @@ object MotionTokens {
     val playlistExit = MotionTiming(180, exitEasing)
     val subtitleEnter = MotionTiming(200, enterEasing)
     val subtitleExit = MotionTiming(140, exitEasing)
+    val settingsSearchEnter = MotionTiming(280, selectionEasing)
+    val settingsSearchExit = MotionTiming(420, selectionEasing)
     // Keep the existing tab settling owner until the retained/velocity gesture step.
     val tabDismiss = MotionTiming(120, exitEasing)
     val tabReturn = MotionTiming(180, enterEasing)

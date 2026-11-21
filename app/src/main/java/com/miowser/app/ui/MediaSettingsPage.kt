@@ -290,7 +290,7 @@ private fun MediaCategoryRow(label: String, description: String, icon: ImageVect
         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         shapes = segmentedListShapes(),
         trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
-        modifier = Modifier.segmentedListItem(nativeSurface = true)
+        modifier = Modifier.settingsSearchAnchor(label).segmentedListItem(nativeSurface = true)
     ) { Text(label) }
 }
 

@@ -4,6 +4,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.unit.dp
 
+object SettingsSearchTokens {
+    const val maxQueryLength = 128
+    const val pulseCount = 2
+    const val reducedHighlightMillis = 1400L
+    const val jumpTimeoutMillis = 8000L
+    const val highlightAlpha = 0.9f
+    val highlightWidth = UiSpacing.xxs
+    val anchorVisibleHeight = UiControlSize.prominent * 2
+    val pulseEnter = MotionTokens.settingsSearchEnter
+    val pulseExit = MotionTokens.settingsSearchExit
+}
+
 /** Material 3 Expressive segmented-list geometry; color comes from neutral theme roles. */
 object SegmentedListTokens {
     val outerCorner = UiSpacing.l

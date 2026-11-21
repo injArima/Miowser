@@ -34,12 +34,15 @@ internal fun SubtitleAppearanceControls(
         { onChange(style.copy(size = (style.size - 0.1f).coerceAtLeast(0.7f))) },
         { onChange(style.copy(size = (style.size + 0.1f).coerceAtMost(1.6f))) })
     SubtitleAppearanceToggle(accent, secondary, "Bold", style.bold) { onChange(style.copy(bold = it)) }
-    Text("Text color", style = MaterialTheme.typography.labelMedium)
-    SubtitleAppearanceColors(
-        accent,
-        listOf(AndroidColor.WHITE, AndroidColor.YELLOW, AndroidColor.CYAN,
-            AndroidColor.RED, AndroidColor.GREEN), style.resolvedTextColor()
-    ) { onChange(style.copy(textColor = it)) }
+    Column(Modifier.fillMaxWidth().settingsSearchAnchor("Text color"),
+        verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
+        Text("Text color", style = MaterialTheme.typography.labelMedium)
+        SubtitleAppearanceColors(
+            accent,
+            listOf(AndroidColor.WHITE, AndroidColor.YELLOW, AndroidColor.CYAN,
+                AndroidColor.RED, AndroidColor.GREEN), style.resolvedTextColor()
+        ) { onChange(style.copy(textColor = it)) }
+    }
     SubtitleAppearanceStepper(accent, "Text opacity", "${style.textOpacity}%",
         { onChange(style.copy(textOpacity = (style.textOpacity - 10).coerceAtLeast(10))) },
         { onChange(style.copy(textOpacity = (style.textOpacity + 10).coerceAtMost(100))) })
@@ -47,43 +50,53 @@ internal fun SubtitleAppearanceControls(
         onChange(style.copy(outlineEnabled = it))
     }
     if (style.resolvedOutlineEnabled()) {
-        Text("Outline color", style = MaterialTheme.typography.labelMedium)
-        SubtitleAppearanceColors(accent, listOf(AndroidColor.BLACK, AndroidColor.WHITE,
-            AndroidColor.CYAN, AndroidColor.RED), style.outlineColor) {
-            onChange(style.copy(outlineColor = it))
+        Column(Modifier.fillMaxWidth().settingsSearchAnchor("Outline color"),
+            verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
+            Text("Outline color", style = MaterialTheme.typography.labelMedium)
+            SubtitleAppearanceColors(accent, listOf(AndroidColor.BLACK, AndroidColor.WHITE,
+                AndroidColor.CYAN, AndroidColor.RED), style.outlineColor) {
+                onChange(style.copy(outlineColor = it))
+            }
         }
     }
     SubtitleAppearanceStepper(accent, "Bottom offset", "${(style.bottomPadding * 100).toInt()}%",
         { onChange(style.copy(bottomPadding = (style.bottomPadding - 0.01f).coerceAtLeast(0.03f))) },
         { onChange(style.copy(bottomPadding = (style.bottomPadding + 0.01f).coerceAtMost(0.35f))) })
-    Text("Caption preset", style = MaterialTheme.typography.labelMedium)
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(UiSpacing.xs)) {
-        CaptionVisualPreset.entries.forEach { preset ->
-            Surface(onClick = {
-                onChange(style.copy(preset = preset, textColor = null, outlineEnabled = null))
-            }, shape = UiCorners.r8,
-                color = if (style.preset == preset) MaterialTheme.colorScheme.secondaryContainer
-                    else unselected) {
-                Text(preset.label, modifier = Modifier.padding(horizontal = UiSpacing.compact, vertical = UiSpacing.s),
-                    style = MaterialTheme.typography.labelSmall)
+    Column(Modifier.fillMaxWidth().settingsSearchAnchor("Caption preset"),
+        verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
+        Text("Caption preset", style = MaterialTheme.typography.labelMedium)
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(UiSpacing.xs)) {
+            CaptionVisualPreset.entries.forEach { preset ->
+                Surface(onClick = {
+                    onChange(style.copy(preset = preset, textColor = null, outlineEnabled = null))
+                }, shape = UiCorners.r8,
+                    color = if (style.preset == preset) MaterialTheme.colorScheme.secondaryContainer
+                        else unselected) {
+                    Text(preset.label, modifier = Modifier.padding(horizontal = UiSpacing.compact, vertical = UiSpacing.s),
+                        style = MaterialTheme.typography.labelSmall)
+                }
             }
         }
     }
-    Text("Font", style = MaterialTheme.typography.labelMedium)
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(UiSpacing.xs)) {
-        CaptionFontChoice.entries.forEach { font ->
-            Surface(onClick = { onChange(style.copy(font = font)) },
-                shape = UiCorners.r8,
-                color = if (style.font == font) MaterialTheme.colorScheme.secondaryContainer
-                    else unselected) {
-                Text(font.label, modifier = Modifier.padding(horizontal = UiSpacing.compact, vertical = UiSpacing.s),
-                    style = MaterialTheme.typography.labelSmall)
+    Column(Modifier.fillMaxWidth().settingsSearchAnchor("Font"),
+        verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
+        Text("Font", style = MaterialTheme.typography.labelMedium)
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(UiSpacing.xs)) {
+            CaptionFontChoice.entries.forEach { font ->
+                Surface(onClick = { onChange(style.copy(font = font)) },
+                    shape = UiCorners.r8,
+                    color = if (style.font == font) MaterialTheme.colorScheme.secondaryContainer
+                        else unselected) {
+                    Text(font.label, modifier = Modifier.padding(horizontal = UiSpacing.compact, vertical = UiSpacing.s),
+                        style = MaterialTheme.typography.labelSmall)
+                }
             }
         }
     }
     TextButton(onClick = { onChange(PlayerSubtitleStyle(delayMs = style.delayMs)) },
+        modifier = Modifier.settingsSearchAnchor("Reset defaults"),
         colors = ButtonDefaults.textButtonColors(contentColor = accent)) {
         Text("Reset defaults")
     }
@@ -93,7 +106,7 @@ internal fun SubtitleAppearanceControls(
 private fun SubtitleAppearanceStepper(
     accent: Color, label: String, value: String, onDecrease: () -> Unit, onIncrease: () -> Unit
 ) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().settingsSearchAnchor(label), verticalAlignment = Alignment.CenterVertically) {
         Text(label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
         TextButton(onClick = onDecrease, modifier = Modifier.width(UiControlSize.compact).semantics { contentDescription = "Decrease $label" },
             colors = ButtonDefaults.textButtonColors(contentColor = accent)) { Text("−") }
@@ -106,7 +119,7 @@ private fun SubtitleAppearanceStepper(
 
 @Composable
 private fun SubtitleAppearanceToggle(accent: Color, secondary: Color, label: String, checked: Boolean, onToggle: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable { onToggle(!checked) }.padding(vertical = UiSpacing.s),
+    Row(Modifier.fillMaxWidth().settingsSearchAnchor(label).clickable { onToggle(!checked) }.padding(vertical = UiSpacing.s),
         verticalAlignment = Alignment.CenterVertically) {
         Text(label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
         Text(if (checked) "On" else "Off", style = MaterialTheme.typography.bodySmall,

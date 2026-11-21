@@ -243,7 +243,7 @@ fun SettingsPage(
                     leadingIcon = Icons.AutoMirrored.Rounded.HelpOutline, onClick = onOpenOnboarding
                 )
                 Row(
-                    modifier = Modifier.segmentedListItem()
+                    modifier = Modifier.settingsSearchAnchor("Version").segmentedListItem()
                         .padding(horizontal = UiSpacing.l, vertical = UiSpacing.l),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(UiSpacing.m)
@@ -290,7 +290,7 @@ private fun Description(text: String) {
 
 @Composable
 internal fun OptionBlock(title: String, description: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.segmentedListItem().padding(horizontal = UiSpacing.l, vertical = UiSpacing.comfortable),
+    Column(Modifier.settingsSearchAnchor(title).segmentedListItem().padding(horizontal = UiSpacing.l, vertical = UiSpacing.comfortable),
         verticalArrangement = Arrangement.spacedBy(UiSpacing.s)) {
         Text(title, style = MaterialTheme.typography.bodyLarge)
         Description(description)
@@ -311,7 +311,7 @@ internal fun <T> ChoiceRow(options: List<T>, selected: T, label: (T) -> String, 
 @Composable
 internal fun SettingRow(label: String, description: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
     Row(
-        modifier = Modifier.segmentedListItem().toggleable(value = checked, role = Role.Switch, onValueChange = onChecked)
+        modifier = Modifier.settingsSearchAnchor(label).segmentedListItem().toggleable(value = checked, role = Role.Switch, onValueChange = onChecked)
             .padding(horizontal = UiSpacing.l, vertical = UiSpacing.comfortable),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(UiSpacing.m)
@@ -330,7 +330,7 @@ internal fun NavigationRow(label: String, description: String, destructive: Bool
     leadingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null, onClick: () -> Unit) {
     ListItem(
         onClick = onClick,
-        modifier = Modifier.segmentedListItem(nativeSurface = true),
+        modifier = Modifier.settingsSearchAnchor(label).segmentedListItem(nativeSurface = true),
         shapes = segmentedListShapes(),
         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         leadingContent = if (leadingIcon != null) ({
