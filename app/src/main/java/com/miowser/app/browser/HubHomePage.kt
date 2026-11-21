@@ -155,7 +155,6 @@ import com.miowser.app.ui.ChoiceRow
 import com.miowser.app.ui.ExpressiveChoiceSetting
 import com.miowser.app.ui.SettingsSection
 import com.miowser.app.ui.NavigationRow
-import com.miowser.app.ui.ExpressiveSectionCard
 import com.miowser.app.ui.ExpressiveSheetHeading
 import com.miowser.app.ui.ConfirmationAction
 import com.miowser.app.ui.ConfirmationTone
@@ -217,6 +216,7 @@ internal fun HubHomePage(
     onOpenLocalDownload: (Download) -> Unit,
     onRelinkDownload: (Download) -> Unit,
     onOpenMediaSettings: () -> Unit,
+    onOpenBrowserSettings: () -> Unit,
     onOpenBackupRestore: () -> Unit,
     onOpenRecordInBrowser: (String, Boolean) -> Unit,
     bottomBarHeight: Dp,
@@ -423,6 +423,7 @@ internal fun HubHomePage(
                         )
                         HubSection.MORE -> HubMoreContent(
                             onOpenMediaSettings = onOpenMediaSettings,
+                            onOpenBrowserSettings = onOpenBrowserSettings,
                             onOpenBackupRestore = onOpenBackupRestore,
                             modifier = Modifier.fillMaxSize()
                         )
@@ -817,6 +818,7 @@ private fun HubNavigationLabel(label: String, opacity: State<Float>, color: Stat
 @Composable
 private fun HubMoreContent(
     onOpenMediaSettings: () -> Unit,
+    onOpenBrowserSettings: () -> Unit,
     onOpenBackupRestore: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -825,31 +827,11 @@ private fun HubMoreContent(
             .padding(start = UiSpacing.xl, end = UiSpacing.xl, top = UiSpacing.xl, bottom = 88.dp),
         verticalArrangement = Arrangement.spacedBy(ExpressiveTokens.sectionGap)
     ) {
-        ExpressiveSectionCard(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(UiSpacing.xxs),
-                horizontalArrangement = Arrangement.spacedBy(UiSpacing.comfortable),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Rounded.Settings,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("Hub settings", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "Manage media, playback, and app preferences.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-
         SettingsSection("Settings") {
             NavigationRow("Media settings", "Manage device folders, playback, downloads, and appearance.",
                 onClick = onOpenMediaSettings)
+            NavigationRow("Browser settings", "Manage browsing, tabs, privacy, and website preferences.",
+                onClick = onOpenBrowserSettings)
             NavigationRow("Backup & restore", "Save app data or restore a previous backup.",
                 onClick = onOpenBackupRestore)
         }

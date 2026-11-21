@@ -2903,6 +2903,7 @@ fun BrowserScreen(
                 libraryCache = hubLibraryCache,
                 inspectionEpoch = inspectionEpoch,
                 onOpenMediaSettings = { openMediaSettings() },
+                onOpenBrowserSettings = { activeScreen = Screen.SETTINGS },
                 uiVisible = playbackRequest == null && activeScreen == null && !showBackupRestore,
                 selectedSection = selectedHubSection,
                 librarySettingsOpen = librarySettingsOpen,
