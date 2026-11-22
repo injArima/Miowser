@@ -4,6 +4,9 @@ import android.content.Context
 import com.miowser.app.persistence.Persistence
 
 private const val PREFS_NAME = "settings"
+private const val KEY_APP_EXPERIENCE = "app_experience"
+private const val KEY_EXPERIENCE_PRIORITY = "experience_priority"
+private const val KEY_EXPERIENCE_CUSTOMIZED = "experience_customized"
 private const val KEY_AD_BLOCK_ENABLED = "ad_block_enabled"
 private const val KEY_HOME_PAGE_URL = "home_page_url"
 private const val KEY_HOME_PAGE_MODE = "home_page_mode"
@@ -80,6 +83,9 @@ object SettingsStore {
             deviceDiscoveryEnabled = prefs.getBoolean(KEY_DEVICE_DISCOVERY, defaults.deviceDiscoveryEnabled),
             deviceAutoRescanEnabled = prefs.getBoolean(KEY_DEVICE_AUTO_RESCAN, defaults.deviceAutoRescanEnabled),
             excludedDeviceFolders = prefs.getStringSet(KEY_EXCLUDED_DEVICE_FOLDERS, null).orEmpty().toSet(),
+            experience = prefs.getString(KEY_APP_EXPERIENCE, null)?.let { runCatching { AppExperience.valueOf(it) }.getOrNull() } ?: defaults.experience,
+            experiencePriority = prefs.getString(KEY_EXPERIENCE_PRIORITY, null)?.let { runCatching { ExperiencePriority.valueOf(it) }.getOrNull() } ?: defaults.experiencePriority,
+            experienceCustomized = prefs.getBoolean(KEY_EXPERIENCE_CUSTOMIZED, false),
             resumeSavedVideos = prefs.getBoolean(KEY_RESUME_SAVED_VIDEOS, defaults.resumeSavedVideos)
         )
     }
@@ -107,6 +113,9 @@ object SettingsStore {
                 .putBoolean(KEY_DEVICE_DISCOVERY, settings.deviceDiscoveryEnabled)
                 .putBoolean(KEY_DEVICE_AUTO_RESCAN, settings.deviceAutoRescanEnabled)
                 .putStringSet(KEY_EXCLUDED_DEVICE_FOLDERS, settings.excludedDeviceFolders)
+                .putString(KEY_APP_EXPERIENCE, settings.experience.name)
+                .putString(KEY_EXPERIENCE_PRIORITY, settings.experiencePriority.name)
+                .putBoolean(KEY_EXPERIENCE_CUSTOMIZED, settings.experienceCustomized)
                 .putBoolean(KEY_RESUME_SAVED_VIDEOS, settings.resumeSavedVideos)
                 .putBoolean(KEY_BACKGROUND_PLAYBACK_ENABLED, settings.backgroundPlaybackEnabled)
                 .putBoolean(KEY_COMPANION_BROWSING_ENABLED, settings.companionBrowsingEnabled)

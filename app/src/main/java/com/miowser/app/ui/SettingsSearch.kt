@@ -139,7 +139,7 @@ internal fun SettingsSearchField() {
     OutlinedTextField(
         value = session.query,
         onValueChange = session.onQuery,
-        placeholder = { Text("Search ${session.page.scope.label.lowercase()}") },
+        placeholder = { Text(if (session.page == SettingsSearchPage.MASTER) "Search settings" else "Search ${session.page.scope.label.lowercase()}") },
         leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
         trailingIcon = if (session.query.isNotEmpty()) ({
             IconButton(onClick = { session.onQuery("") }) {
@@ -200,13 +200,19 @@ private fun SettingsSearchResults(session: SearchSession) {
         scope != SettingsSearchScope.MEDIA || PlayerSubtitleStyleStore.load(context).resolvedOutlineEnabled()
     }
     val availability = SettingsSearchAvailability(
-        discovery = settings.deviceDiscoveryEnabled,
-        library = settings.libraryBehavior.isAvailable,
+        discovery = settings.deviceScanningEnabled,
+        library = settings.watchCatalogAvailable,
         savedMedia = session.hasSavedMedia,
-        subtitleOutline = outline
+        subtitleOutline = outline,
+        deviceLibrary = settings.deviceLibraryAvailable,
+        browser = settings.browserAvailable
     )
-    val results = remember(session.query, scope, availability) {
-        SettingsSearchIndex.search(session.query, scope, availability)
+    val results = remember(session.query, session.page, scope, availability) {
+        if (session.page == SettingsSearchPage.MASTER) {
+            (SettingsSearchIndex.search(session.query, SettingsSearchScope.MEDIA, availability) +
+                SettingsSearchIndex.search(session.query, SettingsSearchScope.BROWSER, availability))
+                .distinctBy { it.page to it.anchor }
+        } else SettingsSearchIndex.search(session.query, scope, availability)
     }
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current

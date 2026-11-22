@@ -4,6 +4,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.unit.dp
 
+/** Portrait welcome card; internal scrolling keeps enlarged text and short windows usable. */
+object ExperienceTokens {
+    const val cardAspectRatio = 4f / 5f
+    val cardMaxWidth = 400.dp
+    val choiceIconSize = UiIconSize.standard
+    val cardPadding = UiSpacing.xl
+}
+
 object SettingsSearchTokens {
     const val maxQueryLength = 128
     const val pulseCount = 2

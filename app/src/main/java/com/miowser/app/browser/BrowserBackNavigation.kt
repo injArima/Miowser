@@ -7,6 +7,7 @@ internal enum class BrowserBackAction {
     WEB_HISTORY,
     CLOSE_CHILD_TAB,
     SHOW_HUB,
+    SHOW_BROWSER,
     SHOW_HUB_LIBRARY,
     EXIT_APP
 }
@@ -21,12 +22,14 @@ internal fun resolveBrowserBackAction(
     internalPageOpen: Boolean,
     webViewCanGoBack: Boolean,
     activeTabHasOpener: Boolean,
-    hubOnLibrary: Boolean = true
+    hubOnLibrary: Boolean = true,
+    hubAvailable: Boolean = true
 ): BrowserBackAction = when {
     playerOpen -> BrowserBackAction.CLOSE_PLAYER
     internalPageOpen -> BrowserBackAction.CLOSE_INTERNAL_PAGE
+    showingHub && !hubAvailable -> BrowserBackAction.SHOW_BROWSER
     showingHub -> if (hubOnLibrary) BrowserBackAction.EXIT_APP else BrowserBackAction.SHOW_HUB_LIBRARY
     webViewCanGoBack -> BrowserBackAction.WEB_HISTORY
     activeTabHasOpener -> BrowserBackAction.CLOSE_CHILD_TAB
-    else -> BrowserBackAction.SHOW_HUB
+    else -> if (hubAvailable) BrowserBackAction.SHOW_HUB else BrowserBackAction.EXIT_APP
 }

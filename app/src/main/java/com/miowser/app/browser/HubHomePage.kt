@@ -39,6 +39,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.automirrored.rounded.Sort
@@ -217,14 +218,17 @@ internal fun HubHomePage(
     onRelinkDownload: (Download) -> Unit,
     onOpenMediaSettings: () -> Unit,
     onOpenBrowserSettings: () -> Unit,
+    onCustomize: () -> Unit,
     onOpenBackupRestore: () -> Unit,
     onOpenRecordInBrowser: (String, Boolean) -> Unit,
     bottomBarHeight: Dp,
+    onCatalogBack: (() -> Unit)? = null,
+    onCatalogOptions: () -> Unit = {},
     uiVisible: Boolean = true,
     onLibraryIdleChanged: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
-    val libraryEnabled = com.miowser.app.settings.AppSettings.current.libraryBehavior.isAvailable
+    val libraryEnabled = com.miowser.app.settings.AppSettings.current.watchCatalogAvailable
     val focusManager = LocalFocusManager.current
     val view = LocalView.current
     var librarySearchVisible by rememberSaveable { mutableStateOf(false) }
@@ -294,12 +298,22 @@ internal fun HubHomePage(
         topBar = {
             Column {
                 LibraryHubTopBar(
-                    branded = selectedSection != HubSection.MORE,
+                    branded = selectedSection != HubSection.MORE && onCatalogBack == null,
+                    navigation = if (onCatalogBack != null) ({
+                        IconButton(onClick = onCatalogBack) {
+                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back to browser")
+                        }
+                    }) else null,
                     title = {
-                        Text(if (selectedSection == HubSection.MORE) "More" else stringResource(R.string.app_name),
+                        Text(if (onCatalogBack != null) { if (selectedSection == HubSection.LIBRARY) "Watch catalog" else "Downloads" } else if (selectedSection == HubSection.MORE) "More" else stringResource(R.string.app_name),
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                     },
                     actions = {
+                        if (onCatalogBack != null) {
+                            IconButton(onClick = onCatalogOptions) {
+                                Icon(Icons.Rounded.Settings, if (selectedSection == HubSection.LIBRARY) "Watch catalog options" else "Downloads settings")
+                            }
+                        }
                         if (selectedSection == HubSection.LIBRARY) {
                             FilledTonalIconButton(onClick = {
                                 librarySearchVisible = !librarySearchVisible
@@ -421,11 +435,12 @@ internal fun HubHomePage(
                             libraryEntries = if (libraryEnabled) libraryEntries else emptyList(),
                             modifier = Modifier.fillMaxSize()
                         )
-                        HubSection.MORE -> HubMoreContent(
-                            onOpenMediaSettings = onOpenMediaSettings,
-                            onOpenBrowserSettings = onOpenBrowserSettings,
-                            onOpenBackupRestore = onOpenBackupRestore,
-                            modifier = Modifier.fillMaxSize()
+                        HubSection.MORE -> com.miowser.app.ui.ExperienceSettingsContent(
+                            onMedia = onOpenMediaSettings,
+                            onBrowser = onOpenBrowserSettings,
+                            onCustomize = onCustomize,
+                            onBackup = onOpenBackupRestore,
+                            modifier = Modifier.fillMaxSize().padding(bottom = bottomBarHeight)
                         )
                     }
                 }
@@ -500,6 +515,7 @@ internal fun HubBottomNavigation(
     onOpenBrowser: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val browserAvailable = com.miowser.app.settings.AppSettings.current.browserAvailable
     val motion = LocalMotionPolicy.current
     var downloadSettingsExpanded by remember { mutableStateOf(false) }
     val view = LocalView.current
@@ -526,7 +542,7 @@ internal fun HubBottomNavigation(
                 56.dp + with(density) { textMeasurer.measure(label, style = textStyle).size.width.toDp() }
             }
         }
-        val segmentSpace = (maxWidth - UiControlSize.touchTarget - UiSpacing.s -
+        val segmentSpace = (maxWidth - (if (browserAvailable) UiControlSize.touchTarget + UiSpacing.s else 0.dp) -
             UiSpacing.xs * 2 - UiSpacing.xxs * (sections.size - 1)).coerceAtLeast(0.dp)
         val iconWidth = UiControlSize.touchTarget.coerceAtMost(segmentSpace / sections.size)
         fun segmentWidth(section: HubSection, active: HubSection): Dp =
@@ -644,7 +660,7 @@ internal fun HubBottomNavigation(
                         }
                     }
                 }
-                FloatingActionButton(
+                if (browserAvailable) FloatingActionButton(
                     onClick = onOpenBrowser,
                     modifier = Modifier.size(UiControlSize.touchTarget),
                     shape = MaterialTheme.shapes.large,
@@ -659,70 +675,87 @@ internal fun HubBottomNavigation(
         }
     }
 
-    if (downloadSettingsExpanded) {
-        ExpressiveBottomSheet(onDismissRequest = { downloadSettingsExpanded = false }) {
-            ExpressiveSheetHeading("Downloads settings")
-            ExpressiveChoiceSetting(
-                title = "Open Downloads on",
-                description = "Choose which list is shown first when you open Downloads."
-            ) {
-                HubDownloadSection.entries.forEach { option ->
-                    FilterChip(
-                        selected = option == selectedDownloadSection,
-                        onClick = { onDownloadSectionSelected(option) },
-                        label = { Text(if (option == HubDownloadSection.DOWNLOADING) "Downloading" else "Downloaded") }
-                    )
-                }
-            }
-            ExpressiveChoiceSetting(
-                title = "Download folder",
-                description = when {
-                    downloadDirectory == null ->
-                        "No folder selected. Your next download will ask where to save files."
-                    downloadDirectory.mode == DownloadDirectoryMode.CUSTOM && !customDownloadDirectoryAccessible ->
-                        "${downloadDirectory.label} needs permission again before Miowser can use or reconnect its files."
-                    else -> "Files are saved in ${downloadDirectory.label}."
-                }
-            ) {
+    if (downloadSettingsExpanded) HubDownloadsSettingsSheet(
+        selectedDownloadSection, onDownloadSectionSelected, downloadDirectory,
+        customDownloadDirectoryAccessible, onUseDefaultDownloadDirectory,
+        onChooseCustomDownloadDirectory, onRelinkConfiguredDownloads,
+        onDismiss = { downloadSettingsExpanded = false }
+    )
+}
+
+@Composable
+internal fun HubDownloadsSettingsSheet(
+    selectedDownloadSection: HubDownloadSection,
+    onDownloadSectionSelected: (HubDownloadSection) -> Unit,
+    downloadDirectory: DownloadDirectory?,
+    customDownloadDirectoryAccessible: Boolean,
+    onUseDefaultDownloadDirectory: () -> Unit,
+    onChooseCustomDownloadDirectory: () -> Unit,
+    onRelinkConfiguredDownloads: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    ExpressiveBottomSheet(onDismissRequest = onDismiss) {
+        ExpressiveSheetHeading("Downloads settings")
+        ExpressiveChoiceSetting(
+            title = "Open Downloads on",
+            description = "Choose which list is shown first when you open Downloads."
+        ) {
+            HubDownloadSection.entries.forEach { option ->
                 FilterChip(
-                    selected = downloadDirectory?.mode == DownloadDirectoryMode.DEFAULT,
-                    onClick = {
-                        downloadSettingsExpanded = false
-                        onUseDefaultDownloadDirectory()
-                    },
-                    label = { Text("Default") }
-                )
-                FilterChip(
-                    selected = downloadDirectory?.mode == DownloadDirectoryMode.CUSTOM,
-                    onClick = {
-                        downloadSettingsExpanded = false
-                        onChooseCustomDownloadDirectory()
-                    },
-                    label = { Text(if (downloadDirectory?.mode == DownloadDirectoryMode.CUSTOM) "Change custom" else "Custom") }
+                    selected = option == selectedDownloadSection,
+                    onClick = { onDownloadSectionSelected(option) },
+                    label = { Text(if (option == HubDownloadSection.DOWNLOADING) "Downloading" else "Downloaded") }
                 )
             }
-            Surface(
+        }
+        ExpressiveChoiceSetting(
+            title = "Download folder",
+            description = when {
+                downloadDirectory == null ->
+                    "No folder selected. Your next download will ask where to save files."
+                downloadDirectory.mode == DownloadDirectoryMode.CUSTOM && !customDownloadDirectoryAccessible ->
+                    "${downloadDirectory.label} needs permission again before Miowser can use or reconnect its files."
+                else -> "Files are saved in ${downloadDirectory.label}."
+            }
+        ) {
+            FilterChip(
+                selected = downloadDirectory?.mode == DownloadDirectoryMode.DEFAULT,
                 onClick = {
-                    downloadSettingsExpanded = false
-                    onRelinkConfiguredDownloads()
+                    onDismiss()
+                    onUseDefaultDownloadDirectory()
                 },
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh
+                label = { Text("Default") }
+            )
+            FilterChip(
+                selected = downloadDirectory?.mode == DownloadDirectoryMode.CUSTOM,
+                onClick = {
+                    onDismiss()
+                    onChooseCustomDownloadDirectory()
+                },
+                label = { Text(if (downloadDirectory?.mode == DownloadDirectoryMode.CUSTOM) "Change custom" else "Custom") }
+            )
+        }
+        Surface(
+            onClick = {
+                onDismiss()
+                onRelinkConfiguredDownloads()
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh
+        ) {
+            Row(
+                modifier = Modifier.padding(UiSpacing.l),
+                horizontalArrangement = Arrangement.spacedBy(UiSpacing.m),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.padding(UiSpacing.l),
-                    horizontalArrangement = Arrangement.spacedBy(UiSpacing.m),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Rounded.FolderOpen, contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary)
-                    Column {
-                        Text("Reconnect downloaded files", style = MaterialTheme.typography.titleSmall)
-                        Text("Match saved records to files in this folder",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                Icon(Icons.Rounded.FolderOpen, contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary)
+                Column {
+                    Text("Reconnect downloaded files", style = MaterialTheme.typography.titleSmall)
+                    Text("Match saved records to files in this folder",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -813,29 +846,6 @@ private fun HubNavigationLabel(label: String, opacity: State<Float>, color: Stat
         maxLines = 1,
         overflow = TextOverflow.Ellipsis
     )
-}
-
-@Composable
-private fun HubMoreContent(
-    onOpenMediaSettings: () -> Unit,
-    onOpenBrowserSettings: () -> Unit,
-    onOpenBackupRestore: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier.testTag("hub_more").verticalScroll(rememberScrollState())
-            .padding(start = UiSpacing.xl, end = UiSpacing.xl, top = UiSpacing.xl, bottom = 88.dp),
-        verticalArrangement = Arrangement.spacedBy(ExpressiveTokens.sectionGap)
-    ) {
-        SettingsSection("Settings") {
-            NavigationRow("Media settings", "Manage device folders, playback, downloads, and appearance.",
-                onClick = onOpenMediaSettings)
-            NavigationRow("Browser settings", "Manage browsing, tabs, privacy, and website preferences.",
-                onClick = onOpenBrowserSettings)
-            NavigationRow("Backup & restore", "Save app data or restore a previous backup.",
-                onClick = onOpenBackupRestore)
-        }
-    }
 }
 
 internal fun DownloadStatus.isHubActiveDownload(): Boolean =

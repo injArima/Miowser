@@ -1,8 +1,8 @@
-# Settings search — introduced 0.1.90, updated 0.1.91
+# Settings search — introduced 0.1.90, updated 0.2.00
 
 Browser settings and Media settings have a permanent inline search field beneath the title bar. Media
-search also covers Interface, Video, Subtitles, and Advanced. These are the six
-existing destinations hosted by the shared settings search controller.
+search also covers Interface, Video, Subtitles, and Advanced. Master Settings is also searchable; it combines both settings scopes. The
+seven destinations share the settings search controller.
 
 ## User flow
 
@@ -21,9 +21,15 @@ existing destinations hosted by the shared settings search controller.
   and clear when leaving settings. Empty results use a full-width centered
   icon, heading, and explanation beneath the persistent field.
 
+## Experience visibility (0.2.00)
+
+Browser-only searches omit device-library controls. Player-only searches omit
+browser, online history, and source-browser controls. Customize Miowser remains
+searchable from master Settings in every mode.
+
 ## Coverage and matching
 
-`settings/SettingsSearchIndex.kt` contains 48 definitions, with paths,
+`settings/SettingsSearchIndex.kt` contains 52 definitions, with paths,
 descriptions, destination metadata, anchors, and aliases such as rotation,
 captions, wallpaper, and parallel download threads. Matching ignores case,
 diacritics, punctuation, and extra whitespace; all entered words must match.

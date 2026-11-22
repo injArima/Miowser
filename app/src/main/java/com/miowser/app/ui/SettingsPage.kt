@@ -104,7 +104,7 @@ fun SettingsPage(
         }
         onBack()
     }
-    SimplePageScaffold(title = "Settings", onBack = leaveSettings) { modifier ->
+    SimplePageScaffold(title = "Browser settings", onBack = leaveSettings) { modifier ->
         Column(
             modifier = modifier.verticalScroll(rememberScrollState())
                 .padding(horizontal = UiSpacing.l, vertical = UiSpacing.m),

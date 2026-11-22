@@ -6,7 +6,7 @@ import java.util.Locale
 enum class SettingsSearchScope(val label: String) { BROWSER("Browser settings"), MEDIA("Media settings") }
 
 enum class SettingsSearchPage(val scope: SettingsSearchScope) {
-    BROWSER(SettingsSearchScope.BROWSER), MEDIA(SettingsSearchScope.MEDIA),
+    MASTER(SettingsSearchScope.MEDIA), BROWSER(SettingsSearchScope.BROWSER), MEDIA(SettingsSearchScope.MEDIA),
     INTERFACE(SettingsSearchScope.MEDIA), VIDEO(SettingsSearchScope.MEDIA),
     SUBTITLES(SettingsSearchScope.MEDIA), ADVANCED(SettingsSearchScope.MEDIA)
 }
@@ -15,10 +15,12 @@ data class SettingsSearchAvailability(
     val discovery: Boolean = true,
     val library: Boolean = true,
     val savedMedia: Boolean = false,
-    val subtitleOutline: Boolean = true
+    val subtitleOutline: Boolean = true,
+    val deviceLibrary: Boolean = true,
+    val browser: Boolean = true
 )
 
-enum class SettingsSearchCondition { ALWAYS, DISCOVERY, RESUME, SAVED_LIBRARY, SUBTITLE_OUTLINE }
+enum class SettingsSearchCondition { ALWAYS, DEVICE, BROWSER, DISCOVERY, RESUME, SAVED_LIBRARY, SUBTITLE_OUTLINE }
 
 data class SettingsSearchEntry(
     val id: String,
@@ -31,10 +33,12 @@ data class SettingsSearchEntry(
     val anchor: String = title,
     val condition: SettingsSearchCondition = SettingsSearchCondition.ALWAYS
 ) {
-    fun available(a: SettingsSearchAvailability): Boolean = when (condition) {
+    fun available(a: SettingsSearchAvailability): Boolean = (scope != SettingsSearchScope.BROWSER || a.browser) && when (condition) {
         SettingsSearchCondition.ALWAYS -> true
-        SettingsSearchCondition.DISCOVERY -> a.discovery
-        SettingsSearchCondition.RESUME -> a.discovery || a.library
+        SettingsSearchCondition.DEVICE -> a.deviceLibrary
+        SettingsSearchCondition.BROWSER -> a.browser
+        SettingsSearchCondition.DISCOVERY -> a.deviceLibrary && a.discovery
+        SettingsSearchCondition.RESUME -> a.deviceLibrary || a.library
         SettingsSearchCondition.SAVED_LIBRARY -> a.library && a.savedMedia
         SettingsSearchCondition.SUBTITLE_OUTLINE -> a.subtitleOutline
     }
@@ -57,6 +61,10 @@ object SettingsSearchIndex {
             condition = condition)
 
     val entries = listOf(
+        media("master.customize", "Customize Miowser", "Your experience", "Choose browser, player, or both and set up your watch catalog.", "setup mode features welcome", page = SettingsSearchPage.MASTER),
+        media("master.browser", "Browser settings", "Settings", "Open browsing, tabs, privacy, and website preferences.", page = SettingsSearchPage.BROWSER, condition = SettingsSearchCondition.BROWSER),
+        media("master.media", "Media settings", "Settings", "Open playback, subtitles, downloads, and appearance.", page = SettingsSearchPage.MASTER),
+        media("master.backup", "Backup & restore", "Settings", "Save app data or restore a previous backup.", page = SettingsSearchPage.MASTER),
         browser("browser.search", "Search engine", "General", "Choose the address-bar search provider.", "google bing duckduckgo brave custom search url autocomplete"),
         browser("browser.home", "Browser home page", "General", "Choose the page opened in a new tab.", "homepage custom url speed dial new tab start"),
         browser("browser.restore", "Restore tabs on startup", "Tabs", "Reopen saved regular tabs.", "session restore restart"),
@@ -74,14 +82,14 @@ object SettingsSearchIndex {
         browser("browser.version", "Version", "About", "View the installed app version.", "build release number"),
         SettingsSearchEntry("browser.media", SettingsSearchScope.BROWSER, SettingsSearchPage.MEDIA,
             "Media settings", "Browser settings › Media", "Open library and player preferences.", "player video subtitles library"),
-        media("media.folders", "Media library folders", "Media library", "Choose folders included in Device videos.", "directories storage scan roots linked folder"),
-        media("media.discovery", "Device video discovery", "Media library", "Find videos in storage and linked folders.", "scan local files library indexing"),
+        media("media.folders", "Media library folders", "Media library", "Choose folders included in Device videos.", "directories storage scan roots linked folder", condition = SettingsSearchCondition.DEVICE),
+        media("media.discovery", "Device video discovery", "Media library", "Find videos in storage and linked folders.", "scan local files library indexing", condition = SettingsSearchCondition.DEVICE),
         media("media.rescan", "Auto rescan", "Media library", "Scan once when the app starts.", "startup refresh new deleted files", condition = SettingsSearchCondition.DISCOVERY),
         media("media.background", "Background playback", "Video", "Keep permitted audio playing while the app is minimized.", "audio headphones screen off switching away"),
         media("media.orientation", "Screen orientation", "Video", "Choose how both players open.", "rotation rotate landscape portrait sensor lock"),
         media("media.connections", "Simultaneous download connections", "Network", "Choose parallel connections for downloads.", "threads speed parallel network"),
-        media("media.permissions", "Media permissions", "Permissions", "Review Android device-video access.", "storage all files access permission"),
-        media("media.history", "Playback history", "History", "Choose automatic, manual, or disabled Library behavior.", "library mode hide disable network records"),
+        media("media.permissions", "Media permissions", "Permissions", "Review Android device-video access.", "storage all files access permission", condition = SettingsSearchCondition.DEVICE),
+        media("media.history", "Playback history", "History", "Choose automatic, manual, or disabled Library behavior.", "library mode hide disable network records", condition = SettingsSearchCondition.BROWSER),
         media("media.resume", "Resume video playback", "History", "Continue from saved playback progress.", "remember position continue timestamp", condition = SettingsSearchCondition.RESUME),
         media("media.clear", "Clear Library", "History", "Remove saved Library entries and progress.", "delete records clear history", condition = SettingsSearchCondition.SAVED_LIBRARY),
         media("interface.page", "Interface", "Interface", "Open theme and motion preferences.", "appearance colors", page = SettingsSearchPage.INTERFACE),
@@ -103,7 +111,7 @@ object SettingsSearchIndex {
         media("subtitles.font", "Font", "Subtitles", "Choose the subtitle typeface.", "caption typography family", page = SettingsSearchPage.SUBTITLES),
         media("subtitles.reset", "Reset subtitle defaults", "Subtitles", "Restore the default caption appearance.", "reset captions appearance", page = SettingsSearchPage.SUBTITLES).copy(anchor = "Reset defaults"),
         media("advanced.page", "Advanced", "Advanced", "Open optional features and diagnostics.", "troubleshooting", page = SettingsSearchPage.ADVANCED),
-        media("advanced.source", "Browse source while playing", "Advanced", "Browse the source page while keeping the player open.", "side pane companion browser next episode", page = SettingsSearchPage.ADVANCED),
+        media("advanced.source", "Browse source while playing", "Advanced", "Browse the source page while keeping the player open.", "side pane companion browser next episode", page = SettingsSearchPage.ADVANCED, condition = SettingsSearchCondition.BROWSER),
         media("advanced.diagnostics", "Save crash diagnostics", "Advanced", "Keep redacted crash reports on this device.", "errors crash logs reporting", page = SettingsSearchPage.ADVANCED),
         media("advanced.reports", "Crash reports", "Advanced", "View, copy, share, or clear saved reports.", "errors logs stack trace", page = SettingsSearchPage.ADVANCED)
     )

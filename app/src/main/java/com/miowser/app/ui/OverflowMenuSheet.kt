@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Cookie
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.BlurOn
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PictureAsPdf
@@ -105,7 +106,7 @@ import com.miowser.app.ui.theme.BrowserMenuTokens
 
 /** Every full-page destination in the app. */
 enum class Screen {
-    HUB, DETECTED, DOWNLOADS, HISTORY, ADBLOCK, BOOKMARKS, SETTINGS, CLEAR_DATA,
+    MASTER_SETTINGS, CUSTOMIZE, HUB, DETECTED, DOWNLOADS, HISTORY, ADBLOCK, BOOKMARKS, SETTINGS, CLEAR_DATA,
     SITE_PERMISSIONS, CRASH_DIAGNOSTICS, TABS, ONBOARDING, ELEMENT_RULES,
     MEDIA_SETTINGS, MEDIA_DIRECTORIES, MEDIA_INTERFACE, MEDIA_VIDEO, MEDIA_SUBTITLES, MEDIA_ADVANCED
 }
@@ -159,7 +160,11 @@ fun OverflowMenuSheet(
     val expandedContentState = remember { MutableTransitionState(false) }
     expandedContentState.targetState = expanded
     var showThemePicker by remember { mutableStateOf(false) }
-    val shortcuts = orderedActions.filter { it != OverflowMenuAction.SHARE }
+    val settings = com.miowser.app.settings.AppSettings.current
+    val shortcuts = orderedActions.filter {
+        it != OverflowMenuAction.SHARE && (it != OverflowMenuAction.HUB ||
+            settings.deviceLibraryAvailable || settings.watchCatalogAvailable)
+    }
     var draggedAction by remember { mutableStateOf<OverflowMenuAction?>(null) }
     var dragOffset by remember { mutableStateOf(Offset.Zero) }
     var dragOriginIndex by remember { mutableIntStateOf(-1) }
@@ -202,8 +207,9 @@ fun OverflowMenuSheet(
         if (from >= 0 && to >= 0 && from != to) {
             val reordered = shortcuts.toMutableList()
             reordered.add(to, reordered.removeAt(from))
+            val hidden = orderedActions.filter { it !in shortcuts && it != OverflowMenuAction.SHARE }
             orderedActions.clear()
-            orderedActions.addAll(reordered + OverflowMenuAction.SHARE)
+            orderedActions.addAll(reordered + hidden + OverflowMenuAction.SHARE)
             OverflowMenuOrderStore.save(context, orderedActions)
         }
         clearDrag()
@@ -311,7 +317,9 @@ fun OverflowMenuSheet(
                 verticalArrangement = Arrangement.spacedBy(MENU_ICON_SPACING)
             ) {
                 itemsIndexed(shortcuts, key = { _, action -> action.name }) { index, action ->
-                    val presentation = action.presentation()
+                    val presentation = if (action == OverflowMenuAction.HUB && !settings.deviceLibraryAvailable)
+                        MenuPresentation("Watch catalog", Icons.Rounded.BlurOn, Screen.HUB)
+                    else action.presentation()
                     val enabled = when (action) {
                         OverflowMenuAction.ZOOM -> pageActionsEnabled
                         OverflowMenuAction.BLOCK_ELEMENT -> elementBlockingEnabled
@@ -576,7 +584,7 @@ private fun OverflowMenuAction.presentation(): MenuPresentation = when (this) {
     OverflowMenuAction.DOWNLOADS -> MenuPresentation("Downloads", Icons.Rounded.Download, Screen.DOWNLOADS)
     OverflowMenuAction.HISTORY -> MenuPresentation("History", Icons.Rounded.History, Screen.HISTORY)
     OverflowMenuAction.DETECTED -> MenuPresentation("Media", Icons.Rounded.VideoLibrary, Screen.DETECTED)
-    OverflowMenuAction.SETTINGS -> MenuPresentation("Settings", Icons.Rounded.Settings, Screen.SETTINGS)
+    OverflowMenuAction.SETTINGS -> MenuPresentation("Settings", Icons.Rounded.Settings, Screen.MASTER_SETTINGS)
     OverflowMenuAction.BLOCK_ELEMENT -> MenuPresentation("Block", Icons.Rounded.SelectAll, null)
     OverflowMenuAction.ZOOM -> MenuPresentation("Zoom", Icons.Rounded.ZoomIn, null)
     OverflowMenuAction.SHARE -> MenuPresentation("Share", Icons.Rounded.Share, null)

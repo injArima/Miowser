@@ -51,7 +51,7 @@ class SettingsSearchIndexTest {
     }
 
     @Test fun omitsHiddenConditionalSettingsAndRestoresThemWhenAvailable() {
-        val unavailable = SettingsSearchAvailability(discovery = false, library = false, savedMedia = true, subtitleOutline = false)
+        val unavailable = SettingsSearchAvailability(discovery = false, library = false, savedMedia = true, subtitleOutline = false, deviceLibrary = false)
         val ids = SettingsSearchIndex.search("", SettingsSearchScope.MEDIA, unavailable).map { it.id }
         assertFalse("media.rescan" in ids)
         assertFalse("media.resume" in ids)
@@ -60,7 +60,7 @@ class SettingsSearchIndexTest {
         val available = SettingsSearchAvailability(savedMedia = true)
         val visible = SettingsSearchIndex.search("", SettingsSearchScope.MEDIA, available).map { it.id }
         assertTrue(listOf("media.rescan", "media.resume", "media.clear", "subtitles.outlineColor").all { it in visible })
-        val deviceOnly = unavailable.copy(discovery = true)
+        val deviceOnly = unavailable.copy(discovery = true, deviceLibrary = true)
         assertTrue(SettingsSearchIndex.search("resume", SettingsSearchScope.MEDIA, deviceOnly).any { it.id == "media.resume" })
     }
 

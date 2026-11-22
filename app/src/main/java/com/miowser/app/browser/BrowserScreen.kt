@@ -1,5 +1,8 @@
 package com.miowser.app.browser
 
+import com.miowser.app.settings.withExperience
+import com.miowser.app.ui.MasterSettingsPage
+import com.miowser.app.ui.CustomizeExperiencePage
 import com.miowser.app.settings.SettingsSearchPage
 import com.miowser.app.ui.SettingsSearchHost
 import com.miowser.app.BuildConfig
@@ -317,6 +320,9 @@ fun BrowserScreen(
     onShortcutHandled: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val experienceSettings = AppSettings.current
+    val browserAvailable = experienceSettings.browserAvailable
+    val deviceLibraryAvailable = experienceSettings.deviceLibraryAvailable
     val configuration = LocalConfiguration.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var videoButtonForeground by remember(lifecycleOwner) {
@@ -345,6 +351,21 @@ fun BrowserScreen(
     var activeScreen by rememberSaveable {
         mutableStateOf<Screen?>(if (OnboardingStore.shouldShow(context)) Screen.ONBOARDING else null)
     }
+    var masterSettingsReturn by rememberSaveable { mutableStateOf<Screen?>(null) }
+    var browserSettingsReturn by rememberSaveable { mutableStateOf<Screen?>(null) }
+    var customizationReturn by rememberSaveable { mutableStateOf<Screen?>(null) }
+    fun openMasterSettings(returnTo: Screen? = null) {
+        masterSettingsReturn = returnTo
+        activeScreen = Screen.MASTER_SETTINGS
+    }
+    fun openBrowserSettings(returnTo: Screen? = null) {
+        browserSettingsReturn = returnTo
+        activeScreen = Screen.SETTINGS
+    }
+    fun openCustomization() {
+        customizationReturn = activeScreen
+        activeScreen = Screen.CUSTOMIZE
+    }
     var mediaSettingsReturn by rememberSaveable { mutableStateOf<Screen?>(null) }
     val mediaSettingsState = rememberSaveableStateHolder()
     fun openMediaSettings(returnTo: Screen? = null) {
@@ -361,7 +382,7 @@ fun BrowserScreen(
     var openingTabs by remember { mutableStateOf(false) }
     // A launcher browser action must enter the browser on the first rendered frame.
     // The shortcut's tab operation can still wait for saved tabs to restore below.
-    var showingHub by rememberSaveable { mutableStateOf(shortcutRequest == null || shortcutRequest.localVideo != null) }
+    var showingHub by rememberSaveable { mutableStateOf(if (!browserAvailable) true else if (shortcutRequest?.localVideo != null) deviceLibraryAvailable else if (shortcutRequest != null) false else !experienceSettings.startsInBrowser) }
     val hubDestinations = rememberSaveableStateHolder()
     val hubLibraryCache = remember { HubLibraryCache() }
     var inspectionEpoch by remember { mutableStateOf(LocalInspectionCache.epoch) }
@@ -371,15 +392,17 @@ fun BrowserScreen(
             kotlinx.coroutines.awaitCancellation()
         }
     }
-    val libraryEnabled = AppSettings.current.libraryBehavior.isAvailable
+    val libraryEnabled = experienceSettings.watchCatalogAvailable
     var hubSection by rememberSaveable { mutableStateOf(HubSection.DEVICE) }
     var lastLibrarySection by rememberSaveable { mutableStateOf(HubSection.DEVICE) }
-    val selectedHubSection = if (!libraryEnabled && hubSection == HubSection.LIBRARY) {
-        HubSection.DOWNLOADS
-    } else hubSection
+    val selectedHubSection = when {
+        !deviceLibraryAvailable && hubSection == HubSection.DEVICE -> if (libraryEnabled) HubSection.LIBRARY else HubSection.DOWNLOADS
+        !libraryEnabled && hubSection == HubSection.LIBRARY -> if (deviceLibraryAvailable) HubSection.DEVICE else HubSection.DOWNLOADS
+        else -> hubSection
+    }
     val deviceVideosSelected = selectedHubSection == HubSection.DEVICE
-    LaunchedEffect(libraryEnabled) {
-        if (!libraryEnabled && hubSection == HubSection.LIBRARY) hubSection = HubSection.DOWNLOADS
+    LaunchedEffect(selectedHubSection) {
+        if (hubSection != selectedHubSection) hubSection = selectedHubSection
     }
     fun selectHubSection(section: HubSection) {
         if (section == HubSection.DEVICE || section == HubSection.LIBRARY) lastLibrarySection = section
@@ -1136,13 +1159,18 @@ fun BrowserScreen(
     var startupReady by remember { mutableStateOf(false) }
     var browserStartupError by remember { mutableStateOf(false) }
     var browserRetry by remember { mutableIntStateOf(0) }
-    var browserRequested by remember { mutableStateOf(!showingHub) }
+    var browserRequested by remember { mutableStateOf(browserAvailable && !showingHub) }
     var libraryIdle by remember { mutableStateOf(false) }
     var pendingStartupUrl by remember { mutableStateOf<String?>(null) }
     // Keep the load running if Back returns to Hub; never publish a partial restored session.
-    LaunchedEffect(showingHub) { if (!showingHub) browserRequested = true }
+    LaunchedEffect(showingHub, browserAvailable) { if (!showingHub && browserAvailable) browserRequested = true }
     LaunchedEffect(shortcutRequest?.sequence) {
         if (shortcutRequest == null || shortcutRequest.localVideo != null) return@LaunchedEffect
+        if (!browserAvailable) {
+            openMasterSettings()
+            onShortcutHandled()
+            return@LaunchedEffect
+        }
         showingHub = false
         if (activeScreen != Screen.ONBOARDING) activeScreen = null
         playbackRequest = null
@@ -1152,7 +1180,7 @@ fun BrowserScreen(
     // Only after a rendered, settled Library; stop issuing stages when it is hidden/busy.
     LaunchedEffect(libraryIdle, recordsReady, showingHub, hubSection, deviceVideosSelected, playbackRequest,
         activeScreen, showBackupRestore, browserRequested, lifecycleOwner) {
-        if (!libraryIdle || !recordsReady || !showingHub ||
+        if (!browserAvailable || !libraryIdle || !recordsReady || !showingHub ||
             (!deviceVideosSelected && (!libraryEnabled || hubSection != HubSection.LIBRARY)) ||
             playbackRequest != null || activeScreen != null || showBackupRestore || browserRequested) return@LaunchedEffect
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
@@ -1245,8 +1273,8 @@ fun BrowserScreen(
             recordError = true
         }
     }
-    LaunchedEffect(browserRequested, browserRetry, recordsReady) {
-        if (!browserRequested || !recordsReady || startupReady) return@LaunchedEffect
+    LaunchedEffect(browserRequested, browserRetry, recordsReady, browserAvailable) {
+        if (!browserAvailable || !browserRequested || !recordsReady || startupReady) return@LaunchedEffect
         browserStartupError = false
         try {
             com.miowser.app.startup.BrowserPreparation.ensureSavedData(context)
@@ -1259,7 +1287,7 @@ fun BrowserScreen(
 
     LaunchedEffect(shortcutRequest?.sequence, recordsReady) {
         val request = shortcutRequest ?: return@LaunchedEffect
-        if (request.localVideo != null || !recordsReady) return@LaunchedEffect
+        if (request.localVideo != null || !recordsReady || !browserAvailable) return@LaunchedEffect
         when (request.action) {
             com.miowser.app.browser.video.BrowserPlaybackService.ACTION_OPEN_PAGE ->
                 request.tabId?.takeIf { id -> tabs.any { it.id == id } }?.let { activeTabId = it }
@@ -2052,7 +2080,8 @@ fun BrowserScreen(
         internalPageOpen = activeScreen != null,
         webViewCanGoBack = activeTab?.canGoBack == true,
         activeTabHasOpener = activeTab?.openerTabId != null,
-        hubOnLibrary = deviceVideosSelected
+        hubOnLibrary = deviceVideosSelected,
+        hubAvailable = deviceLibraryAvailable
     )
     BackHandler(enabled = backAction != BrowserBackAction.EXIT_APP) {
         when (backAction) {
@@ -2067,6 +2096,9 @@ fun BrowserScreen(
                     closeOnboarding()
                 } else {
                     activeScreen = when (activeScreen) {
+                        Screen.MASTER_SETTINGS -> masterSettingsReturn
+                        Screen.CUSTOMIZE -> customizationReturn
+                        Screen.SETTINGS -> browserSettingsReturn
                         Screen.MEDIA_SETTINGS -> mediaSettingsReturn
                         Screen.MEDIA_DIRECTORIES, Screen.MEDIA_INTERFACE, Screen.MEDIA_VIDEO,
                         Screen.MEDIA_SUBTITLES, Screen.MEDIA_ADVANCED -> Screen.MEDIA_SETTINGS
@@ -2078,6 +2110,7 @@ fun BrowserScreen(
             }
             BrowserBackAction.WEB_HISTORY -> goBack()
             BrowserBackAction.CLOSE_CHILD_TAB -> activeTab?.let { closeTab(it.id) }
+            BrowserBackAction.SHOW_BROWSER -> showingHub = false
             BrowserBackAction.SHOW_HUB -> showingHub = true
             BrowserBackAction.SHOW_HUB_LIBRARY -> {
                 selectHubSection(
@@ -2096,7 +2129,7 @@ fun BrowserScreen(
         }
     }
 
-    BackHandler(enabled = !showingHub && !startupReady) { showingHub = true }
+    BackHandler(enabled = deviceLibraryAvailable && !showingHub && !startupReady) { showingHub = true }
     BackHandler(enabled = showBackupRestore) { showBackupRestore = false }
     BackHandler(enabled = elementPickerTabId != null) { cancelElementPicker() }
 
@@ -2128,7 +2161,7 @@ fun BrowserScreen(
     // Download-started from the same page, Bookmarked from the browser's own AddressBar) needs to
     // actually be visible regardless of which of those happens to be on top at the time.
     Box(modifier = Modifier.fillMaxSize()) {
-        if (startupReady || !showingHub) Scaffold(
+        if (browserAvailable && (startupReady || !showingHub)) Scaffold(
             modifier = modifier,
             topBar = {
                 // Home already owns the page's primary search/address field. Keeping the browser
@@ -2509,6 +2542,7 @@ fun BrowserScreen(
         // browser UI beneath rather than actually needing it hidden any other way.
         SettingsSearchHost(
             page = when (activeScreen) {
+                Screen.MASTER_SETTINGS -> SettingsSearchPage.MASTER
                 Screen.SETTINGS -> SettingsSearchPage.BROWSER
                 Screen.MEDIA_SETTINGS -> SettingsSearchPage.MEDIA
                 Screen.MEDIA_INTERFACE -> SettingsSearchPage.INTERFACE
@@ -2519,9 +2553,12 @@ fun BrowserScreen(
             },
             hasSavedMedia = MediaLibrary.entries.isNotEmpty() || MediaLibrary.opaqueRecords.isNotEmpty(),
             onNavigate = { destination ->
-                if (destination == SettingsSearchPage.MEDIA && activeScreen == Screen.SETTINGS) {
-                    openMediaSettings(Screen.SETTINGS)
+                if (destination == SettingsSearchPage.MEDIA && activeScreen in listOf(Screen.SETTINGS, Screen.MASTER_SETTINGS)) {
+                    openMediaSettings(activeScreen)
+                } else if (destination == SettingsSearchPage.BROWSER && activeScreen != Screen.SETTINGS) {
+                    openBrowserSettings(if (activeScreen == Screen.MASTER_SETTINGS) Screen.MASTER_SETTINGS else Screen.MEDIA_SETTINGS)
                 } else activeScreen = when (destination) {
+                    SettingsSearchPage.MASTER -> Screen.MASTER_SETTINGS
                     SettingsSearchPage.BROWSER -> Screen.SETTINGS
                     SettingsSearchPage.MEDIA -> Screen.MEDIA_SETTINGS
                     SettingsSearchPage.INTERFACE -> Screen.MEDIA_INTERFACE
@@ -2532,6 +2569,30 @@ fun BrowserScreen(
             }
         ) {
         when (activeScreen) {
+            Screen.MASTER_SETTINGS -> MasterSettingsPage(
+                onCustomize = ::openCustomization,
+                onMedia = { openMediaSettings(Screen.MASTER_SETTINGS) },
+                onBrowser = { openBrowserSettings(Screen.MASTER_SETTINGS) },
+                onBackup = { showBackupRestore = true },
+                onBack = { activeScreen = masterSettingsReturn }
+            )
+            Screen.CUSTOMIZE -> CustomizeExperiencePage(
+                onCancel = { activeScreen = customizationReturn },
+                onApply = { mode, priority, history ->
+                    val previousScanning = AppSettings.current.deviceScanningEnabled
+                    AppSettings.update(context) { it.withExperience(mode, priority, history) }
+                    val updated = AppSettings.current
+                    if (previousScanning != updated.deviceScanningEnabled) DeviceCatalogSession.setDiscoveryEnabled(updated.deviceScanningEnabled)
+                    if (!updated.browserAvailable) tabs.forEach { tab ->
+                        tab.pausePageMedia()
+                        tab.liveWebView?.onPause()
+                    }
+                    showingHub = !updated.startsInBrowser
+                    hubSection = if (updated.deviceLibraryAvailable) HubSection.DEVICE else if (updated.watchCatalogAvailable) HubSection.LIBRARY else HubSection.DOWNLOADS
+                    masterSettingsReturn = null
+                    activeScreen = Screen.MASTER_SETTINGS
+                }
+            )
             Screen.HUB -> Unit
             Screen.DETECTED -> if (activeTab != null) {
                 DetectedMediaPage(
@@ -2583,7 +2644,7 @@ fun BrowserScreen(
                     tabs.map { it.id }.filter(ids::contains).forEach { closeTab(it, offerUndo = false) }
                     if (exitBrowser) {
                         activeScreen = null
-                        showingHub = true
+                        showingHub = deviceLibraryAvailable
                     }
                 },
                 onRestoreInactive = { record ->
@@ -2758,7 +2819,7 @@ fun BrowserScreen(
                     activeScreen = Screen.ONBOARDING
                 },
                 onOpenElementRules = { activeScreen = Screen.ELEMENT_RULES },
-                onBack = { activeScreen = null }
+                onBack = { activeScreen = browserSettingsReturn }
             )
             Screen.CLEAR_DATA -> BrowsingDataPage(
                 onClear = { selection ->
@@ -2854,13 +2915,16 @@ fun BrowserScreen(
         if (showingHub && playbackRequest == null && activeScreen == null && !showBackupRestore &&
             shortcutRequest?.localVideo == null) {
             var librarySettingsOpen by remember { mutableStateOf(false) }
+            var standaloneDownloadsSettings by remember { mutableStateOf(false) }
             var libraryHealthVisible by rememberSaveable { mutableStateOf(false) }
             val showingLibraryHealth = libraryHealthVisible && libraryEnabled && !deviceVideosSelected
-            val hubSections = remember(libraryEnabled) {
-                HubSection.entries.filter { libraryEnabled || it != HubSection.LIBRARY }
+            val hubSections = remember(libraryEnabled, deviceLibraryAvailable) {
+                HubSection.entries.filter { (it != HubSection.DEVICE || deviceLibraryAvailable) &&
+                    (it != HubSection.LIBRARY || libraryEnabled) &&
+                    (deviceLibraryAvailable || it !in listOf(HubSection.MORE)) }
             }
             val layoutDirection = LocalLayoutDirection.current
-            val swipe = if (showingLibraryHealth) Modifier else
+            val swipe = if (showingLibraryHealth || !deviceLibraryAvailable) Modifier else
                 Modifier.swipeHubSections(hubSections, selectedHubSection, layoutDirection, ::selectHubSection)
             fun selectDownloadSection(section: HubDownloadSection) {
                 hubDownloadSection = section
@@ -2870,6 +2934,11 @@ fun BrowserScreen(
                 ))
             }
             fun openHubRecord(value: String, search: Boolean) {
+                if (!browserAvailable) {
+                    openMasterSettings()
+                    showActionSnackbar("Enable the browser in Customize to open this source")
+                    return
+                }
                 val target = if (search) AppSettings.current.searchUrl(value)
                     else UrlOrSearchResolver.resolve(value, AppSettings.current.searchUrlTemplate)
                 if (target.isNotBlank()) {
@@ -2878,6 +2947,43 @@ fun BrowserScreen(
                     if (startupReady) openUrlInActiveTab(target) else pendingStartupUrl = target
                 }
             }
+            val useDefaultDirectory: () -> Unit = {
+                downloadDirectory = DownloadDirectoryStore.useDefault(context)
+                coroutineScope.launch {
+                    val linked = DownloadQueue.relinkConfiguredDownloads(context)
+                    showActionSnackbar(if (linked > 0) {
+                        "Using Downloads/Miowser; reconnected $linked ${if (linked == 1) "file" else "files"}"
+                    } else "Using Downloads/Miowser")
+                }
+            }
+            val chooseCustomDirectory: () -> Unit = {
+                pendingDownloadDirectoryAction = null
+                customDownloadFolderLauncher.launch(downloadDirectory?.treeUri)
+            }
+            val relinkDirectory: () -> Unit = {
+                val directory = downloadDirectory
+                if (directory?.mode == DownloadDirectoryMode.CUSTOM &&
+                    !DownloadDirectoryStore.hasCustomAccess(context, directory)) {
+                    pendingDownloadDirectoryAction = null
+                    customDownloadFolderLauncher.launch(directory.treeUri)
+                } else coroutineScope.launch {
+                    val linked = DownloadQueue.relinkConfiguredDownloads(context)
+                    showActionSnackbar(if (linked == 0) "No unavailable downloads matched this folder"
+                        else "Reconnected $linked ${if (linked == 1) "download" else "downloads"}")
+                }
+            }
+            if (standaloneDownloadsSettings) HubDownloadsSettingsSheet(
+                selectedDownloadSection = hubDownloadSection,
+                onDownloadSectionSelected = ::selectDownloadSection,
+                downloadDirectory = downloadDirectory,
+                customDownloadDirectoryAccessible = downloadDirectory?.let {
+                    it.mode != DownloadDirectoryMode.CUSTOM || DownloadDirectoryStore.hasCustomAccess(context, it)
+                } ?: false,
+                onUseDefaultDownloadDirectory = useDefaultDirectory,
+                onChooseCustomDownloadDirectory = chooseCustomDirectory,
+                onRelinkConfiguredDownloads = relinkDirectory,
+                onDismiss = { standaloneDownloadsSettings = false }
+            )
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainerLow).statusBarsPadding()) {
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).then(swipe)) {
                     hubDestinations.SaveableStateProvider(if (deviceVideosSelected) "device" else "saved") {
@@ -2903,7 +3009,13 @@ fun BrowserScreen(
                 libraryCache = hubLibraryCache,
                 inspectionEpoch = inspectionEpoch,
                 onOpenMediaSettings = { openMediaSettings() },
-                onOpenBrowserSettings = { activeScreen = Screen.SETTINGS },
+                onOpenBrowserSettings = { openBrowserSettings() },
+                onCustomize = ::openCustomization,
+                onCatalogBack = if (!deviceLibraryAvailable) ({ showingHub = false }) else null,
+                onCatalogOptions = {
+                    if (selectedHubSection == HubSection.LIBRARY) librarySettingsOpen = true
+                    else standaloneDownloadsSettings = true
+                },
                 uiVisible = playbackRequest == null && activeScreen == null && !showBackupRestore,
                 selectedSection = selectedHubSection,
                 librarySettingsOpen = librarySettingsOpen,
@@ -2948,10 +3060,15 @@ fun BrowserScreen(
                     deleteDownloadWithUndo(download, deleteFile)
                 },
                 onRefreshDownloadLink = { download ->
-                    refreshTargetDownloadId = download.id
-                    showingHub = false
-                    if (startupReady) openUrlInActiveTab(download.pageUrl) else pendingStartupUrl = download.pageUrl
-                    showActionSnackbar("Choose the same video to refresh its link")
+                    if (!browserAvailable) {
+                        openMasterSettings()
+                        showActionSnackbar("Enable the browser in Customize to refresh this link")
+                    } else {
+                        refreshTargetDownloadId = download.id
+                        showingHub = false
+                        if (startupReady) openUrlInActiveTab(download.pageUrl) else pendingStartupUrl = download.pageUrl
+                        showActionSnackbar("Choose the same video to refresh its link")
+                    }
                 },
                 onOpenLocalDownload = { download ->
                     coroutineScope.launch {
@@ -2995,7 +3112,7 @@ fun BrowserScreen(
             )
                         }
                     }
-                    if (showingLibraryHealth) {
+                    if (showingLibraryHealth || !deviceLibraryAvailable) {
                         SideEffect { hubBottomBarHeightPx = 0 }
                     } else {
                         HubBottomNavigation(
@@ -3019,31 +3136,9 @@ fun BrowserScreen(
                                 directory.mode != DownloadDirectoryMode.CUSTOM ||
                                     DownloadDirectoryStore.hasCustomAccess(context, directory)
                             } ?: false,
-                            onUseDefaultDownloadDirectory = {
-                                downloadDirectory = DownloadDirectoryStore.useDefault(context)
-                                coroutineScope.launch {
-                                    val linked = DownloadQueue.relinkConfiguredDownloads(context)
-                                    showActionSnackbar(if (linked > 0) {
-                                        "Using Downloads/Miowser; reconnected $linked ${if (linked == 1) "file" else "files"}"
-                                    } else "Using Downloads/Miowser")
-                                }
-                            },
-                            onChooseCustomDownloadDirectory = {
-                                pendingDownloadDirectoryAction = null
-                                customDownloadFolderLauncher.launch(downloadDirectory?.treeUri)
-                            },
-                            onRelinkConfiguredDownloads = {
-                                val directory = downloadDirectory
-                                if (directory?.mode == DownloadDirectoryMode.CUSTOM &&
-                                    !DownloadDirectoryStore.hasCustomAccess(context, directory)) {
-                                    pendingDownloadDirectoryAction = null
-                                    customDownloadFolderLauncher.launch(directory.treeUri)
-                                } else coroutineScope.launch {
-                                    val linked = DownloadQueue.relinkConfiguredDownloads(context)
-                                    showActionSnackbar(if (linked == 0) "No unavailable downloads matched this folder"
-                                        else "Reconnected $linked ${if (linked == 1) "download" else "downloads"}")
-                                }
-                            },
+                            onUseDefaultDownloadDirectory = useDefaultDirectory,
+                            onChooseCustomDownloadDirectory = chooseCustomDirectory,
+                            onRelinkConfiguredDownloads = relinkDirectory,
                             modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
                                 .onSizeChanged { hubBottomBarHeightPx = it.height }
                         )
@@ -3113,6 +3208,8 @@ fun BrowserScreen(
                         selectHubSection(if (libraryEnabled) HubSection.LIBRARY else HubSection.DOWNLOADS)
                         activeScreen = null
                         showingHub = true
+                    } else if (screen == Screen.MASTER_SETTINGS) {
+                        openMasterSettings()
                     } else {
                         activeScreen = screen
                     }
@@ -3247,7 +3344,7 @@ fun BrowserScreen(
                         else -> null
                     },
                     recordInLibrary = recordCurrentPlayback,
-                    onOpenSourcePage = if (request is PlaybackRequest.Remote) ({
+                    onOpenSourcePage = if (browserAvailable && request is PlaybackRequest.Remote) ({
                         if (recordCurrentPlayback) {
                             val entry = MediaLibrary.entries.firstOrNull {
                                 it.identityKey == request.toLibraryEntry().identityKey
@@ -3284,7 +3381,7 @@ fun BrowserScreen(
                             is PlaybackRequest.Remote -> playback.pageUrl
                             is PlaybackRequest.Local -> playback.pageUrl
                         }
-                        if (AppSettings.current.companionBrowsingEnabled && !page.isNullOrBlank())
+                        if (browserAvailable && AppSettings.current.companionBrowsingEnabled && !page.isNullOrBlank())
                             ({ openCompanionBrowser(page, fromWeb = false) }) else null
                     },
                     companionBrowsing = companionTabId != null && !companionFromWeb,
@@ -3833,7 +3930,7 @@ fun BrowserScreen(
                         BrowserVideoPlayerOverlay(owner.browserVideoPlayer, owner.videoPageTitle, ::exitWebFullscreen,
                             preferences = fullscreen.preferences,
                             sourceLabel = SiteProtection.host(owner.url).orEmpty(),
-                            onBrowseSource = if (AppSettings.current.companionBrowsingEnabled) ({
+                            onBrowseSource = if (browserAvailable && AppSettings.current.companionBrowsingEnabled) ({
                                 openCompanionBrowser(owner.url, fromWeb = true)
                             }) else null,
                             detectedSubtitles = com.miowser.app.player.detectedSubtitlesForPage(

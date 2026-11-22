@@ -49,18 +49,20 @@ internal fun PlayerAdjustmentsSheet(activity: Activity?, onDismiss: () -> Unit,
                     volume = value; onVolumeInteraction()
                     audio.setStreamVolume(AudioManager.STREAM_MUSIC, value.roundToInt(), 0)
                 })
-            HorizontalDivider(modifier = Modifier.padding(vertical = UiSpacing.s))
-            val companionBrowsing = AppSettings.current.companionBrowsingEnabled
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(UiSpacing.m)) {
-                Column(Modifier.weight(1f)) {
-                    Text("Browse source while playing", style = MaterialTheme.typography.titleSmall)
-                    Text("Keep the player open and paused while you browse its source page.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (AppSettings.current.browserAvailable) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = UiSpacing.s))
+                val companionBrowsing = AppSettings.current.companionBrowsingEnabled
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(UiSpacing.m)) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Browse source while playing", style = MaterialTheme.typography.titleSmall)
+                        Text("Keep the player open and paused while you browse its source page.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = companionBrowsing, onCheckedChange = { enabled ->
+                        AppSettings.update(context) { it.copy(companionBrowsingEnabled = enabled) }
+                    })
                 }
-                Switch(checked = companionBrowsing, onCheckedChange = { enabled ->
-                    AppSettings.update(context) { it.copy(companionBrowsingEnabled = enabled) }
-                })
             }
         }
     }

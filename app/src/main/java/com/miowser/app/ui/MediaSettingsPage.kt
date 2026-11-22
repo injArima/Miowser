@@ -99,14 +99,14 @@ internal fun MediaSettingsPage(
     var orientation by remember { mutableStateOf(PlayerDisplayPreferenceStore.orientation(context)) }
 
     MediaSettingsLayout("Media settings", onBack) {
-        SettingsSection("Media library") {
+        if (settings.deviceLibraryAvailable) SettingsSection("Media library") {
             NavigationRow("Media library folders", "Choose folders to include in Device Videos.",
                 leadingIcon = Icons.Rounded.FolderOpen, onClick = onOpenDirectories)
             SettingRow("Device video discovery",
                 "Find videos in device storage and linked folders. You can still open individual files when this is off.",
                 settings.deviceDiscoveryEnabled) { enabled ->
                 AppSettings.update(context) { it.copy(deviceDiscoveryEnabled = enabled) }
-                DeviceCatalogSession.setDiscoveryEnabled(enabled)
+                DeviceCatalogSession.setDiscoveryEnabled(AppSettings.current.deviceScanningEnabled)
             }
             if (settings.deviceDiscoveryEnabled) {
                 SettingRow("Auto rescan", "Check for new or removed device videos once at app startup.",
@@ -117,7 +117,7 @@ internal fun MediaSettingsPage(
         }
         SettingsSection("Video") {
             SettingRow("Background playback",
-                "Keep webpage audio and headphone mode playing when Miowser is minimized or the screen is off.",
+                "Keep audio and headphone mode playing when Miowser is minimized or the screen is off.",
                 settings.backgroundPlaybackEnabled) { enabled ->
                 AppSettings.update(context) { it.copy(backgroundPlaybackEnabled = enabled) }
             }
@@ -134,28 +134,30 @@ internal fun MediaSettingsPage(
                 AppSettings.update(context) { it.copy(downloadThreadCount = count) }
             }
         }
-        SettingsSection("Permissions") {
+        if (settings.deviceLibraryAvailable) SettingsSection("Permissions") {
             NavigationRow("Media permissions", "Review device video access and Android app permissions.", leadingIcon = Icons.Rounded.Security) {
                 showPermissions = true
             }
         }
         SettingsSection("History") {
-            val description = when (settings.libraryBehavior) {
-                LibraryBehavior.AUTOMATIC -> "Save online videos and their progress automatically."
-                LibraryBehavior.MANUAL_ONLY -> "Keep entries you add and update their progress."
-                LibraryBehavior.DISABLED -> "Hide the Miowser Library and keep your entries for later."
+            if (settings.browserAvailable) {
+                val description = when (settings.libraryBehavior) {
+                    LibraryBehavior.AUTOMATIC -> "Save online videos and their progress automatically."
+                    LibraryBehavior.MANUAL_ONLY -> "Keep entries you add and update their progress."
+                    LibraryBehavior.DISABLED -> "Hide the Miowser Library and keep your entries for later."
+                }
+                MediaChoiceRow("Playback history", description,
+                    LibraryBehavior.entries, settings.libraryBehavior, { it.label }) { behavior ->
+                    AppSettings.update(context) { it.copy(libraryBehavior = behavior) }
+                }
             }
-            MediaChoiceRow("Playback history", description,
-                LibraryBehavior.entries, settings.libraryBehavior, { it.label }) { behavior ->
-                AppSettings.update(context) { it.copy(libraryBehavior = behavior) }
-            }
-            if (settings.libraryBehavior.isAvailable || settings.deviceDiscoveryEnabled) {
+            if (settings.watchCatalogAvailable || settings.deviceLibraryAvailable) {
                 SettingRow("Resume video playback", "Start a video from its last saved position when available.",
                     settings.resumeSavedVideos) { enabled ->
                     AppSettings.update(context) { it.copy(resumeSavedVideos = enabled) }
                 }
             }
-            if (settings.libraryBehavior.isAvailable && hasSavedMedia) {
+            if (settings.watchCatalogAvailable && hasSavedMedia) {
                 NavigationRow("Clear Library", "Remove saved Library entries and playback progress.", destructive = true, leadingIcon = Icons.Rounded.DeleteSweep) {
                     confirmClear = true
                 }
@@ -248,7 +250,7 @@ internal fun MediaAdvancedSettingsPage(onOpenCrashReports: () -> Unit, onBack: (
     val context = LocalContext.current
     val settings = AppSettings.current
     MediaSettingsLayout("Advanced", onBack) {
-        SettingsSection("Optional features") {
+        if (settings.browserAvailable) SettingsSection("Optional features") {
             SettingRow("Browse source while playing", "Keep the player open and paused while you browse its source page.",
                 settings.companionBrowsingEnabled) { enabled ->
                 AppSettings.update(context) { it.copy(companionBrowsingEnabled = enabled) }

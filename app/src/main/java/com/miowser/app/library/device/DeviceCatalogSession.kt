@@ -46,7 +46,7 @@ internal object DeviceCatalogSession {
         AppStartup.scope.launch {
             for (request in requests) {
                 pending.remove(request)
-                if (!AppSettings.current.deviceDiscoveryEnabled) continue
+                if (!AppSettings.current.deviceScanningEnabled) continue
                 activeScan = launch { runRequest(app, request, imported) }
                 activeScan?.join()
                 activeScan = null
@@ -98,7 +98,7 @@ internal object DeviceCatalogSession {
     }
 
     private fun enqueue(refresh: DeviceCatalogRefresh, target: DeviceCatalogScope = DeviceCatalogScope.All) {
-        if (!started || !AppSettings.current.deviceDiscoveryEnabled) return
+        if (!started || !AppSettings.current.deviceScanningEnabled) return
         val request = Request(refresh, target)
         if (pending.add(request)) {
             if (refresh != DeviceCatalogRefresh.INDEX) status = status.copy(scanning = true)

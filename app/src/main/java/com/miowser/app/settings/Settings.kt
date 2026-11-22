@@ -99,8 +99,17 @@ data class Settings(
     val deviceDiscoveryEnabled: Boolean = true,
     val deviceAutoRescanEnabled: Boolean = true,
     val excludedDeviceFolders: Set<String> = emptySet(),
+    val experience: AppExperience = AppExperience.BOTH,
+    val experiencePriority: ExperiencePriority = ExperiencePriority.PLAYER_FIRST,
+    val experienceCustomized: Boolean = false,
     val resumeSavedVideos: Boolean = true
 ) {
+    val browserAvailable: Boolean get() = experience != AppExperience.PLAYER_ONLY
+    val deviceLibraryAvailable: Boolean get() = experience != AppExperience.BROWSER_ONLY
+    val watchCatalogAvailable: Boolean get() = browserAvailable && libraryBehavior.isAvailable
+    val deviceScanningEnabled: Boolean get() = deviceLibraryAvailable && deviceDiscoveryEnabled
+    val startsInBrowser: Boolean get() = browserAvailable &&
+        (experience == AppExperience.BROWSER_ONLY || experiencePriority == ExperiencePriority.BROWSER_FIRST)
     val autoDeleteInactiveTabs: Boolean get() = inactiveTabRetention != InactiveTabRetention.NEVER
     val searchUrlTemplate: String get() = if (searchEngine == SearchEngine.CUSTOM) customSearchUrl
         else searchEngine.queryUrlPrefix + "%s"

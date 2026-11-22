@@ -56,7 +56,7 @@ fun StartupLoading(error: Boolean, openingBrowser: Boolean = false, openingVideo
             Text(when {
                 openingVideo -> "Opening video…"
                 openingBrowser -> "Opening browser…"
-                else -> "Loading your Library…"
+                else -> "Starting Miowser…"
             })
         }
     }
