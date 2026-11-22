@@ -65,7 +65,7 @@ enum class NewTabConfirmation(val label: String) {
  * strictly a speed optimization, never something a download should fail over.
  */
 enum class DownloadThreadCount(val count: Int, val label: String) {
-    ONE(1, "1 (no parallel downloads)"),
+    ONE(1, "Disabled"),
     TWO(2, "2"),
     FOUR(4, "4"),
     EIGHT(8, "8")
