@@ -373,11 +373,18 @@ fun BrowserScreen(
         mediaSettingsReturn = returnTo
         activeScreen = Screen.MEDIA_SETTINGS
     }
-    var onboardingReturnToSettings by rememberSaveable { mutableStateOf(false) }
+    var onboardingReturn by rememberSaveable { mutableStateOf<Screen?>(null) }
+    var revisitingOnboarding by rememberSaveable { mutableStateOf(false) }
+    fun openOnboarding() {
+        onboardingReturn = activeScreen
+        revisitingOnboarding = true
+        activeScreen = Screen.ONBOARDING
+    }
     fun closeOnboarding() {
         OnboardingStore.complete(context)
-        activeScreen = if (onboardingReturnToSettings) Screen.SETTINGS else null
-        onboardingReturnToSettings = false
+        activeScreen = onboardingReturn
+        revisitingOnboarding = false
+        onboardingReturn = null
     }
     var openingTabs by remember { mutableStateOf(false) }
     // A launcher browser action must enter the browser on the first rendered frame.
@@ -2574,6 +2581,7 @@ fun BrowserScreen(
                 onMedia = { openMediaSettings(Screen.MASTER_SETTINGS) },
                 onBrowser = { openBrowserSettings(Screen.MASTER_SETTINGS) },
                 onBackup = { showBackupRestore = true },
+                onGuide = ::openOnboarding,
                 onBack = { activeScreen = masterSettingsReturn }
             )
             Screen.CUSTOMIZE -> CustomizeExperiencePage(
@@ -2814,10 +2822,7 @@ fun BrowserScreen(
                 onOpenSitePermissions = { activeScreen = Screen.SITE_PERMISSIONS },
                 onOpenBackupRestore = { showBackupRestore = true },
                 onOpenMediaSettings = { openMediaSettings(Screen.SETTINGS) },
-                onOpenOnboarding = {
-                    onboardingReturnToSettings = true
-                    activeScreen = Screen.ONBOARDING
-                },
+                onOpenOnboarding = ::openOnboarding,
                 onOpenElementRules = { activeScreen = Screen.ELEMENT_RULES },
                 onBack = { activeScreen = browserSettingsReturn }
             )
@@ -2872,8 +2877,8 @@ fun BrowserScreen(
                 )
             }
             Screen.ONBOARDING -> OnboardingGuide(
-                revisiting = onboardingReturnToSettings,
-                libraryEnabled = libraryEnabled,
+                revisiting = revisitingOnboarding,
+                settings = AppSettings.current,
                 onDismiss = ::closeOnboarding,
                 onFinished = ::closeOnboarding
             )
@@ -3011,6 +3016,7 @@ fun BrowserScreen(
                 onOpenMediaSettings = { openMediaSettings() },
                 onOpenBrowserSettings = { openBrowserSettings() },
                 onCustomize = ::openCustomization,
+                onOpenGuide = ::openOnboarding,
                 onCatalogBack = if (!deviceLibraryAvailable) ({ showingHub = false }) else null,
                 onCatalogOptions = {
                     if (selectedHubSection == HubSection.LIBRARY) librarySettingsOpen = true

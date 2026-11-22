@@ -1,4 +1,4 @@
-# Settings search — introduced 0.1.90, updated 0.2.00
+# Settings search — introduced 0.1.90, updated 0.2.02
 
 Browser settings and Media settings have a permanent inline search field beneath the title bar. Media
 search also covers Interface, Video, Subtitles, and Advanced. Master Settings is also searchable; it combines both settings scopes. The
@@ -29,7 +29,7 @@ searchable from master Settings in every mode.
 
 ## Coverage and matching
 
-`settings/SettingsSearchIndex.kt` contains 52 definitions, with paths,
+`settings/SettingsSearchIndex.kt` contains 53 definitions, with paths,
 descriptions, destination metadata, anchors, and aliases such as rotation,
 captions, wallpaper, and parallel download threads. Matching ignores case,
 diacritics, punctuation, and extra whitespace; all entered words must match.

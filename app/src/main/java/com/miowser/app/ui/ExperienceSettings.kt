@@ -28,6 +28,7 @@ internal fun ExperienceSettingsContent(
     onMedia: () -> Unit,
     onBrowser: () -> Unit,
     onBackup: () -> Unit,
+    onGuide: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val settings = AppSettings.current
@@ -46,6 +47,9 @@ internal fun ExperienceSettingsContent(
                 NavigationRow("Browser settings", "Browsing, tabs, privacy, and websites", onClick = onBrowser)
             }
             NavigationRow("Backup & restore", "Save app data or restore a previous backup.", onClick = onBackup)
+        }
+        SettingsSection("Help") {
+            NavigationRow("Getting started", "Explore Miowser and your chosen experience.", onClick = onGuide)
         }
     }
 }
@@ -77,9 +81,9 @@ private fun ExperienceCard(settings: Settings, onCustomize: () -> Unit) {
 
 @Composable
 internal fun MasterSettingsPage(onCustomize: () -> Unit, onMedia: () -> Unit,
-    onBrowser: () -> Unit, onBackup: () -> Unit, onBack: () -> Unit) {
+    onBrowser: () -> Unit, onBackup: () -> Unit, onGuide: () -> Unit, onBack: () -> Unit) {
     SimplePageScaffold("Settings", onBack) { modifier ->
-        ExperienceSettingsContent(onCustomize, onMedia, onBrowser, onBackup, modifier)
+        ExperienceSettingsContent(onCustomize, onMedia, onBrowser, onBackup, onGuide, modifier)
     }
 }
 

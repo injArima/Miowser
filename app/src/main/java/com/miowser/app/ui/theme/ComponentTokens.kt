@@ -4,6 +4,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.unit.dp
 
+/** Shared guide spacing and page markers. */
+object OnboardingTokens {
+    val iconTitleGap = UiSpacing.roomy
+    val bulletSize = UiSpacing.s
+    val bulletTopPadding = UiSpacing.s
+    val dotSize = UiSpacing.s
+    val activeDotSize = UiSpacing.m
+}
+
 /** Content-sized welcome card; the surrounding page scrolls for long text or short windows. */
 object ExperienceTokens {
     val contentGap = UiSpacing.l

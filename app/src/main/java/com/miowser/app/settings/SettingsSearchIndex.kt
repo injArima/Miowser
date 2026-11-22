@@ -61,6 +61,7 @@ object SettingsSearchIndex {
             condition = condition)
 
     val entries = listOf(
+        media("master.guide", "Getting started", "Help", "Explore the current app and your chosen experience.", "onboarding guide tutorial help", page = SettingsSearchPage.MASTER),
         media("master.customize", "Customize Miowser", "Your experience", "Choose browser, player, or both and set up your watch catalog.", "setup mode features welcome", page = SettingsSearchPage.MASTER),
         media("master.browser", "Browser settings", "Settings", "Open browsing, tabs, privacy, and website preferences.", page = SettingsSearchPage.BROWSER, condition = SettingsSearchCondition.BROWSER),
         media("master.media", "Media settings", "Settings", "Open playback, subtitles, downloads, and appearance.", page = SettingsSearchPage.MASTER),

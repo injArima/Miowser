@@ -219,6 +219,7 @@ internal fun HubHomePage(
     onOpenMediaSettings: () -> Unit,
     onOpenBrowserSettings: () -> Unit,
     onCustomize: () -> Unit,
+    onOpenGuide: () -> Unit,
     onOpenBackupRestore: () -> Unit,
     onOpenRecordInBrowser: (String, Boolean) -> Unit,
     bottomBarHeight: Dp,
@@ -439,6 +440,7 @@ internal fun HubHomePage(
                             onMedia = onOpenMediaSettings,
                             onBrowser = onOpenBrowserSettings,
                             onCustomize = onCustomize,
+                            onGuide = onOpenGuide,
                             onBackup = onOpenBackupRestore,
                             modifier = Modifier.fillMaxSize().padding(bottom = bottomBarHeight)
                         )
