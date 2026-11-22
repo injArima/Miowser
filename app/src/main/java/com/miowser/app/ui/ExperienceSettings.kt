@@ -53,12 +53,13 @@ internal fun ExperienceSettingsContent(
 @Composable
 private fun ExperienceCard(settings: Settings, onCustomize: () -> Unit) {
     Surface(modifier = Modifier.widthIn(max = ExperienceTokens.cardMaxWidth).fillMaxWidth()
-        .aspectRatio(ExperienceTokens.cardAspectRatio).settingsSearchAnchor("Customize Miowser")
+        .settingsSearchAnchor("Customize Miowser")
         .testTag("experience_card"), shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-        Column(Modifier.fillMaxSize().padding(ExperienceTokens.cardPadding)) {
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(UiSpacing.l)) {
+        Column(Modifier.fillMaxWidth().padding(ExperienceTokens.cardPadding),
+            verticalArrangement = Arrangement.spacedBy(ExperienceTokens.actionGap)) {
+            Column(Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(ExperienceTokens.contentGap)) {
                 Icon(Icons.Rounded.Tune, null, tint = MaterialTheme.colorScheme.tertiary,
                     modifier = Modifier.size(ExperienceTokens.choiceIconSize))
                 Text(settings.experienceTitle, style = MaterialTheme.typography.headlineSmall)

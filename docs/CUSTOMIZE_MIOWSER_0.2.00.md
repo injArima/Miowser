@@ -1,11 +1,13 @@
-# Customize Miowser — 0.2.00
+# Customize Miowser — introduced 0.2.00, updated 0.2.01
 
 ## Entry and flow
 
-The More page and master Settings share a neutral, rounded portrait card. Its
-4:5 aspect ratio and 400 dp maximum width live in `ExperienceTokens`; text inside
-the card can scroll independently for large fonts, and Customize stays at the
-bottom right. The containing settings list also scrolls.
+The More page and master Settings share a neutral, rounded card. Its height
+follows the title, information, and action, without a fixed aspect ratio or
+weighted spacer. The 400 dp maximum width, padding, and content/action gaps live
+in `ExperienceTokens`. Customize stays at the bottom right, immediately below
+the information. The containing settings page scrolls for large fonts or longer
+information; the card has no separate nested scroll area.
 
 Customize follows Introduction → Priority → Features → Watch history → Review.
 Player only skips Watch history. Both and Browser only explicitly offer
