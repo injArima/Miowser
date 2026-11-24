@@ -82,3 +82,5 @@ shared primitive tokens and Material 3 defaults.
 - `ExpressiveTokens.kt`: semantic aliases for page gutter, section gap, item gap, icon sizes, and minimum touch target.
 
 Measurements that encode media dimensions, gesture thresholds, selection coordinates, or a single component's bespoke geometry remain local. Their meaning is tied to that feature rather than to the visual scale.
+
+System icon sizing: `res/values/icon_tokens.xml` centralizes the adaptive launcher mark inset at 6.5% for both color and monochrome layers. Notification icons use a separate 24 dp vector without adaptive insets. See `NOTIFICATION_ARTWORK_AND_ICONS_0.2.04.md`.

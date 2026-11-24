@@ -18,6 +18,9 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
+import android.webkit.WebSettings
+import com.miowser.app.browser.media.MediaArtworkPolicy
+import kotlinx.coroutines.delay
 import android.util.LruCache
 import androidx.core.content.ContextCompat
 import com.miowser.app.MainActivity
@@ -51,6 +54,7 @@ internal class BrowserPlaybackService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var mediaSession: MediaSession
+    private var artworkUserAgent = ""
     private var owner: Owner? = null
     private var ownerToken = ""
     private var stateJob: Job? = null
@@ -64,13 +68,14 @@ internal class BrowserPlaybackService : Service() {
     private var stopping = false
     private var destroyed = false
     private val artworkSlots = Semaphore(2)
-    private val artworkCache = object : LruCache<String, Bitmap>(2 * 1024 * 1024) {
+    private val artworkCache = object : LruCache<String, Bitmap>(MediaArtworkPolicy.cacheBytes) {
         // Charge a minimum per entry as well: at most eight URLs, even for tiny bitmaps.
-        override fun sizeOf(key: String, value: Bitmap) = value.allocationByteCount.coerceAtLeast(256 * 1024)
+        override fun sizeOf(key: String, value: Bitmap) = value.allocationByteCount.coerceAtLeast(MediaArtworkPolicy.minCacheCharge)
     }
 
     override fun onCreate() {
         super.onCreate()
+        artworkUserAgent = WebSettings.getDefaultUserAgent(this)
         instance = this
         startPending = false
         getSystemService(NotificationManager::class.java)?.createNotificationChannel(
@@ -215,7 +220,10 @@ internal class BrowserPlaybackService : Service() {
                 .putString(MediaMetadata.METADATA_KEY_ALBUM, snapshot.album)
                 .putString(MediaMetadata.METADATA_KEY_MEDIA_URI, snapshot.pageUrl)
                 .putLong(MediaMetadata.METADATA_KEY_DURATION, snapshot.durationMs)
-                .apply { artwork?.let { putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, it) } }
+                .apply { artwork?.let {
+                    putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, it)
+                    putBitmap(MediaMetadata.METADATA_KEY_ART, it)
+                } }
                 .build())
         }
         val now = SystemClock.elapsedRealtime()
@@ -269,7 +277,7 @@ internal class BrowserPlaybackService : Service() {
         val tap = PendingIntent.getActivity(this, 0, main,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val builder = Notification.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_monochrome)
+            .setSmallIcon(R.drawable.ic_notification_miowser)
             .setContentTitle(snapshot?.title ?: "Browser media")
             .setContentText(snapshot?.artist?.ifBlank { snapshot.album }?.ifBlank { "Browser playback" })
             .setContentIntent(tap)
@@ -323,7 +331,13 @@ internal class BrowserPlaybackService : Service() {
         val token = ownerToken
         artworkJob = scope.launch {
             val bitmap = withContext(Dispatchers.IO) {
-                artworkSlots.withPermit { fetchArtwork(url) }
+                var loaded: Bitmap? = null
+                for (attempt in 0 until MediaArtworkPolicy.attempts) {
+                    if (attempt > 0) delay(MediaArtworkPolicy.retryDelayMs)
+                    loaded = artworkSlots.withPermit { fetchArtwork(url, snapshot.pageUrl) }
+                    if (loaded != null) break
+                }
+                loaded
             } ?: return@launch
             if (ownerToken != token || artworkUrl != url ||
                 !sameOwner(owner, selectedOwner()) || selectedOwner()?.snapshot?.isPrivate != false) return@launch
@@ -336,7 +350,7 @@ internal class BrowserPlaybackService : Service() {
     }
 
     /** Network, bounded reads, bounds inspection and sampled decode all run off the main thread. */
-    private suspend fun fetchArtwork(address: String): Bitmap? {
+    private suspend fun fetchArtwork(address: String, pageUrl: String): Bitmap? {
         try {
             var url = URL(address)
             val deadline = SystemClock.elapsedRealtime() + 8_000L
@@ -349,12 +363,17 @@ internal class BrowserPlaybackService : Service() {
                     connection.connectTimeout = 2_000
                     connection.readTimeout = 2_000
                     connection.instanceFollowRedirects = false
-                    connection.useCaches = false
+                    connection.useCaches = true
+                    if (artworkUserAgent.isNotBlank()) connection.setRequestProperty("User-Agent", artworkUserAgent)
+                    connection.setRequestProperty("Accept", "image/webp,image/png,image/jpeg,image/*;q=0.8")
+                    MediaArtworkPolicy.referrer(pageUrl, url.toString())?.let { connection.setRequestProperty("Referer", it) }
                     val code = connection.responseCode
                     if (code in setOf(301, 302, 303, 307, 308)) {
-                        url = URL(url, connection.getHeaderField("Location") ?: return null)
+                        val next = URL(url, connection.getHeaderField("Location") ?: return null)
+                        if (url.protocol == "https" && next.protocol != "https") return null
+                        url = next
                     } else {
-                        if (code != 200 || connection.contentLengthLong > MAX_ARTWORK_BYTES) return null
+                        if (code != 200 || connection.contentLengthLong > MediaArtworkPolicy.maxEncodedBytes) return null
                         val bytes = ByteArrayOutputStream()
                         connection.inputStream.use { input ->
                             val buffer = ByteArray(8192)
@@ -363,7 +382,7 @@ internal class BrowserPlaybackService : Service() {
                                 if (SystemClock.elapsedRealtime() > deadline) return null
                                 val count = input.read(buffer)
                                 if (count < 0) break
-                                if (bytes.size() + count > MAX_ARTWORK_BYTES) return null
+                                if (bytes.size() + count > MediaArtworkPolicy.maxEncodedBytes) return null
                                 bytes.write(buffer, 0, count)
                             }
                         }
@@ -371,12 +390,9 @@ internal class BrowserPlaybackService : Service() {
                         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                         BitmapFactory.decodeByteArray(data, 0, data.size, options)
                         if (options.outWidth !in 1..8192 || options.outHeight !in 1..8192) return null
-                        options.inSampleSize = 1
-                        while (maxOf(options.outWidth, options.outHeight) / options.inSampleSize > 256) {
-                            options.inSampleSize *= 2
-                        }
+                        options.inSampleSize = MediaArtworkPolicy.sampleSize(options.outWidth, options.outHeight)
                         options.inJustDecodeBounds = false
-                        options.inPreferredConfig = Bitmap.Config.RGB_565
+                        options.inPreferredConfig = Bitmap.Config.ARGB_8888
                         currentCoroutineContext().ensureActive()
                         return BitmapFactory.decodeByteArray(data, 0, data.size, options)
                     }
@@ -411,7 +427,6 @@ internal class BrowserPlaybackService : Service() {
         private const val ACTION_COMMAND = "com.miowser.app.browser.media.COMMAND"
         private const val CHANNEL_ID = "miowser_browser_audio"
         private const val NOTIFICATION_ID = 2003
-        private const val MAX_ARTWORK_BYTES = 1024 * 1024
         private var instance: BrowserPlaybackService? = null
         private var startPending = false
         private var requestedControls: BrowserPlaybackControls? = null

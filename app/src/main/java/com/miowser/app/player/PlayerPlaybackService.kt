@@ -111,7 +111,7 @@ internal class PlayerPlaybackService : Service() {
             Intent(this, PlayerPlaybackService::class.java).setAction(action),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return Notification.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_monochrome)
+            .setSmallIcon(R.drawable.ic_notification_miowser)
             .setContentTitle(requestedTitle)
             .setContentText(if (requestedAudioOnly) "Audio-only playback" else "Miowser")
             .setContentIntent(mainIntent)

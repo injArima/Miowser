@@ -2,7 +2,7 @@ package com.miowser.app.browser.media
 
 /** Document-start code, executed independently in each HTTP(S) frame. */
 internal val PAGE_MEDIA_SCRIPT = PAGE_MEDIA_BRIDGE_SCRIPT.replace(
-    "/*SITE_MEDIA_COMPATIBILITY*/", SITE_MEDIA_COMPATIBILITY_SCRIPT)
+    "/*SITE_MEDIA_COMPATIBILITY*/", SITE_MEDIA_COMPATIBILITY_SCRIPT).replace("/*MEDIA_ARTWORK*/", MEDIA_ARTWORK_SCRIPT)
 
 internal const val PAGE_MEDIA_BRIDGE_SCRIPT = """
 (function () {
@@ -12,6 +12,7 @@ internal const val PAGE_MEDIA_BRIDGE_SCRIPT = """
     var bridge = window.MiowserPageMedia;
     if (!bridge) return;
     /*SITE_MEDIA_COMPATIBILITY*/
+    /*MEDIA_ARTWORK*/
     var compatibility = createSiteMediaCompatibility(), compatibilityOwner = null;
     var documentId = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
     var binding = null, generation = -1, sequence = 0, activation = 0, lastCommand = 0;
@@ -176,7 +177,7 @@ internal const val PAGE_MEDIA_BRIDGE_SCRIPT = """
             choose(); schedule();
         });
         observers.push({root: root, observer: observer});
-        observer.observe(root, {childList: true, subtree: true, attributes: true, attributeFilter: ['src']});
+        observer.observe(root, {childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'srcset', 'poster']});
         mediaEvents.forEach(function (name) { listen(root, name, onMedia, true); });
         listen(root, 'pointerdown', onInteraction, true);
         listen(root, 'keydown', onInteraction, true);
@@ -302,13 +303,8 @@ internal const val PAGE_MEDIA_BRIDGE_SCRIPT = """
         return result;
     }
     function state(record) {
-        var media = record.media, meta = session && session.metadata, artwork = null;
-        if (meta && meta.artwork) {
-            for (var i = 0; i < Math.min(meta.artwork.length, 8); i++) {
-                artwork = httpUrl(meta.artwork[i].src);
-                if (artwork) break;
-            }
-        }
+        var media = record.media, meta = session && session.metadata;
+        var artwork = selectMediaArtwork(meta, media);
         var duration = seconds(media.duration, null), position = seconds(media.currentTime, 0);
         var speed = Number.isFinite(media.playbackRate) && media.playbackRate > 0 ? Math.min(media.playbackRate, 16) : 1;
         var anchor = positionState;
