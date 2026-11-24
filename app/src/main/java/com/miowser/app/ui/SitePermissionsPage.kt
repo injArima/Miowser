@@ -24,12 +24,7 @@ import com.miowser.app.browser.SavedSitePermission
 import com.miowser.app.browser.SiteDecision
 import com.miowser.app.ui.theme.UiSpacing
 
-private fun permissionLabel(resource: String): String = when {
-    resource.endsWith("VIDEO_CAPTURE") -> "Camera"
-    resource.endsWith("AUDIO_CAPTURE") -> "Microphone"
-    resource == "geolocation" -> "Location"
-    else -> resource.substringAfterLast('.')
-}
+private fun permissionLabel(resource: String): String = com.miowser.app.browser.WebPermissionPolicy.label(resource)
 
 @Composable
 fun SitePermissionsPage(

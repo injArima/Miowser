@@ -23,8 +23,8 @@ android {
         applicationId = "com.miowser.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 97
-        versionName = "0.2.02"
+        versionCode = 98
+        versionName = "0.2.03"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

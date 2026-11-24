@@ -771,7 +771,7 @@ class Tab(
         com.miowser.app.adblock.ServiceWorkerAdBlock.install()
         val view = MiowserWebView(tabContext, onSearchSelectedText)
         val alive = AtomicBoolean(true)
-        val permissionRequests = mutableSetOf<PermissionRequest>()
+        val permissionRequests = mutableMapOf<PermissionRequest, WebPermissionLease>()
         return try { view.apply {
             CookieManager.getInstance().setAcceptCookie(AppSettings.current.cookiesEnabled)
             settings.javaScriptEnabled = AppSettings.current.javaScriptEnabled
@@ -1130,7 +1130,7 @@ class Tab(
                 pageMediaTracker = null
                 client.retire()
                 bridge.retire("The originating page is no longer available. Reload it and start the download again.")
-                permissionRequests.toList().forEach { request ->
+                permissionRequests.values.toList().forEach { request ->
                     onWebPermissionCanceled(request)
                     runCatching { request.deny() }
                 }
@@ -1165,13 +1165,16 @@ class Tab(
 
                 override fun onPermissionRequest(request: PermissionRequest) {
                     if (!alive.get()) { request.deny(); return }
-                    permissionRequests.add(request)
-                    onWebPermissionRequested(request)
+                    val lease = WebPermissionLease(request) { permissionRequests.remove(request) }
+                    permissionRequests[request] = lease
+                    onWebPermissionRequested(lease)
                 }
 
                 override fun onPermissionRequestCanceled(request: PermissionRequest) {
-                    permissionRequests.remove(request)
-                    onWebPermissionCanceled(request)
+                    permissionRequests.remove(request)?.let { lease ->
+                        lease.cancel()
+                        onWebPermissionCanceled(lease)
+                    }
                 }
 
                 override fun onGeolocationPermissionsShowPrompt(

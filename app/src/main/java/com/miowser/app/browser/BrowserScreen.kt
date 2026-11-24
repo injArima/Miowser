@@ -501,6 +501,8 @@ fun BrowserScreen(
     var sitePermissionRevision by remember { mutableIntStateOf(0) }
     var pendingRuntimePermission by remember { mutableStateOf<PermissionRequest?>(null) }
     var rememberRuntimePermission by remember { mutableStateOf(false) }
+    var pendingRuntimeResources by remember { mutableStateOf(emptyList<String>()) }
+    var runtimePermissionInFlight by remember { mutableStateOf(false) }
     var pendingRuntimeGeolocation by remember { mutableStateOf<PendingGeolocation?>(null) }
     var rememberRuntimeGeolocation by remember { mutableStateOf(false) }
     var unsupportedSitePermission by remember { mutableStateOf<String?>(null) }
@@ -708,18 +710,26 @@ fun BrowserScreen(
     val webPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
+        runtimePermissionInFlight = false
         val request = pendingRuntimePermission
+        val review = WebPermissionPolicy.review(pendingRuntimeResources)
+        val rememberDecision = rememberRuntimePermission
         pendingRuntimePermission = null
-        if (request != null) {
-            if (results.isNotEmpty() && results.values.all { it }) {
-                if (rememberRuntimePermission) request.resources.forEach {
+        pendingRuntimeResources = emptyList()
+        rememberRuntimePermission = false
+        if (request != null && (request !is WebPermissionLease || request.pending)) {
+            val granted = review.valid && results.isNotEmpty() && review.runtimePermissions.all {
+                ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+            }
+            if (granted) {
+                if (rememberDecision && review.canRemember) review.resources.forEach {
                     SitePermissionStore.set(context, request.origin.toString(), it, SiteDecision.ALLOW)
                 }
-                request.grant(request.resources)
+                request.grant(review.resources.toTypedArray())
             } else request.deny()
         }
-        rememberRuntimePermission = false
     }
+
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -754,45 +764,51 @@ fun BrowserScreen(
         }
     }
 
-    fun runtimePermissionsFor(request: PermissionRequest): Array<String>? {
-        val resources = request.resources.toSet()
-        if (resources.isEmpty() || resources.any {
-                it != PermissionRequest.RESOURCE_VIDEO_CAPTURE &&
-                    it != PermissionRequest.RESOURCE_AUDIO_CAPTURE
-            }) return null
-        return buildList {
-            if (PermissionRequest.RESOURCE_VIDEO_CAPTURE in resources) add(Manifest.permission.CAMERA)
-            if (PermissionRequest.RESOURCE_AUDIO_CAPTURE in resources) add(Manifest.permission.RECORD_AUDIO)
-        }.toTypedArray()
+    fun grantReviewedPermission(request: PermissionRequest, review: WebPermissionReview, remember: Boolean) {
+        if (!review.valid || request is WebPermissionLease && !request.pending) return
+        val missing = review.runtimePermissions.filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isEmpty()) {
+            if (remember && review.canRemember) review.resources.forEach {
+                SitePermissionStore.set(context, request.origin.toString(), it, SiteDecision.ALLOW)
+            }
+            request.grant(review.resources.toTypedArray())
+        } else if (runtimePermissionInFlight) {
+            // The old Android result must not be delivered to a newer website request.
+            pendingWebPermission?.takeIf { it !== request }?.deny()
+            pendingWebPermission = request
+        } else {
+            pendingRuntimePermission = request
+            pendingRuntimeResources = review.resources
+            rememberRuntimePermission = remember && review.canRemember
+            runtimePermissionInFlight = true
+            webPermissionLauncher.launch(missing.toTypedArray())
+        }
     }
 
     fun handleWebPermission(request: PermissionRequest, privateTab: Boolean) {
         val origin = request.origin.toString()
-        val permissions = runtimePermissionsFor(request)
-        if (Uri.parse(origin).scheme != "https" || permissions == null) {
+        val review = WebPermissionPolicy.review(request.resources.toList())
+        if (!WebPermissionPolicy.secureOrigin(origin) || !review.valid) {
             request.deny()
-            unsupportedSitePermission = if (permissions == null) {
-                "$origin requested a website resource Miowser cannot grant safely."
+            unsupportedSitePermission = if (!review.valid) {
+                "$origin sent an empty or malformed website permission request. No capability was granted."
             } else {
-                "Site permissions require a secure HTTPS page."
+                "$origin requested ${review.names}. These permissions require a secure HTTPS origin; reload the site's HTTPS page and try again."
             }
             return
         }
-        val decisions = request.resources.map {
-            if (privateTab) SiteDecision.ASK else SitePermissionStore.get(context, origin, it)
+        val decisions = review.resources.map {
+            if (privateTab || !WebPermissionPolicy.isKnown(it)) SiteDecision.ASK
+            else SitePermissionStore.get(context, origin, it)
         }
         if (decisions.all { it == SiteDecision.BLOCK }) {
             request.deny()
-        } else if (decisions.all { it == SiteDecision.ALLOW }) {
-            val missing = permissions.filter {
-                ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
-            }
-            if (missing.isEmpty()) request.grant(request.resources)
-            else {
-                pendingRuntimePermission = request
-                rememberRuntimePermission = true
-                webPermissionLauncher.launch(missing.toTypedArray())
-            }
+        } else if (decisions.none { it == SiteDecision.ASK } && !runtimePermissionInFlight) {
+            // Honor per-resource decisions: an allowed microphone must not also grant a blocked camera.
+            val allowed = review.resources.filterIndexed { index, _ -> decisions[index] == SiteDecision.ALLOW }
+            grantReviewedPermission(request, WebPermissionPolicy.review(allowed), remember = !privateTab)
         } else {
             pendingWebPermission?.deny()
             pendingWebPermission = request
@@ -828,7 +844,11 @@ fun BrowserScreen(
 
     fun cancelWebPermission(request: PermissionRequest) {
         if (pendingWebPermission === request) pendingWebPermission = null
-        if (pendingRuntimePermission === request) pendingRuntimePermission = null
+        if (pendingRuntimePermission === request) {
+            pendingRuntimePermission = null
+            pendingRuntimeResources = emptyList()
+            rememberRuntimePermission = false
+        }
     }
 
     fun cancelGeolocation(ownerTabId: Long) {
@@ -3455,7 +3475,7 @@ fun BrowserScreen(
         unsupportedSitePermission?.let { message ->
             AlertDialog(
                 onDismissRequest = { unsupportedSitePermission = null },
-                title = { Text("Permission blocked") },
+                title = { Text("Website permission unavailable") },
                 text = { Text(message) },
                 confirmButton = {
                     TextButton(onClick = { unsupportedSitePermission = null }) { Text("OK") }
@@ -3464,49 +3484,36 @@ fun BrowserScreen(
         }
 
         pendingWebPermission?.let { request ->
-            val origin = request.origin.toString()
-            val resources = request.resources.toList()
-            MiowserConfirmationDialog(
-                title = "Site permission",
-                message = "$origin wants to use ${resources.joinToString { if (it == PermissionRequest.RESOURCE_VIDEO_CAPTURE) "camera" else "microphone" }}.",
-                onDismiss = { request.deny(); pendingWebPermission = null },
-                actions = listOf(
-                    ConfirmationAction("Block", {
-                        if (!pendingWebPermissionIsPrivate) {
-                            resources.forEach { SitePermissionStore.set(context, origin, it, SiteDecision.BLOCK) }
-                        }
-                        request.deny()
-                        pendingWebPermission = null
-                    }, ConfirmationTone.CAUTION),
-                    ConfirmationAction("Allow once", {
-                        pendingWebPermission = null
-                        val missing = runtimePermissionsFor(request).orEmpty().filter {
-                            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
-                        }
-                        if (missing.isEmpty()) request.grant(request.resources)
-                        else {
-                            pendingRuntimePermission = request
-                            rememberRuntimePermission = false
-                            webPermissionLauncher.launch(missing.toTypedArray())
-                        }
-                    })
-                ) + if (!pendingWebPermissionIsPrivate) listOf(
-                    ConfirmationAction("Always allow for this site", {
+            key(request) {
+                val origin = request.origin.toString()
+                val review = WebPermissionPolicy.review(request.resources.toList())
+                MiowserConfirmationDialog(
+                    title = if (review.resources.size == 1) "${review.names} request" else "Website permissions request",
+                    message = "$origin wants access to:\n${review.names}\n\n${review.explanation}" +
+                        if (pendingWebPermissionIsPrivate) "\n\nPrivate tab: this choice will not be saved." else "",
+                    onDismiss = { request.deny(); pendingWebPermission = null },
+                    actions = listOf(
+                        ConfirmationAction("Block", {
+                            if (!pendingWebPermissionIsPrivate && review.canRemember) review.resources.forEach {
+                                SitePermissionStore.set(context, origin, it, SiteDecision.BLOCK)
+                            }
+                            request.deny()
                             pendingWebPermission = null
-                            val missing = runtimePermissionsFor(request).orEmpty().filter {
-                                ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
-                            }
-                            if (missing.isEmpty()) {
-                                resources.forEach { SitePermissionStore.set(context, origin, it, SiteDecision.ALLOW) }
-                                request.grant(request.resources)
-                            } else {
-                                pendingRuntimePermission = request
-                                rememberRuntimePermission = true
-                                webPermissionLauncher.launch(missing.toTypedArray())
-                            }
-                    })
-                ) else emptyList()
-            )
+                        }, ConfirmationTone.CAUTION),
+                        ConfirmationAction("Allow once", {
+                            pendingWebPermission = null
+                            grantReviewedPermission(request, review, remember = false)
+                        }, firstTapDescription = review.confirmation)
+                    ) + if (!pendingWebPermissionIsPrivate && review.canRemember) listOf(
+                        ConfirmationAction("Always allow for this site", {
+                            pendingWebPermission = null
+                            grantReviewedPermission(request, review, remember = true)
+                        }, firstTapDescription = review.confirmation?.let {
+                            "$it\n\nRemember this decision for $origin. You can forget it in Site permissions."
+                        })
+                    ) else emptyList()
+                )
+            }
         }
 
         pendingGeolocation?.let { pending ->
