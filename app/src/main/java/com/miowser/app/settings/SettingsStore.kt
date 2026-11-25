@@ -44,7 +44,7 @@ object SettingsStore {
         val savedNewTabConfirmation = prefs.getString(KEY_NEW_TAB_CONFIRMATION, null)
             ?.let { name -> runCatching { NewTabConfirmation.valueOf(name) }.getOrNull() }
         val savedThreadCount = prefs.getString(KEY_DOWNLOAD_THREAD_COUNT, null)
-            ?.let { name -> runCatching { DownloadThreadCount.valueOf(name) }.getOrNull() }
+            ?.let { name -> runCatching { DownloadThreadCount.valueOf(if (name == "EIGHT") "SIX" else name) }.getOrNull() }
         val savedRetention = prefs.getString(KEY_INACTIVE_TAB_RETENTION, null)
             ?.let { name -> runCatching { InactiveTabRetention.valueOf(name) }.getOrNull() }
         val savedLibraryBehavior = prefs.getString(KEY_LIBRARY_BEHAVIOR, null)
@@ -64,6 +64,9 @@ object SettingsStore {
             restoreTabsOnStartup = prefs.getBoolean(KEY_RESTORE_TABS_ON_STARTUP, defaults.restoreTabsOnStartup),
             newTabConfirmation = savedNewTabConfirmation ?: defaults.newTabConfirmation,
             downloadThreadCount = savedThreadCount ?: defaults.downloadThreadCount,
+            downloadParallelJobs = prefs.getInt("download_parallel_jobs", 2).coerceIn(1, 4),
+            downloadPerHostConnections = prefs.getInt("download_per_host_connections", 4).coerceIn(1, 6),
+            downloadRetryAttempts = prefs.getInt("download_retry_attempts", 3).coerceIn(0, 5),
             javaScriptEnabled = prefs.getBoolean(KEY_JAVASCRIPT_ENABLED, defaults.javaScriptEnabled),
             cookiesEnabled = prefs.getBoolean(KEY_COOKIES_ENABLED, defaults.cookiesEnabled),
             popupsEnabled = prefs.getBoolean(KEY_POPUPS_ENABLED, defaults.popupsEnabled),
@@ -103,6 +106,9 @@ object SettingsStore {
                 .putBoolean(KEY_RESTORE_TABS_ON_STARTUP, settings.restoreTabsOnStartup)
                 .putString(KEY_NEW_TAB_CONFIRMATION, settings.newTabConfirmation.name)
                 .putString(KEY_DOWNLOAD_THREAD_COUNT, settings.downloadThreadCount.name)
+                .putInt("download_parallel_jobs", settings.downloadParallelJobs.coerceIn(1, 4))
+                .putInt("download_per_host_connections", settings.downloadPerHostConnections.coerceIn(1, 6))
+                .putInt("download_retry_attempts", settings.downloadRetryAttempts.coerceIn(0, 5))
                 .putBoolean(KEY_JAVASCRIPT_ENABLED, settings.javaScriptEnabled)
                 .putBoolean(KEY_COOKIES_ENABLED, settings.cookiesEnabled)
                 .putBoolean(KEY_POPUPS_ENABLED, settings.popupsEnabled)

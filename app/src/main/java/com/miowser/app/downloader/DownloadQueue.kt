@@ -14,8 +14,6 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-private const val MAX_AUTOMATIC_DOWNLOAD_RETRIES = 3
-private const val RETRY_WAIT_SLICE_MS = 200L
 
 /**
  * The download engine's single entry point — mirrors the AdBlock/MediaProbe singleton-object
@@ -97,6 +95,7 @@ object DownloadQueue {
 
     fun enqueue(context: Context, download: Download) {
         Persistence.requireOwner()
+        updateLimits()
         serviceStopping = false
         mutableDownloads.add(0, download) // newest first
         // Keep the accepted queued job alive while its initial durable record is written.
@@ -114,8 +113,10 @@ object DownloadQueue {
 
     fun resume(context: Context, download: Download) {
         Persistence.requireOwner()
+        updateLimits()
         if (download.recoveryChecking) return
         if (download.status != DownloadStatus.PAUSED) return
+        download.resetConnectionRetries()
         serviceStopping = false
         if (activeIds.contains(download.id)) {
             if (download.requestResume()) {
@@ -151,9 +152,10 @@ object DownloadQueue {
 
     fun resumeAll(context: Context) {
         Persistence.requireOwner()
+        updateLimits()
         serviceStopping = false
-        val resumed = mutableDownloads.filter { it.status == DownloadStatus.PAUSED }
-        resumed.forEach { it.requestResume() }
+        val resumed = mutableDownloads.filter { it.status == DownloadStatus.PAUSED }.sortedBy { it.queueRank }
+        resumed.forEach { it.resetConnectionRetries(); it.requestResume() }
         if (resumed.isNotEmpty()) DownloadForegroundService.start(context.applicationContext)
         persist(context) { resumed.forEach { startAndDispatch(context, it) } }
     }
@@ -178,6 +180,7 @@ object DownloadQueue {
      */
     fun retry(context: Context, download: Download) {
         Persistence.requireOwner()
+        updateLimits()
         if (download.recoveryChecking || activeIds.contains(download.id)) return
         serviceStopping = false
         if (download.status != DownloadStatus.FAILED && download.status != DownloadStatus.CANCELED) return
@@ -214,25 +217,25 @@ object DownloadQueue {
                 } else com.miowser.app.startup.AppStartup.scope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
                     try {
                         var prepared = false
-                        for (attempt in 0..MAX_AUTOMATIC_DOWNLOAD_RETRIES) {
+                        while (true) {
                             if (download.isCanceled || download.status == DownloadStatus.PAUSED || serviceStopping) break
                             try {
+                                com.miowser.app.settings.AppSettings.loadAsync(appContext)
                                 com.miowser.app.startup.AppStartup.ensurePrivacy(appContext)
                                 prepared = true
                                 break
                             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                                 throw cancelled
-                            } catch (_: Exception) {
-                                if (attempt == MAX_AUTOMATIC_DOWNLOAD_RETRIES) break
-                                download.recordConnectionRetry()
-                                kotlinx.coroutines.delay(1_000L shl attempt)
+                            } catch (error: Exception) {
+                                val wait = download.nextRetry(TransferPolicy.from(error)) ?: break
+                                kotlinx.coroutines.delay(wait)
                             }
                         }
                         if (!prepared) {
                             activeIds.remove(download.id)
                             if (!download.isCanceled && download.status != DownloadStatus.PAUSED && !serviceStopping) {
                                 download.status = DownloadStatus.FAILED
-                                download.errorMessage = "Couldn’t prepare the download after retries"
+                                download.errorMessage = download.failure?.message ?: "Couldn’t prepare the download. Please retry."
                                 persist(appContext)
                             }
                             return@launch
@@ -261,6 +264,7 @@ object DownloadQueue {
 
     private fun dispatchOnOwner(context: Context, download: Download) {
         Persistence.requireOwner()
+        updateLimits()
         if (serviceStopping || com.miowser.app.persistence.RestoreWriteFence.frozen || download.isCanceled || download.status == DownloadStatus.PAUSED) {
             activeIds.remove(download.id)
             return
@@ -274,9 +278,10 @@ object DownloadQueue {
             queuedTasks.remove(download.id)
             download.beginAttempt()
             try {
-                var attempts = 0
                 while (!download.isCanceled) {
+                    download.failure = null
                     try {
+                        if (download.kind != DownloadKind.WEBVIEW_RESOURCE) DownloadStorage.reserve(context.applicationContext, download, 0)
                         when (download.kind) {
                             DownloadKind.DIRECT_FILE -> DirectFileDownloader.run(context.applicationContext, download)
                             DownloadKind.HLS -> HlsDownloader.run(context.applicationContext, download)
@@ -291,8 +296,7 @@ object DownloadQueue {
                         break
                     } catch (e: Exception) {
                         if (download.yieldRequested || download.isCanceled) break
-                        download.errorMessage = e.message ?: "Download failed"
-                        download.status = DownloadStatus.FAILED
+                        download.fail(e)
                     }
                     if (download.status == DownloadStatus.COMPLETED) {
                         DownloadedFileInspector.forget(download.savedUri)
@@ -306,23 +310,14 @@ object DownloadQueue {
                         (download.rendererSourceUnavailable ||
                             download.errorMessage?.startsWith("This blob cannot be read as a file") == true)
                     ) break
-                    if (download.status != DownloadStatus.FAILED ||
-                        download.isCanceled || attempts >= MAX_AUTOMATIC_DOWNLOAD_RETRIES
-                    ) break
-                    attempts++
-                    val previousError = download.errorMessage ?: "Download failed"
-                    download.recordConnectionRetry()
-                    download.errorMessage = "Retrying ($attempts/$MAX_AUTOMATIC_DOWNLOAD_RETRIES): $previousError"
+                    if (download.status != DownloadStatus.FAILED || download.isCanceled) break
+                    val problem = download.failure ?: TransferFailure(TransferFailureKind.PERMANENT,
+                        download.errorMessage ?: "Download failed")
+                    val waitMs = download.nextRetry(problem) ?: break
+                    download.errorMessage = null
                     download.enterStage(DownloadStatus.DOWNLOADING)
-                    val waitMs = 1_000L shl (attempts - 1)
-                    var waitedMs = 0L
-                    while (waitedMs < waitMs && !download.isCanceled) {
-                        download.awaitIfPaused()
-                        if (download.isCanceled) break
-                        val slice = minOf(RETRY_WAIT_SLICE_MS, waitMs - waitedMs)
-                        Thread.sleep(slice)
-                        waitedMs += slice
-                    }
+                    download.retryWaiting = "Retry ${download.retryCount} — waiting ${(waitMs / 1000).coerceAtLeast(1)}s: ${problem.message}"
+                    try { download.waitBeforeRetry(waitMs) } finally { download.retryWaiting = null }
                 }
             } catch (_: DownloadYieldException) {
                 // All children have joined and closed their resources before ownership returns.
@@ -333,6 +328,7 @@ object DownloadQueue {
                     download.status = DownloadStatus.FAILED
                 }
             } finally {
+                DownloadStorage.release(download.id)
                 if (download.isCanceled && download.status != DownloadStatus.COMPLETED) {
                     download.status = DownloadStatus.CANCELED
                 }
@@ -350,6 +346,39 @@ object DownloadQueue {
         }
         queuedTasks[download.id] = task
         executor.execute(task)
+        reorderWaitingTasks()
+    }
+
+    fun updateLimits() {
+        Persistence.requireOwner()
+        val count = com.miowser.app.settings.AppSettings.current.downloadParallelJobs.coerceIn(1, 4)
+        if (count > executor.maximumPoolSize) executor.maximumPoolSize = count
+        executor.corePoolSize = count
+        executor.maximumPoolSize = count
+    }
+
+    /** Reorders waiting work only. Running transfers retain their resources and progress. */
+    fun downloadNext(context: Context, download: Download) {
+        Persistence.requireOwner()
+        if (download.status != DownloadStatus.QUEUED) return
+        val nextRank = (mutableDownloads.minOfOrNull { it.queueRank } ?: 0L)
+        download.queueRank = if (nextRank == Long.MIN_VALUE) nextRank else nextRank - 1
+        reorderWaitingTasks()
+        persist(context)
+    }
+
+    fun setConnectionLimit(context: Context, download: Download, limit: Int) {
+        Persistence.requireOwner()
+        if (download.status !in listOf(DownloadStatus.QUEUED, DownloadStatus.PAUSED, DownloadStatus.FAILED, DownloadStatus.CANCELED)) return
+        download.connectionLimit = limit.coerceIn(0, 6)
+        persist(context)
+    }
+
+    private fun reorderWaitingTasks() {
+        val waiting = mutableListOf<Runnable>()
+        executor.queue.drainTo(waiting)
+        val ranks = mutableDownloads.associate { d -> queuedTasks[d.id] to d.queueRank }
+        waiting.sortedBy { ranks[it] ?: Long.MAX_VALUE }.forEach { executor.queue.offer(it) }
     }
 
     fun checkpointForServiceStop(context: Context, onStopped: () -> Unit = {}) {
@@ -419,6 +448,9 @@ object DownloadQueue {
                 preferredOutputBaseName = record.preferredOutputBaseName
             )
             download.status = record.status
+            download.connectionLimit = record.connectionLimit
+            download.queueRank = record.queueRank
+            download.restoreTransferred(record.transferredBytes)
             download.errorMessage = record.errorMessage
             download.bytesDownloaded = record.bytesDownloaded
             download.totalBytes = record.totalBytes
@@ -520,6 +552,9 @@ object DownloadQueue {
             preferredOutputBaseName = old.preferredOutputBaseName
                 ?: old.displayName.substringBeforeLast('.', old.displayName)
         )
+        replacement.connectionLimit = old.connectionLimit
+        replacement.queueRank = old.queueRank
+        replacement.restoreTransferred(old.transferredBytes)
         if (!canReuse) {
             replaceAndRestart(context, old, replacement, deleteExistingFile = old.status == DownloadStatus.COMPLETED)
             return false
@@ -564,6 +599,7 @@ object DownloadQueue {
         val appContext = context.applicationContext
         val token = Any()
         val records = removed.map { it.id to it }
+        val retireLocations = removed.filter { removedJob -> mutableDownloads.none { it.id == removedJob.id } }.map { it.id }.toSet()
         records.forEach { (id, _) -> cleanupGenerations[id] = token }
         maintenance.execute {
             while (records.any { (id, _) -> activeIds.contains(id) }) Thread.sleep(25)
@@ -576,6 +612,7 @@ object DownloadQueue {
                         val uri = download.savedUri
                         DownloadRecoveryStore.clear(appContext, id)
                         check(!DownloadRecoveryStore.directory(appContext, id).exists())
+                        if (id in retireLocations) DownloadRecoveryStore.forgetLocation(appContext, id)
                         if (removeThumbnail) {
                             LibraryThumbnailStore.removeDownloadedThumbnail(appContext, uri)
                             DownloadedFileInspector.forget(uri)
@@ -623,7 +660,10 @@ object DownloadQueue {
                 elapsedActiveMillis = d.elapsedActiveMillis(),
                 preferredOutputBaseName = d.preferredOutputBaseName,
                 userAgent = d.userAgent,
-                referer = d.referer
+                referer = d.referer,
+                connectionLimit = d.connectionLimit,
+                queueRank = d.queueRank,
+                transferredBytes = d.transferredBytes
             )
         }
         } } finally { view.dispose() }

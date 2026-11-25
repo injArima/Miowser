@@ -103,6 +103,8 @@ object DashDownloader {
             if (videoFile == null && audioFile == null) return fail(download, "Segment download failed")
 
             download.enterStage(DownloadStatus.MUXING)
+            val outputEstimate = ((videoFile?.length() ?: 0) + (audioFile?.length() ?: 0)).coerceAtMost(Long.MAX_VALUE / 2)
+            DownloadStorage.reserve(context, download, outputEstimate + DownloadStorage.publicationBytes(context, download.id, outputEstimate))
             download.awaitIfPaused()
             if (download.isCanceled) return markCanceled(context, download)
             val muxedFile = File(recoveryDir, "muxed.mp4")
@@ -115,6 +117,7 @@ object DashDownloader {
             if (download.isCanceled) return markCanceled(context, download)
             download.displayName = finalFileName
             download.checkTransferActive()
+            DownloadStorage.reserve(context, download, DownloadStorage.publicationBytes(context, download.id, muxedFile.length()))
             val uri = MediaStoreOutput.publishFile(context, muxedFile, finalFileName, "video/mp4", download::checkTransferActive)
                 ?: return fail(download, "Could not create output file")
             MediaStoreOutput.actualFileName(context, uri)?.let { download.displayName = it }
@@ -130,7 +133,7 @@ object DashDownloader {
             download.awaitIfPaused()
             com.miowser.app.diagnostics.SafeLog.debug(TAG, "DASH download failed for ${download.sourceUrl}: ${e.message}")
             if (download.isCanceled) markCanceled(context, download)
-            else fail(download, e.message ?: "Unknown error")
+            else download.fail(e)
         }
     }
 
@@ -216,6 +219,7 @@ object DashDownloader {
             }
         }
         val outputFile = File(recoveryDir, "$label.mp4")
+        DownloadStorage.reserve(context, download, segmentFiles.sumOf { it.length() } + (initFile?.length() ?: 0))
         outputFile.outputStream().use { output ->
             initFile?.inputStream()?.use { it.copyPausableTo(output, download) }
             for (file in segmentFiles) {
@@ -243,7 +247,7 @@ object DashDownloader {
             val expected = range.length.toInt()
             val result = ByteArray(expected)
             var offset = 0
-            connection.inputStream.use { input ->
+            download.metered(connection.inputStream).use { input ->
                 while (offset < expected) {
                     download.awaitIfPaused()
                     if (download.isCanceled) throw DashDownloadException("Download canceled")
@@ -262,13 +266,14 @@ object DashDownloader {
     private fun fetchToFile(segment: DashSegment, outputFile: File, download: Download) {
         val connection = openConnection(segment.url, download, segment.byteRange)
         try {
+            connection.requireTransferSuccess()
             if (segment.byteRange != null) {
                 validateRangeResponse(connection, segment.byteRange, "DASH media")
             } else if (connection.responseCode !in 200..299) {
                 throw DashDownloadException("Segment HTTP ${connection.responseCode}")
             }
             var written = 0L
-            connection.inputStream.use { input ->
+            download.metered(connection.inputStream).use { input ->
                 outputFile.outputStream().use { output ->
                     val buffer = ByteArray(BUFFER_SIZE)
                     while (true) {
@@ -278,6 +283,7 @@ object DashDownloader {
                         if (read == -1) break
                         output.write(buffer, 0, read)
                         written += read
+                        DownloadStorage.wrote(download, read.toLong())
                         segment.byteRange?.let { range ->
                             if (written > range.length) {
                                 throw DashDownloadException("DASH range exceeded its declared length")
@@ -287,14 +293,16 @@ object DashDownloader {
                 }
             }
             segment.byteRange?.let { range ->
-                if (written != range.length) throw DashDownloadException("DASH range ended early")
+                TransferPolicy.requireComplete(range.length, written)
             }
+            TransferPolicy.requireComplete(connection.contentLengthLong, written)
         } finally {
             download.closeConnection(connection)
         }
     }
 
     private fun validateRangeResponse(connection: HttpURLConnection, range: DashByteRange, label: String) {
+        connection.requireTransferSuccess()
         if (connection.responseCode != HttpURLConnection.HTTP_PARTIAL) {
             throw DashDownloadException("$label server did not honor byte ranges (HTTP ${connection.responseCode})")
         }
@@ -324,8 +332,8 @@ object DashDownloader {
     private fun fetchText(url: String, download: Download): String? {
         val connection = openConnection(url, download)
         return try {
-            if (connection.responseCode !in 200..299) null
-            else connection.inputStream.use { it.readBytesPausable(download).toString(Charsets.UTF_8) }
+            connection.requireTransferSuccess()
+            download.metered(connection.inputStream).use { it.readBytesPausable(download).toString(Charsets.UTF_8) }
         } finally {
             download.closeConnection(connection)
         }
@@ -340,14 +348,14 @@ object DashDownloader {
         readTimeout = READ_TIMEOUT_MS
         instanceFollowRedirects = true
         setRequestProperty("User-Agent", download.userAgent)
+        setRequestProperty("Accept-Encoding", "identity")
         setRequestProperty("Referer", download.referer)
         download.cookies?.let { setRequestProperty("Cookie", it) }
         range?.let { setRequestProperty("Range", "bytes=${it.start}-${it.endInclusive}") }
     }
 
     private fun fail(download: Download, message: String) {
-        download.errorMessage = message
-        download.status = DownloadStatus.FAILED
+        download.fail(TransferFailure(TransferFailureKind.PERMANENT, message))
     }
 
     private class DashDownloadException(message: String) : Exception(message)

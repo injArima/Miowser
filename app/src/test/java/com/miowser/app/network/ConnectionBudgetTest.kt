@@ -6,6 +6,28 @@ import java.util.concurrent.*
 import java.util.concurrent.atomic.AtomicBoolean
 
 class ConnectionBudgetTest {
+    @Test fun hostLimitBlocksSameServerButAllowsAnotherAndReleasesOnCancellation() {
+        val first = ConnectionBudget.acquire(ConnectionBudget.Priority.TRANSFER, {}, "example.test", 1)
+        val executor = Executors.newSingleThreadExecutor()
+        val canceled = AtomicBoolean()
+        val queued = CountDownLatch(1)
+        try {
+            val waiting = executor.submit<Throwable?> {
+                runCatching { ConnectionBudget.acquire(ConnectionBudget.Priority.TRANSFER, {
+                    queued.countDown()
+                    if (canceled.get()) throw CancellationException()
+                }, "EXAMPLE.TEST", 1) }.exceptionOrNull()
+            }
+            assertTrue(queued.await(2, TimeUnit.SECONDS))
+            ConnectionBudget.acquire(ConnectionBudget.Priority.TRANSFER, {}, "other.test", 1).close()
+            ConnectionBudget.acquire(ConnectionBudget.Priority.PLAYBACK).close()
+            canceled.set(true)
+            assertTrue(waiting.get(2, TimeUnit.SECONDS) is CancellationException)
+            first.close()
+            ConnectionBudget.acquire(ConnectionBudget.Priority.TRANSFER, {}, "example.test", 1).close()
+        } finally { canceled.set(true); first.close(); executor.shutdownNow() }
+    }
+
     @Test fun backgroundSaturationStillAllowsTwoPlaybackConnections() {
         val leases = (0 until ConnectionBudget.MAX_BACKGROUND_CONNECTIONS).map {
             ConnectionBudget.acquire(ConnectionBudget.Priority.TRANSFER)

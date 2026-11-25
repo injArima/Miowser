@@ -57,18 +57,14 @@ enum class NewTabConfirmation(val label: String) {
 }
 
 /**
- * How many concurrent connections a direct-file download splits itself across — see
- * DirectFileDownloader. 1 is a real "off": at that setting the downloader skips the range-support
- * probe entirely and goes straight through the original single-stream path, zero added overhead.
- * Above 1, a server that turns out not to support ranged requests is silently downgraded to
- * single-stream for that download rather than surfaced as an error — the multi-threaded path is
- * strictly a speed optimization, never something a download should fail over.
+ * Default connections per file, within the six shared background connection slots.
+ * One disables splitting while retaining a single range for safe recovery when supported.
  */
 enum class DownloadThreadCount(val count: Int, val label: String) {
     ONE(1, "Disabled"),
     TWO(2, "2"),
     FOUR(4, "4"),
-    EIGHT(8, "8")
+    SIX(6, "6")
 }
 
 /**
@@ -86,6 +82,9 @@ data class Settings(
     val restoreTabsOnStartup: Boolean = true,
     val newTabConfirmation: NewTabConfirmation = NewTabConfirmation.NON_GESTURE_ONLY,
     val downloadThreadCount: DownloadThreadCount = DownloadThreadCount.FOUR,
+    val downloadParallelJobs: Int = 2,
+    val downloadPerHostConnections: Int = 4,
+    val downloadRetryAttempts: Int = 3,
     val javaScriptEnabled: Boolean = true,
     val cookiesEnabled: Boolean = true,
     val popupsEnabled: Boolean = true,

@@ -27,6 +27,11 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.LowPriority
+import androidx.compose.material.icons.automirrored.rounded.FactCheck
+import androidx.compose.ui.platform.LocalContext
+import com.miowser.app.downloader.transferInformation
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -178,6 +183,9 @@ private fun LibraryRow(
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showConnections by remember { mutableStateOf(false) }
+    var showVerification by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     // savedUri is what actually makes a COMPLETED download playable from here — a status of
     // COMPLETED alone isn't quite enough, since a download finished before Download.savedUri
     // existed (or one whose persisted record predates it — see DownloadStore's own migration
@@ -247,6 +255,21 @@ private fun LibraryRow(
                 Icon(Icons.Rounded.MoreVert, contentDescription = "Download options")
             }
             MiowserDropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                if (download.status == DownloadStatus.QUEUED) {
+                    MiowserMenuItem(text = { Text("Download next") },
+                        leadingIcon = { Icon(Icons.Rounded.LowPriority, contentDescription = null) },
+                        onClick = { menuExpanded = false; com.miowser.app.downloader.DownloadQueue.downloadNext(context, download) })
+                }
+                if (download.kind == DownloadKind.DIRECT_FILE && download.status in listOf(DownloadStatus.QUEUED, DownloadStatus.PAUSED, DownloadStatus.FAILED, DownloadStatus.CANCELED)) {
+                    MiowserMenuItem(text = { Text("Connections") },
+                        leadingIcon = { Icon(Icons.Rounded.Tune, contentDescription = null) },
+                        onClick = { menuExpanded = false; showConnections = true })
+                }
+                if (download.status == DownloadStatus.COMPLETED && download.savedUri != null) {
+                    MiowserMenuItem(text = { Text("Verify file") },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Rounded.FactCheck, contentDescription = null) },
+                        onClick = { menuExpanded = false; showVerification = true })
+                }
                 if (download.status == DownloadStatus.QUEUED ||
                     download.status == DownloadStatus.DOWNLOADING ||
                     download.status == DownloadStatus.PAUSED
@@ -259,7 +282,7 @@ private fun LibraryRow(
                 }
                 if (!download.recoveryChecking && (download.status == DownloadStatus.FAILED || download.status == DownloadStatus.CANCELED)) {
                     MiowserMenuItem(
-                        text = { Text("Re-download") },
+                        text = { Text(if (download.status == DownloadStatus.FAILED) "Retry download" else "Download again") },
                         leadingIcon = { Icon(Icons.Rounded.Download, contentDescription = null) },
                         onClick = { menuExpanded = false; onRetry(download) }
                     )
@@ -282,6 +305,8 @@ private fun LibraryRow(
     }
     }
 
+    if (showConnections) DownloadConnectionDialog(download) { showConnections = false }
+    if (showVerification) DownloadVerificationDialog(download) { showVerification = false }
     if (showDeleteDialog) {
         MiowserConfirmationDialog(
             title = "Delete download?",
@@ -309,6 +334,10 @@ private fun DownloadStatusText(download: Download, visible: Boolean) {
             else -> MaterialTheme.colorScheme.onSurfaceVariant
         }
     )
+    if (visible) download.transferInformation()?.let { information ->
+        Text(information, style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }
 
 @Composable

@@ -128,10 +128,26 @@ internal fun MediaSettingsPage(
             }
         }
         SettingsSection("Network") {
-            MediaChoiceRow("Simultaneous download connections",
-                "More connections may speed up large downloads on fast servers. Fewer can help on slower connections.",
+            MediaChoiceRow("Simultaneous downloads",
+                "Choose how many files download at once. Running files finish normally when this limit is lowered.",
+                listOf(1, 2, 3, 4), settings.downloadParallelJobs, { it.toString() }) { count ->
+                AppSettings.update(context) { it.copy(downloadParallelJobs = count) }
+                com.miowser.app.downloader.DownloadQueue.updateLimits()
+            }
+            MediaChoiceRow("Connections per download",
+                "Default for new transfers. Up to six background connections are shared; playback keeps reserved capacity.",
                 DownloadThreadCount.entries, settings.downloadThreadCount, { it.label }) { count ->
                 AppSettings.update(context) { it.copy(downloadThreadCount = count) }
+            }
+            MediaChoiceRow("Connections per site",
+                "Limit simultaneous connections to one server across downloads. Applies as connections reopen.",
+                listOf(1, 2, 3, 4, 6), settings.downloadPerHostConnections, { it.toString() }) { count ->
+                AppSettings.update(context) { it.copy(downloadPerHostConnections = count) }
+            }
+            MediaChoiceRow("Automatic download retries",
+                "Retry temporary connection and server errors. Login, unsupported-file and storage errors need your attention. Server wait times are respected.",
+                listOf(0, 1, 3, 5), settings.downloadRetryAttempts, { if (it == 0) "Disabled" else it.toString() }) { count ->
+                AppSettings.update(context) { it.copy(downloadRetryAttempts = count) }
             }
         }
         if (settings.deviceLibraryAvailable) SettingsSection("Permissions") {

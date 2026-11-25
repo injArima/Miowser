@@ -48,6 +48,34 @@ fun Download.timeProgressLabel(elapsedSeconds: Long = elapsedActiveMillis() / 1_
 
 
 data class DownloadPresentation(val title: String, val status: DownloadStatus,
-    val checking: Boolean, val percent: Int?, val timing: String?)
+    val checking: Boolean, val percent: Int?, val timing: String?, val transfer: String? = null)
 fun Download.presentation(elapsedSeconds: Long = elapsedActiveMillis() / 1000): DownloadPresentation =
-    DownloadPresentation(displayName, status, recoveryChecking, progressPercent(), timeProgressLabel(elapsedSeconds))
+    DownloadPresentation(displayName, status, recoveryChecking, progressPercent(), timeProgressLabel(elapsedSeconds), transferInformation())
+
+fun formatTransferBytes(bytes: Long): String {
+    val value = bytes.coerceAtLeast(0)
+    return when {
+        value < 1024 -> "$value B"
+        value < 1024 * 1024 -> String.format(java.util.Locale.ROOT, "%.1f KB", value / 1024.0)
+        value < 1024L * 1024 * 1024 -> String.format(java.util.Locale.ROOT, "%.1f MB", value / (1024.0 * 1024))
+        else -> String.format(java.util.Locale.ROOT, "%.2f GB", value / (1024.0 * 1024 * 1024))
+    }
+}
+
+fun Download.transferInformation(): String? {
+    retryWaiting?.let { return it }
+    if (kind == DownloadKind.WEBVIEW_RESOURCE) return null
+    if (status !in listOf(DownloadStatus.DOWNLOADING, DownloadStatus.PAUSED, DownloadStatus.MUXING)) return null
+    return buildString {
+        if (status == DownloadStatus.DOWNLOADING) { append("${formatTransferBytes(bytesPerSecond)}/s"); append(" • ") }
+        if (kind == DownloadKind.DIRECT_FILE) {
+            append(formatTransferBytes(bytesDownloaded))
+            if (totalBytes >= 0) append(" / ${formatTransferBytes(totalBytes)}")
+        } else {
+            append("${formatTransferBytes(transferredBytes)} transferred")
+            if (totalBytes > 0) append(" • $bytesDownloaded/$totalBytes segments")
+        }
+        if (status == DownloadStatus.DOWNLOADING) append(" • $activeConnections active connections")
+        if (retryCount > 0) append(" • $retryCount retries")
+    }
+}

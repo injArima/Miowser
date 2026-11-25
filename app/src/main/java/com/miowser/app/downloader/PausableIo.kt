@@ -29,6 +29,7 @@ internal fun InputStream.copyPausableTo(output: java.io.OutputStream, download: 
         val count = read(buffer)
         if (count < 0) return total
         output.write(buffer, 0, count)
+        DownloadStorage.wrote(download, count.toLong())
         total += count
     }
 }

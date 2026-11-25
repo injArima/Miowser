@@ -42,7 +42,7 @@ fun onboardingPages(settings: Settings): List<GuidePage> = buildList {
             else "Play completed downloads and manage existing transfers. Enable the browser with Customize when you want to find new web media.",
             if (settings.experience == AppExperience.BROWSER_ONLY) "The full Downloads page has a settings button for folder choices and reconnecting saved files."
             else "Touch and hold Downloads in the bottom bar for folder choices and reconnecting saved files.",
-            "In Media settings, Disabled under Simultaneous download connections means one connection; 2, 4, and 8 enable parallel connections where supported.")))
+            "In Media settings, choose simultaneous downloads, connections per file and site, and retry attempts. Six background connections are shared while playback keeps reserved capacity. Use a download's menu to move it next, change its connections while paused, or verify a saved file's checksum.")))
     if (settings.watchCatalogAvailable) add(GuidePage(GuideTopic.WATCH_CATALOG, "Your online watch catalog",
         if (settings.libraryBehavior == LibraryBehavior.AUTOMATIC)
             "Automatic history records supported online playback and remembers its progress."

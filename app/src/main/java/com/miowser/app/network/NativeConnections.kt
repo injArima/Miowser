@@ -19,8 +19,8 @@ object NativeConnections {
         open(url, priority, checkActive, null)
 
     fun open(url: URL, priority: ConnectionBudget.Priority, checkActive: () -> Unit,
-             owner: CoroutineContext?): HttpURLConnection {
-        val lease = ConnectionBudget.acquire(priority, checkActive)
+             owner: CoroutineContext?, perHostLimit: Int = ConnectionBudget.MAX_BACKGROUND_CONNECTIONS): HttpURLConnection {
+        val lease = ConnectionBudget.acquire(priority, checkActive, url.host, perHostLimit)
         try {
             checkActive()
             return (url.openConnection() as HttpURLConnection).also { connection ->

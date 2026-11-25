@@ -91,6 +91,7 @@ fun HubVideoCard(
     onMenuAction: (() -> Unit)? = null,
     secondaryMenuActionLabel: String? = null,
     onSecondaryMenuAction: (() -> Unit)? = null,
+    secondaryMenuActionIcon: ImageVector = Icons.AutoMirrored.Rounded.DriveFileMove,
     folderMenuOnSelect: ((String?) -> Unit)? = null,
     currentFolderId: String? = null,
     tertiaryMenuActionLabel: String? = null,
@@ -199,7 +200,7 @@ fun HubVideoCard(
                                 if (secondaryMenuActionLabel != null && onSecondaryMenuAction != null) {
                                     MiowserMenuItem(
                                         text = { Text(secondaryMenuActionLabel) },
-                                        leadingIcon = { Icon(Icons.AutoMirrored.Rounded.DriveFileMove, contentDescription = null) },
+                                        leadingIcon = { Icon(secondaryMenuActionIcon, contentDescription = null) },
                                         onClick = {
                                             dismissMenu()
                                             onSecondaryMenuAction()

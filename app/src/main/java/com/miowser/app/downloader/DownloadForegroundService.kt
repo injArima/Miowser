@@ -45,6 +45,7 @@ class DownloadForegroundService : Service() {
 
     private val tick = object : Runnable {
         override fun run() {
+            DownloadQueue.downloads.filter { it.status == DownloadStatus.DOWNLOADING }.forEach { it.publishProgress() }
             if (!refreshNotifications()) return
             handler.postDelayed(this, TICK_MS)
         }
@@ -217,7 +218,7 @@ class DownloadForegroundService : Service() {
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(download.displayName)
             .setContentText(contentText)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(listOfNotNull(contentText, presentation.transfer).joinToString("\n")))
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setOngoing(download.status != DownloadStatus.PAUSED || download.recoveryChecking)
             .setOnlyAlertOnce(true)

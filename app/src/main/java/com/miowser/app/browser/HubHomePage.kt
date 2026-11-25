@@ -1,5 +1,7 @@
 package com.miowser.app.browser
 
+import androidx.compose.material.icons.automirrored.rounded.FactCheck
+
 import android.net.Uri
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
@@ -953,6 +955,7 @@ private fun HubDownloadedGrid(
     modifier: Modifier = Modifier
 ) {
     var pendingDelete by remember { mutableStateOf<Download?>(null) }
+    var pendingVerification by remember { mutableStateOf<Download?>(null) }
     val context = LocalContext.current
     val gridState = rememberLazyGridState()
     val libraryByMediaUri by remember(libraryEntries) {
@@ -1109,6 +1112,9 @@ private fun HubDownloadedGrid(
                         }
                     },
                     menuContentDescription = "Download options",
+                    secondaryMenuActionLabel = if (fileAvailable == true) "Verify file" else null,
+                    secondaryMenuActionIcon = Icons.AutoMirrored.Rounded.FactCheck,
+                    onSecondaryMenuAction = { pendingVerification = download },
                     menuActionLabel = "Delete",
                     onMenuAction = { pendingDelete = download },
                     modifier = Modifier.fillMaxWidth()
@@ -1117,6 +1123,7 @@ private fun HubDownloadedGrid(
         }
     }
 
+    pendingVerification?.let { download -> DownloadVerificationDialog(download) { pendingVerification = null } }
     pendingDelete?.let { download ->
         MiowserConfirmationDialog(
             title = "Delete download?",

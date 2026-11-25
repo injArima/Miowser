@@ -2,7 +2,6 @@ package com.miowser.app.downloader
 
 import android.content.Context
 import android.util.Log
-import com.miowser.app.settings.AppSettings
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.IOException
@@ -23,8 +22,6 @@ private const val BUFFER_SIZE = 64 * 1024
 private const val PROGRESS_UPDATE_INTERVAL_BYTES = 256 * 1024L
 private const val SIGNATURE_PROBE_BYTES = 64 * 1024
 private const val MIN_BYTES_PER_THREAD = 1L * 1024 * 1024
-private const val MAX_RANGE_RETRIES = 3
-private const val RANGE_RETRY_DELAY_MS = 750L
 
 /** Direct transfer with durable ranged recovery and a safe streaming fallback. */
 object DirectFileDownloader {
@@ -38,18 +35,18 @@ object DirectFileDownloader {
             openConnection(download, range = "bytes=0-")
         } catch (e: Exception) {
             download.awaitIfPaused()
-            return fail(download, "Connection failed: ${e.message}")
+            return download.fail(e)
         }
         try {
             when (probe.responseCode) {
                 HttpURLConnection.HTTP_PARTIAL -> runRecoverableRanges(context, download, probe)
                 in 200..299 -> runFreshStream(context, download, probe)
-                else -> fail(download, "HTTP ${probe.responseCode}")
+                else -> probe.requireTransferSuccess()
             }
         } catch (e: Exception) {
             download.awaitIfPaused()
             com.miowser.app.diagnostics.SafeLog.debug(TAG, "download failed for ${download.sourceUrl}: ${e.message}")
-            if (download.isCanceled) cancel(context, download) else fail(download, e.message ?: "Unknown error")
+            if (download.isCanceled) cancel(context, download) else download.fail(e)
         } finally {
             download.closeConnection(probe)
         }
@@ -59,7 +56,7 @@ object DirectFileDownloader {
         val total = totalFromContentRange(probe.getHeaderField("Content-Range"))
             ?: throw Exception("Ranged response did not include a total size")
         val contentType = probe.getHeaderField("Content-Type")
-        val signature = BufferedInputStream(probe.inputStream).use(::readPrefix)
+        val signature = BufferedInputStream(download.metered(probe.inputStream)).use(::readPrefix)
         val identity = resolveIdentity(download, probe, contentType, signature)
         val fingerprint = sha256(signature)
         val etag = probe.getHeaderField("ETag")
@@ -76,7 +73,7 @@ object DirectFileDownloader {
 
         val ranges = reusable?.ranges ?: splitIntoRanges(
             total,
-            AppSettings.current.downloadThreadCount.count
+            download.effectiveConnections
                 .takeIf { it > 1 && total >= MIN_BYTES_PER_THREAD * 2 } ?: 1
         ).map { (start, end) -> RecoveryRange(start, end, 0L) }
         val plan = reusable ?: DownloadRecoveryPlan(
@@ -102,6 +99,9 @@ object DirectFileDownloader {
             }
         }
         download.bytesDownloaded = ranges.sumOf(RecoveryRange::downloadedBytes)
+        val remaining = total - ranges.sumOf(RecoveryRange::downloadedBytes)
+        val copySpace = DownloadStorage.publicationBytes(context, download.id, total)
+        DownloadStorage.reserve(context, download, remaining + copySpace.coerceAtMost(Long.MAX_VALUE - remaining))
 
         payload.parentFile?.mkdirs()
         RandomAccessFile(payload, "rw").use { output ->
@@ -140,7 +140,7 @@ object DirectFileDownloader {
             range.downloadedBytes < range.endInclusive - range.start + 1L
         }
         if (pending.isEmpty()) return RangeOutcome(RangeResult.COMPLETED)
-        val executor = Executors.newFixedThreadPool(pending.size.coerceAtMost(plan.ranges.size))
+        val executor = Executors.newFixedThreadPool(pending.size.coerceAtMost(download.effectiveConnections))
         val latch = CountDownLatch(pending.size)
         val failure = AtomicReference<Throwable?>(null)
         pending.forEach { index ->
@@ -151,12 +151,11 @@ object DirectFileDownloader {
                         try {
                             downloadRange(download, channel, session, index)
                             break
-                        } catch (error: RetryableRangeException) {
-                            if (retries >= MAX_RANGE_RETRIES) throw error
+                        } catch (error: IOException) {
+                            val wait = download.nextRetry(TransferPolicy.from(error)) ?: throw error
                             retries++
-                            download.recordConnectionRetry()
-                            com.miowser.app.diagnostics.SafeLog.warning(TAG, "Range $index connection error; retry $retries/$MAX_RANGE_RETRIES", error)
-                            download.waitBeforeRetry(RANGE_RETRY_DELAY_MS * (1L shl (retries - 1)))
+                            com.miowser.app.diagnostics.SafeLog.warning(TAG, "Range $index connection error; retry $retries", error)
+                            download.waitBeforeRetry(wait)
                             download.awaitIfPaused()
                         }
                     }
@@ -192,6 +191,7 @@ object DirectFileDownloader {
             ifRange = plan.etag ?: plan.lastModified
         ) }
         try {
+            connection.requireTransferSuccess()
             if (retryableNetworkCall { connection.responseCode } != HttpURLConnection.HTTP_PARTIAL) {
                 throw RangeNotHonoredException("Server no longer honored the saved byte range")
             }
@@ -202,7 +202,7 @@ object DirectFileDownloader {
             }
             var position = requestStart
             var lastPersisted = completed
-            BufferedInputStream(retryableNetworkCall { connection.inputStream }).use { input ->
+            BufferedInputStream(download.metered(retryableNetworkCall { connection.inputStream })).use { input ->
                 val buffer = ByteArray(BUFFER_SIZE)
                 while (completed < rangeLength) {
                     download.awaitIfPaused()
@@ -218,6 +218,7 @@ object DirectFileDownloader {
                         position += written
                     }
                     completed += read
+                    DownloadStorage.wrote(download, read.toLong())
                     download.threadProgress[index].downloadedBytes = completed
                     download.addProgress(read.toLong())
                     if (completed - lastPersisted >= PROGRESS_UPDATE_INTERVAL_BYTES) {
@@ -244,9 +245,9 @@ object DirectFileDownloader {
     }
 
     private fun runFreshStream(context: Context, download: Download, connection: HttpURLConnection) {
-        if (connection.responseCode !in 200..299) return fail(download, "HTTP ${connection.responseCode}")
-        val total = connection.contentLengthLong.takeIf { it > 0L } ?: -1L
-        val input = BufferedInputStream(connection.inputStream)
+        connection.requireTransferSuccess()
+        val total = connection.contentLengthLong.takeIf { it >= 0L } ?: -1L
+        val input = BufferedInputStream(download.metered(connection.inputStream))
         val signature = peekPrefix(input)
         val identity = resolveIdentity(download, connection, connection.getHeaderField("Content-Type"), signature)
         DownloadRecoveryStore.clear(context, download.id)
@@ -267,6 +268,9 @@ object DirectFileDownloader {
         )
         val payload = DownloadRecoveryStore.payloadFile(context, download.id)
         payload.parentFile?.mkdirs()
+        val expected = total.coerceAtLeast(0)
+        val copySpace = DownloadStorage.publicationBytes(context, download.id, expected)
+        DownloadStorage.reserve(context, download, expected + copySpace.coerceAtMost(Long.MAX_VALUE - expected))
         download.displayName = identity.fileName
         download.totalBytes = total
         download.bytesDownloaded = 0L
@@ -282,6 +286,7 @@ object DirectFileDownloader {
                     if (read == -1) break
                     output.write(buffer, 0, read)
                     written += read
+                    DownloadStorage.wrote(download, read.toLong())
                     download.bytesDownloaded = written
                     if (written - lastPersisted >= PROGRESS_UPDATE_INTERVAL_BYTES) {
                         output.flush()
@@ -289,6 +294,7 @@ object DirectFileDownloader {
                         lastPersisted = written
                     }
                 }
+                TransferPolicy.requireComplete(total, written)
             }
         }
         publishCompleted(context, download, payload, identity.fileName, identity.mimeType)
@@ -311,6 +317,7 @@ object DirectFileDownloader {
             readTimeout = READ_TIMEOUT_MS
             instanceFollowRedirects = true
             setRequestProperty("User-Agent", download.userAgent)
+            setRequestProperty("Accept-Encoding", "identity")
             setRequestProperty("Referer", download.referer)
             download.cookies?.let { setRequestProperty("Cookie", it) }
             range?.let { setRequestProperty("Range", it) }
@@ -379,10 +386,7 @@ object DirectFileDownloader {
         download.status = DownloadStatus.CANCELED
     }
 
-    private fun fail(download: Download, message: String) {
-        download.errorMessage = message
-        download.status = DownloadStatus.FAILED
-    }
+    private fun fail(download: Download, message: String) = download.fail(TransferFailure(TransferFailureKind.STORAGE, message))
 
     private enum class RangeResult { COMPLETED, CANCELED, NOT_HONORED, FAILED }
     private data class RangeOutcome(val result: RangeResult, val failure: Throwable? = null)

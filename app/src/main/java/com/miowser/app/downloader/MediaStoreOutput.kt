@@ -100,6 +100,7 @@ object MediaStoreOutput {
     /** Publishes a completely-written private recovery artifact as one atomic user-visible result. */
     fun publishFile(context: Context, source: File, fileName: String, mimeType: String, checkActive: () -> Unit = {}): Uri? {
         if (!source.isFile) return null
+        DownloadStorage.checkPublication(context, source)
         val opened = open(context, fileName, mimeType) ?: return null
         return try {
             source.inputStream().use { input -> opened.stream.use { output ->
@@ -118,7 +119,7 @@ object MediaStoreOutput {
             runCatching { opened.stream.close() }
             abandon(context, opened.uri)
             if (e is DownloadYieldException || e is java.util.concurrent.CancellationException) throw e
-            null
+            throw TransferException(TransferPolicy.from(e), e)
         }
     }
 

@@ -7,7 +7,8 @@ private const val PREFS_NAME = "downloads"
 private const val KEY_DOWNLOADS = "downloads"
 private const val FIELD_DELIMITER = '\t'
 private const val RECORD_DELIMITER = '\n'
-private const val FIELD_COUNT = 16
+private const val FIELD_COUNT = 19
+private const val PRE_CONTROLS_FIELD_COUNT = 16
 private const val PRE_REQUEST_METADATA_FIELD_COUNT = 14
 private const val PRE_PREFERRED_NAME_FIELD_COUNT = 13
 private const val PRE_ELAPSED_FIELD_COUNT = 12
@@ -41,7 +42,10 @@ data class SavedDownload(
     val elapsedActiveMillis: Long = 0L,
     val preferredOutputBaseName: String? = null,
     val userAgent: String = "",
-    val referer: String = ""
+    val referer: String = "",
+    val connectionLimit: Int = 0,
+    val queueRank: Long = id,
+    val transferredBytes: Long = 0
 )
 
 /**
@@ -69,7 +73,10 @@ object DownloadCodec {
                 d.elapsedActiveMillis.coerceAtLeast(0L).toString(),
                 d.preferredOutputBaseName?.let(::sanitize) ?: "",
                 sanitize(d.userAgent),
-                sanitize(d.referer)
+                sanitize(d.referer),
+                d.connectionLimit.toString(),
+                d.queueRank.toString(),
+                d.transferredBytes.toString()
             ).joinToString(FIELD_DELIMITER.toString())
         }
 
@@ -81,6 +88,7 @@ object DownloadCodec {
     private fun decodeLine(line: String): SavedDownload? {
         val parts = line.split(FIELD_DELIMITER)
         if (parts.size != FIELD_COUNT &&
+            parts.size != PRE_CONTROLS_FIELD_COUNT &&
             parts.size != PRE_REQUEST_METADATA_FIELD_COUNT &&
             parts.size != PRE_PREFERRED_NAME_FIELD_COUNT &&
             parts.size != PRE_ELAPSED_FIELD_COUNT &&
@@ -107,7 +115,10 @@ object DownloadCodec {
                 elapsedActiveMillis = parts.getOrNull(12)?.toLongOrNull()?.coerceAtLeast(0L) ?: 0L,
                 preferredOutputBaseName = parts.getOrNull(13)?.ifBlank { null },
                 userAgent = parts.getOrNull(14).orEmpty(),
-                referer = parts.getOrNull(15).orEmpty()
+                referer = parts.getOrNull(15).orEmpty(),
+                connectionLimit = parts.getOrNull(16)?.toIntOrNull()?.coerceIn(0, 6) ?: 0,
+                queueRank = parts.getOrNull(17)?.toLongOrNull() ?: parts[0].toLong(),
+                transferredBytes = parts.getOrNull(18)?.toLongOrNull()?.coerceAtLeast(0) ?: 0
             )
         }.getOrNull()
     }

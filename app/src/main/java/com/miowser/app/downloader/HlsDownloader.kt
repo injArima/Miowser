@@ -89,6 +89,8 @@ object HlsDownloader {
             }
 
             download.enterStage(DownloadStatus.MUXING)
+            val outputEstimate = (segmentFiles.sumOf { it.length() } + (initializationFile?.length() ?: 0)).coerceAtMost(Long.MAX_VALUE / 3)
+            DownloadStorage.reserve(context, download, outputEstimate * 2 + DownloadStorage.publicationBytes(context, download.id, outputEstimate))
             download.awaitIfPaused()
             if (download.isCanceled) return cancel(context, download)
             val muxedFile = File(recoveryDir, "muxed.mp4")
@@ -125,6 +127,7 @@ object HlsDownloader {
             if (download.isCanceled) return cancel(context, download)
             download.displayName = finalFileName
             download.checkTransferActive()
+            DownloadStorage.reserve(context, download, DownloadStorage.publicationBytes(context, download.id, muxedFile.length()))
             val uri = MediaStoreOutput.publishFile(context, muxedFile, finalFileName, "video/mp4", download::checkTransferActive)
                 ?: return fail(download, "Could not create output file")
             MediaStoreOutput.actualFileName(context, uri)?.let { download.displayName = it }
@@ -134,7 +137,7 @@ object HlsDownloader {
         } catch (e: Exception) {
             download.awaitIfPaused()
             com.miowser.app.diagnostics.SafeLog.debug(TAG, "HLS download failed for ${download.sourceUrl}: ${e.message}")
-            if (download.isCanceled) cancel(context, download) else fail(download, e.message ?: "Unknown error")
+            if (download.isCanceled) cancel(context, download) else download.fail(e)
         }
     }
 
@@ -193,7 +196,7 @@ object HlsDownloader {
         try {
             validateResponse(connection, range)
             var received = 0L
-            connection.inputStream.use { input ->
+            download.metered(connection.inputStream).use { input ->
                 output.outputStream().buffered(64 * 1024).use { target ->
                     val buffer = ByteArray(64 * 1024)
                     while (true) {
@@ -201,6 +204,7 @@ object HlsDownloader {
                         val count = input.read(buffer)
                         if (count < 0) break
                         received += count
+                        DownloadStorage.wrote(download, count.toLong())
                         require(range == null || received <= range.length) { "HLS range exceeded declared length" }
                         if (cipher == null) target.write(buffer, 0, count)
                         else cipher.update(buffer, 0, count)?.let(target::write)
@@ -208,9 +212,9 @@ object HlsDownloader {
                     cipher?.doFinal()?.let(target::write)
                 }
             }
-            require(range == null || received == range.length) { "HLS byte-range response was incomplete" }
+            range?.let { TransferPolicy.requireComplete(it.length, received) }
             val expected = connection.contentLengthLong
-            require(expected < 0 || received == expected) { "HLS resource ended early" }
+            TransferPolicy.requireComplete(expected, received)
         } finally { download.closeConnection(connection) }
     }
 
@@ -232,7 +236,7 @@ object HlsDownloader {
         val connection = openConnection(url, download, range)
         return try {
             validateResponse(connection, range)
-            connection.inputStream.use { it.readBytesPausable(download, maximumBytes) }
+            download.metered(connection.inputStream).use { it.readBytesPausable(download, maximumBytes) }
                 .also { requireExpectedRangeLength(it, range) }
         } finally {
             download.closeConnection(connection)
@@ -242,8 +246,8 @@ object HlsDownloader {
     private fun fetchText(url: String, download: Download): String? {
         val connection = openConnection(url, download)
         return try {
-            if (connection.responseCode !in 200..299) null
-            else connection.inputStream.use { it.readBytesPausable(download).toString(Charsets.UTF_8) }
+            connection.requireTransferSuccess()
+            download.metered(connection.inputStream).use { it.readBytesPausable(download).toString(Charsets.UTF_8) }
         } finally {
             download.closeConnection(connection)
         }
@@ -255,12 +259,14 @@ object HlsDownloader {
             readTimeout = READ_TIMEOUT_MS
             instanceFollowRedirects = true
             setRequestProperty("User-Agent", download.userAgent)
+            setRequestProperty("Accept-Encoding", "identity")
             setRequestProperty("Referer", download.referer)
             download.cookies?.let { setRequestProperty("Cookie", it) }
             range?.let { setRequestProperty("Range", "bytes=${it.start}-${it.endInclusive}") }
         }
 
     private fun validateResponse(connection: HttpURLConnection, range: HlsByteRange?) {
+        connection.requireTransferSuccess()
         val status = connection.responseCode
         if (range == null) {
             if (status !in 200..299) throw Exception("HLS resource HTTP $status")
@@ -311,7 +317,6 @@ object HlsDownloader {
     }
 
     private fun fail(download: Download, message: String) {
-        download.errorMessage = message
-        download.status = DownloadStatus.FAILED
+        download.fail(TransferFailure(TransferFailureKind.PERMANENT, message))
     }
 }

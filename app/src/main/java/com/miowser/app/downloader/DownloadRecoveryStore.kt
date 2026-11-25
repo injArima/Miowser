@@ -116,8 +116,40 @@ object DownloadRecoveryCodec {
 
 /** Durable private artifacts. A temp plan is renamed only after its contents reach disk. */
 object DownloadRecoveryStore {
-    fun directory(context: Context, downloadId: Long): File =
-        File(context.filesDir, "download_recovery/$downloadId")
+    private val directories = java.util.concurrent.ConcurrentHashMap<String, File>()
+
+    /** Pin staging to an app-owned volume. Existing jobs keep their original location. */
+    fun directory(context: Context, downloadId: Long): File {
+        val key = "${context.filesDir.absolutePath}:$downloadId"
+        return directories.getOrPut(key) {
+            val legacy = File(context.filesDir, "download_recovery/$downloadId")
+            val roots = listOf(File(context.filesDir, "download_recovery")) +
+                context.getExternalFilesDirs(null).filterNotNull().map { File(it, "download_recovery") }
+            val prefs = context.getSharedPreferences("download_recovery_locations", Context.MODE_PRIVATE)
+            val pinned = prefs.getString(downloadId.toString(), null)
+            when {
+                pinned != null -> {
+                    val selected = File(pinned)
+                    if (roots.none { it.absolutePath == selected.parentFile?.absolutePath } || selected.name != downloadId.toString()) {
+                        throw TransferException(TransferFailure(TransferFailureKind.STORAGE,
+                            "Reconnect the storage containing this download's temporary files, then resume."))
+                    }
+                    selected
+                }
+                legacy.exists() -> legacy
+                else -> {
+                    val root = roots.distinctBy { it.absolutePath }.filter { it.exists() || it.mkdirs() }
+                        .maxByOrNull { runCatching { android.os.StatFs(it.absolutePath).availableBytes }.getOrDefault(0) }
+                        ?: throw TransferException(TransferFailure(TransferFailureKind.STORAGE, "No writable temporary download storage is available."))
+                    val selected = File(root, downloadId.toString())
+                    check(prefs.edit().putString(downloadId.toString(), selected.absolutePath).commit()) {
+                        "Could not save temporary download location"
+                    }
+                    selected
+                }
+            }
+        }
+    }
 
     fun payloadFile(context: Context, downloadId: Long): File =
         File(directory(context, downloadId), "payload.part")
@@ -177,6 +209,12 @@ object DownloadRecoveryStore {
     @Synchronized
     fun clear(context: Context, downloadId: Long) {
         directory(context, downloadId).deleteRecursively()
+    }
+
+    /** Only deletion/completion retires the locator; a restart-in-place retains its volume. */
+    fun forgetLocation(context: Context, downloadId: Long) {
+        directories.remove("${context.filesDir.absolutePath}:$downloadId")
+        context.getSharedPreferences("download_recovery_locations", Context.MODE_PRIVATE).edit().remove(downloadId.toString()).commit()
     }
 
     private fun moveReplacing(source: File, target: File) {

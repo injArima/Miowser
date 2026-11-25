@@ -101,6 +101,7 @@ class RendererResourceDownloader(context: Context) {
             return
         }
         download.totalBytes = decoded.bytes.size.toLong()
+        DownloadStorage.checkDestination(appContext, download.totalBytes)
         val identity = resolveIdentity(download, decoded.mimeType, decoded.bytes.take(64 * 1024).toByteArray())
         download.displayName = identity.fileName
         val opened = MediaStoreOutput.open(appContext, identity.fileName, identity.mimeType)
@@ -186,6 +187,8 @@ class RendererResourceDownloader(context: Context) {
                 )
             }
             session.begun = true
+            try { DownloadStorage.checkDestination(appContext, size) }
+            catch (error: Exception) { session.download.failure = TransferPolicy.from(error); return failSession(session, error.message ?: "Not enough destination storage") }
             session.mimeType = mimeType.substringBefore(';').trim().take(200).ifBlank { "application/octet-stream" }
             session.download.totalBytes = size
             session.lastActivityNanos = System.nanoTime()

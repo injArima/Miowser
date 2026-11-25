@@ -83,14 +83,66 @@ class Download(
         if (!cadence.shouldPublish(now, force)) return
         val bytes = exactBytes.get()
         updateProgressRate(bytes)
+        val received = networkBytes.get()
+        val elapsed = now - lastNetworkNanos
+        val rate = if (elapsed >= 250_000_000L) {
+            val delta = (received - lastNetworkBytes).coerceAtLeast(0)
+            lastNetworkBytes = received
+            lastNetworkNanos = now
+            if (status == DownloadStatus.DOWNLOADING) (delta * 1_000_000_000.0 / elapsed).toLong() else 0L
+        } else if (status == DownloadStatus.DOWNLOADING) bytesPerSecond else 0L
         androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
             observableBytesDownloaded = bytes
+            transferredBytes = received
+            bytesPerSecond = rate
+            activeConnections = connections.size
             threadProgress.forEach { it.publish() }
         }
     }
     internal fun addProgress(bytes: Long) { exactBytes.addAndGet(bytes); publishProgress() }
     var totalBytes by mutableLongStateOf(-1L) // -1 = unknown
     var errorMessage by mutableStateOf<String?>(null)
+    @Volatile var failure: TransferFailure? = null
+    var retryWaiting by mutableStateOf<String?>(null)
+    var connectionLimit by mutableIntStateOf(0) // 0 follows the default; saved per job
+    var queueRank by mutableLongStateOf(id)
+    private val networkBytes = AtomicLong()
+    var transferredBytes by mutableLongStateOf(0)
+        private set
+    var bytesPerSecond by mutableLongStateOf(0)
+        private set
+    var activeConnections by mutableIntStateOf(0)
+        private set
+    private var lastNetworkBytes = 0L
+    private var lastNetworkNanos = System.nanoTime()
+
+    val effectiveConnections: Int get() = effectiveDownloadConnections(connectionLimit,
+        com.miowser.app.settings.AppSettings.current.downloadThreadCount.count,
+        com.miowser.app.settings.AppSettings.current.downloadPerHostConnections)
+
+    fun fail(error: Throwable) = fail(TransferPolicy.from(error))
+    fun fail(problem: TransferFailure) {
+        failure = problem
+        errorMessage = problem.message
+        status = DownloadStatus.FAILED
+    }
+
+    /** One retry budget shared by all ranges and queue reconnects, avoiding multiplied attempts. */
+    @Synchronized fun nextRetry(problem: TransferFailure): Long? {
+        failure = problem
+        if (!problem.retryable || connectionRetryCounter.get() >= com.miowser.app.settings.AppSettings.current.downloadRetryAttempts) return null
+        recordConnectionRetry()
+        return TransferPolicy.retryDelay(problem, retryCount)
+    }
+
+    internal fun restoreTransferred(bytes: Long) { networkBytes.set(bytes.coerceAtLeast(0)); lastNetworkBytes = networkBytes.get(); transferredBytes = networkBytes.get() }
+
+    internal fun metered(input: java.io.InputStream): java.io.InputStream = object : java.io.FilterInputStream(input) {
+        override fun read(): Int = input.read().also { if (it >= 0) received(1) }
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int = input.read(buffer, offset, length).also { if (it > 0) received(it) }
+        override fun read(buffer: ByteArray): Int = read(buffer, 0, buffer.size)
+        private fun received(count: Int) { networkBytes.addAndGet(count.toLong()); publishProgress() }
+    }
     /** Transient connection errors recovered automatically during this attempt. */
     private val connectionRetryCounter = AtomicInteger(0)
     var retryCount by mutableIntStateOf(0)
@@ -148,15 +200,21 @@ class Download(
     @Volatile internal var yieldRequested = false
         private set
     private val connections = java.util.concurrent.ConcurrentHashMap.newKeySet<java.net.HttpURLConnection>()
-    internal fun beginAttempt() { yieldRequested = false }
+    @Synchronized internal fun beginAttempt() {
+        yieldRequested = false
+        lastNetworkBytes = networkBytes.get()
+        lastNetworkNanos = System.nanoTime()
+    }
     internal fun openConnection(url: java.net.URL): java.net.HttpURLConnection =
         com.miowser.app.network.NativeConnections.open(url,
-            com.miowser.app.network.ConnectionBudget.Priority.TRANSFER, ::checkTransferActive).also {
+            com.miowser.app.network.ConnectionBudget.Priority.TRANSFER, ::checkTransferActive, null,
+            com.miowser.app.settings.AppSettings.current.downloadPerHostConnections).also {
                 connections.add(it)
+                publishProgress(force = true)
                 if (yieldRequested || isCanceled) { closeConnection(it); checkTransferActive() }
             }
     internal fun closeConnection(connection: java.net.HttpURLConnection) {
-        try { com.miowser.app.network.NativeConnections.close(connection) } finally { connections.remove(connection) }
+        try { com.miowser.app.network.NativeConnections.close(connection) } finally { connections.remove(connection); publishProgress(force = true) }
     }
     private fun interruptConnections() {
         val retired = connections.toList()
