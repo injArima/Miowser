@@ -3585,6 +3585,8 @@ fun BrowserScreen(
                     siteMode = host?.let(SiteProtection::mode)
                         ?: com.miowser.app.adblock.SiteProtectionMode.STANDARD,
                     openPageLinksHere = host?.let(SiteProtection::openPageLinksHere) == true,
+                    backgroundPlaybackAllowed = SiteProtection.backgroundPlaybackFor(siteTab.url),
+                    backgroundPlaybackGloballyEnabled = backgroundPlaybackEnabled,
                     mediaMinimumOverride = host?.let(SiteProtection::mediaMinimumOverride),
                     globalMediaMinimum = AppSettings.current.grabberMinimumDurationSeconds,
                     canInterceptPopups = AppSettings.current.popupsEnabled,
@@ -3598,6 +3600,9 @@ fun BrowserScreen(
                     },
                     onOpenPageLinksHereChanged = { enabled ->
                         if (host != null) SiteProtection.setOpenPageLinksHere(context, host, enabled)
+                    },
+                    onBackgroundPlaybackChanged = { enabled ->
+                        if (host != null) SiteProtection.setBackgroundPlayback(context, host, enabled)
                     },
                     onMediaMinimumChanged = { seconds ->
                         if (host != null) SiteProtection.setMediaMinimum(context, host, seconds)
@@ -4132,13 +4137,14 @@ fun BrowserScreen(
     // WebView.onPause can suspend JavaScript), then pause the WebView itself. Returning from the
     // player resumes the WebView engine but leaves the page's media element paused so two players
     // cannot immediately begin speaking at once.
+    val backgroundMediaTabIds = tabs.filter { SiteProtection.backgroundPlaybackFor(it.url) }.map { it.id }.toSet()
     SideEffect {
         PageMediaCoordinator.configure(backgroundPlaybackEnabled,
             suppressed = playbackRequest != null || fullscreenVideo != null,
             pauseForNative = playbackRequest != null, tabIds = tabs.map { it.id }.toSet(),
             fullscreenTabId = fullscreenVideo?.tabId,
             fullscreenAudioTabId = fullscreenVideo?.tabId.takeIf { browserVideoAudioOnly && playbackRequest == null },
-            selectedTabId = activeTabId, companionTabId = companionTabId)
+            selectedTabId = activeTabId, companionTabId = companionTabId, backgroundTabIds = backgroundMediaTabIds)
         tabs.forEach { tab ->
             val visibleBrowser = !showingHub && activeScreen == null && playbackRequest == null && tab.id == activeTabId
             val pipOwner = (context.findBrowserActivity() as? com.miowser.app.MainActivity)?.browserVideoPipOwner

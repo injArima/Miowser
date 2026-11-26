@@ -5,17 +5,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SiteMediaCompatibilityTest {
-    @Test fun `only explicit HTTPS media hosts receive visibility compatibility`() {
-        listOf("youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "open.spotify.com")
-            .forEach { host ->
-                assertTrue(host, SiteMediaCompatibility.supports("https://$host/watch?v=track"))
-                assertFalse(host, SiteMediaCompatibility.supports("http://$host/"))
-                assertFalse(host, SiteMediaCompatibility.supports("https://$host.evil.test/"))
-            }
-        assertTrue(SiteMediaCompatibility.supports("HTTPS://MUSIC.YOUTUBE.COM/"))
-        listOf("https://sub.youtube.com", "https://youtube.com.", "https://spotify.com",
-            "https://www.open.spotify.com", "https://youtube.com@evil.test", "https://user@youtube.com",
-            "javascript:youtube.com", "file:///youtube.com", "https://youtube.com%2eevil.test", "not a URL")
-            .forEach { assertFalse(it, SiteMediaCompatibility.supports(it)) }
+    @Test fun webFramesCanReceiveAnExplicitTopSiteGrant() {
+        for (url in listOf("https://music.youtube.com/", "https://example.com/player", "http://example.com/",
+            "HTTPS://EMBED.EXAMPLE.COM/")) assertTrue(url, SiteMediaCompatibility.supports(url))
+    }
+
+    @Test fun invalidOriginsNeverReceiveFrameCompatibility() {
+        for (url in listOf("file:///video", "javascript:video", "https://user@example.com", "about:blank",
+            "not a URL", "https://example.com%2eevil.test")) assertFalse(url, SiteMediaCompatibility.supports(url))
     }
 }

@@ -39,6 +39,20 @@ class PageMediaPolicyTest {
         assertTrue(PageMediaPolicy.eligibleTab(17L, 18L, 17L))
     }
 
+    @Test fun explicitBackgroundGrantRetainsOnlyTheExistingOwnerAcrossTabs() {
+        assertTrue(PageMediaPolicy.eligibleTab(17L, 18L, null, 17L))
+        assertFalse(PageMediaPolicy.eligibleTab(19L, 18L, null, 17L))
+        assertFalse(PageMediaPolicy.eligibleTab(17L, 18L, null, null))
+    }
+
+    @Test fun siteChoiceAndMasterSwitchMustBothAllowTheRetainedTab() {
+        assertTrue(PageMediaPolicy.backgroundAllowed(true, 17L, setOf(17L)))
+        assertFalse(PageMediaPolicy.backgroundAllowed(false, 17L, setOf(17L)))
+        assertFalse(PageMediaPolicy.backgroundAllowed(true, 18L, setOf(17L)))
+        assertFalse(PageMediaPolicy.backgroundAllowed(true, null, setOf(17L)))
+        assertFalse(PageMediaPolicy.backgroundAllowed(true, 17L, emptySet()))
+    }
+
     @Test fun foregroundPlaybackRequiresAVisibleBrowserOrPlayer() {
         assertTrue(PageMediaPolicy.allowPlayback(true, true, false, false, false, false))
         assertTrue(PageMediaPolicy.allowPlayback(true, false, true, false, false, false))

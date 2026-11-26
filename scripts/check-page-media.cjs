@@ -278,18 +278,16 @@ test('token, navigation, document, source and command replay validation', () => 
   f.window.__miowserPageMedia.connect(); f.bind(4, 'new-token');
   f.command('pause', {navigation: 3, token: 'frame-token'}); assert.equal(item.calls.length, 1);
 });
-test('visibility patch applies only to exact HTTPS hosts and authenticated current owner', () => {
-  const allowed = ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'open.spotify.com'];
-  const denied = ['http://youtube.com', 'https://youtube.com.evil.test', 'https://evil.youtube.com',
-    'https://spotify.com', 'https://www.open.spotify.com', 'https://example.test'];
-  for (const url of [...allowed.map(host => 'https://' + host), ...denied]) {
+test('visibility compatibility requires an authenticated current-owner grant on every web host', () => {
+  for (const url of ['https://music.youtube.com', 'https://open.spotify.com', 'http://example.test',
+    'https://custom-video.example.test', 'https://embedded.example.test']) {
     const f = fixture([media()], url); f.bind();
     let calls = 0; f.document.addEventListener('visibilitychange', () => { calls++; });
     const ownerKey = f.bound.ownerPrefix + f.state().elementId + ':' + f.state().sourceRevision;
     f.send('background', {allowed: true, ownerKey: 'wrong'}); assert.equal(f.document.hidden, true);
     f.send('background', {allowed: true, ownerKey, token: 'wrong'}); assert.equal(f.document.hidden, true);
     f.send('background', {allowed: true, ownerKey});
-    assert.equal(f.document.hidden, !allowed.some(host => url === 'https://' + host));
+    assert.equal(f.document.hidden, false);
     f.send('background', {allowed: false}); assert.equal(f.document.hidden, true);
     assert.equal(Object.getOwnPropertyDescriptor(f.document, 'visibilityState').get, f.visibilityDescriptor.get);
     f.document.emit('visibilitychange'); assert(calls > 0); // Site listeners survive enable/disable.

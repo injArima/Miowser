@@ -20,9 +20,14 @@ internal object PageMediaCoordinator {
     private var fullscreenAudioTabId: Long? = null
     private var selectedTabId: Long? = null
     private var companionTabId: Long? = null
+    private var backgroundTabIds: Set<Long> = emptySet()
     private var revision by mutableIntStateOf(0)
     private val main by lazy { Handler(Looper.getMainLooper()) }
     private var idleTimeout: Runnable? = null
+    private fun backgroundAllowed(tabId: Long?): Boolean =
+        PageMediaPolicy.backgroundAllowed(backgroundEnabled, tabId, backgroundTabIds)
+    private fun eligible(tabId: Long): Boolean = PageMediaPolicy.eligibleTab(tabId, selectedTabId, companionTabId,
+        owner?.snapshot?.tabId?.takeIf(::backgroundAllowed))
 
     fun register(context: Context, tracker: PageMediaTracker) {
         pages[tracker] = context.applicationContext
@@ -52,14 +57,18 @@ internal object PageMediaCoordinator {
         val started = snapshot.playing &&
             (before == null || before.first != snapshot.ownerKey || !before.second)
         if (availableTabs?.contains(snapshot.tabId) == false) return
-        if (!PageMediaPolicy.eligibleTab(snapshot.tabId, selectedTabId, companionTabId)) {
+        if (!eligible(snapshot.tabId)) {
             if (snapshot.playing) tracker.pauseAll()
             tracker.setBackgroundAllowed(false)
             if (owner === tracker) release()
             return
         }
-        if (!PageMediaPolicy.canPublish(foreground, backgroundEnabled, suppressed)) {
+        if (!PageMediaPolicy.canPublish(foreground, backgroundAllowed(snapshot.tabId), suppressed)) {
             tracker.setBackgroundAllowed(backgroundEnabled && snapshot.playing && snapshot.tabId == fullscreenAudioTabId)
+            if (owner === tracker) {
+                if (!foreground) tracker.pauseAll()
+                release()
+            }
             return
         }
         // Old timeupdate samples while its Pause command is in flight must not steal ownership back.
@@ -68,11 +77,11 @@ internal object PageMediaCoordinator {
             val previous = owner
             release()
             // A user starting another page transfers system controls and audio ownership together.
-            previous?.command("pause")
+            previous?.pauseAll()
             owner = tracker
             revision++
         }
-        tracker.setBackgroundAllowed(backgroundEnabled && snapshot.playing)
+        tracker.setBackgroundAllowed(backgroundAllowed(snapshot.tabId) && snapshot.playing)
         if (!BrowserPlaybackService.attachPage(context, tracker)) {
             // Android can refuse a new foreground service after the app has left the foreground.
             // Do not promise background retention without a hosted session.
@@ -92,10 +101,12 @@ internal object PageMediaCoordinator {
     }
 
     fun configure(backgroundEnabled: Boolean, suppressed: Boolean, pauseForNative: Boolean,
-        tabIds: Set<Long>, fullscreenTabId: Long?, fullscreenAudioTabId: Long?, selectedTabId: Long?, companionTabId: Long?) {
+        tabIds: Set<Long>, fullscreenTabId: Long?, fullscreenAudioTabId: Long?, selectedTabId: Long?, companionTabId: Long?,
+        backgroundTabIds: Set<Long>) {
         if (this.backgroundEnabled == backgroundEnabled && this.suppressed == suppressed &&
             availableTabs == tabIds && this.fullscreenAudioTabId == fullscreenAudioTabId &&
-            this.selectedTabId == selectedTabId && this.companionTabId == companionTabId) return
+            this.selectedTabId == selectedTabId && this.companionTabId == companionTabId &&
+            this.backgroundTabIds == backgroundTabIds) return
         this.backgroundEnabled = backgroundEnabled
         val newlySuppressed = suppressed && !this.suppressed
         this.suppressed = suppressed
@@ -103,10 +114,11 @@ internal object PageMediaCoordinator {
         this.fullscreenAudioTabId = fullscreenAudioTabId
         this.selectedTabId = selectedTabId
         this.companionTabId = companionTabId
+        this.backgroundTabIds = backgroundTabIds
         // Preserve fullscreen only when it is the SAME tab/engine; another tab must be paused.
         if (newlySuppressed && PageMediaPolicy.pauseForHandoff(owner?.snapshot?.tabId,
                 fullscreenTabId, pauseForNative)) owner?.command("pause")
-        if (owner?.snapshot?.tabId?.let { it !in tabIds || !PageMediaPolicy.eligibleTab(it, selectedTabId, companionTabId) } == true) {
+        if (owner?.snapshot?.tabId?.let { it !in tabIds || !eligible(it) } == true) {
             owner?.pauseAll()
             release()
         }
@@ -114,26 +126,27 @@ internal object PageMediaCoordinator {
         // Headphone mode uses the existing fullscreen controller/session, but the site still
         // needs its scoped visibility compatibility while that same WebView plays off screen.
         pages.keys.forEach { tracker ->
-            tracker.setBackgroundAllowed(backgroundEnabled && tracker.snapshot?.playing == true &&
-                (owner === tracker || tracker.snapshot?.tabId == fullscreenAudioTabId))
+            tracker.setBackgroundAllowed(tracker.snapshot?.playing == true &&
+                (owner === tracker && backgroundAllowed(tracker.snapshot?.tabId) ||
+                    backgroundEnabled && tracker.snapshot?.tabId == fullscreenAudioTabId))
         }
     }
 
     fun setForeground(value: Boolean) {
         if (foreground == value) return
         foreground = value
-        if (!value && !backgroundEnabled) owner?.command("pause")
+        if (!value && !backgroundAllowed(owner?.snapshot?.tabId)) owner?.pauseAll()
         reconcile()
     }
 
     /** Paused media is retained too, so notification/headset Play can address the same document. */
     fun keepsRenderer(tabId: Long): Boolean {
         revision // Compose observes ownership, not high-frequency position updates.
-        return PageMediaPolicy.keepRenderer(backgroundEnabled, suppressed, owner?.snapshot?.tabId, tabId)
+        return PageMediaPolicy.keepRenderer(backgroundAllowed(tabId), suppressed, owner?.snapshot?.tabId, tabId)
     }
 
     private fun reconcile() {
-        if (!PageMediaPolicy.canPublish(foreground, backgroundEnabled, suppressed)) {
+        if (suppressed) {
             release()
             return
         }
@@ -141,7 +154,7 @@ internal object PageMediaCoordinator {
             changed(tracker)
         } ?: pages.keys.lastOrNull {
             it.snapshot?.let { state -> state.playing && availableTabs?.contains(state.tabId) != false &&
-                PageMediaPolicy.eligibleTab(state.tabId, selectedTabId, companionTabId) } == true
+                eligible(state.tabId) } == true
         }?.let { changed(it, allowExistingPlayback = true) }
     }
 
@@ -161,11 +174,13 @@ internal object PageMediaCoordinator {
 }
 
 internal object PageMediaPolicy {
+    fun backgroundAllowed(master: Boolean, tabId: Long?, allowedTabs: Set<Long>): Boolean =
+        master && tabId != null && tabId in allowedTabs
     fun allowPlayback(foreground: Boolean, visibleBrowser: Boolean, companion: Boolean,
         fullscreen: Boolean, pageSession: Boolean, retainedFullscreen: Boolean): Boolean =
         pageSession || retainedFullscreen || foreground && (visibleBrowser || companion || fullscreen)
-    fun eligibleTab(tabId: Long, selectedTabId: Long?, companionTabId: Long?): Boolean =
-        tabId == selectedTabId || tabId == companionTabId
+    fun eligibleTab(tabId: Long, selectedTabId: Long?, companionTabId: Long?, retainedOwnerTabId: Long? = null): Boolean =
+        tabId == selectedTabId || tabId == companionTabId || tabId == retainedOwnerTabId
     fun pauseForHandoff(ownerTabId: Long?, fullscreenTabId: Long?, richPlayer: Boolean): Boolean =
         ownerTabId != null && (richPlayer || ownerTabId != fullscreenTabId)
 

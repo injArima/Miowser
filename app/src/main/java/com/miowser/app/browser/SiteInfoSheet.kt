@@ -79,12 +79,15 @@ fun SiteInfoSheet(
     adBlockEnabled: Boolean,
     siteMode: SiteProtectionMode,
     openPageLinksHere: Boolean,
+    backgroundPlaybackAllowed: Boolean,
+    backgroundPlaybackGloballyEnabled: Boolean,
     mediaMinimumOverride: Int?,
     globalMediaMinimum: Int,
     canInterceptPopups: Boolean,
     elementRules: List<SiteElementRule>,
     onSiteModeChanged: (SiteProtectionMode) -> Unit,
     onOpenPageLinksHereChanged: (Boolean) -> Unit,
+    onBackgroundPlaybackChanged: (Boolean) -> Unit,
     onMediaMinimumChanged: (Int?) -> Unit,
     onElementRuleActionChanged: (SiteElementRule, ElementRuleAction) -> Unit,
     onRevertElementRule: (SiteElementRule) -> Unit,
@@ -161,6 +164,16 @@ fun SiteInfoSheet(
                             checked = openPageLinksHere,
                             enabled = canInterceptPopups,
                             onCheckedChange = onOpenPageLinksHereChanged
+                        )
+                        DashboardDivider()
+                        DashboardToggle(
+                            title = "Background playback",
+                            description = "Keep this site's audio playing across tabs, while Miowser is minimized, " +
+                                "and with the screen locked. Playing media in another tab pauses it." +
+                                if (backgroundPlaybackGloballyEnabled) "" else
+                                    " Enable Background playback in Media settings to use this site preference.",
+                            checked = backgroundPlaybackAllowed,
+                            onCheckedChange = onBackgroundPlaybackChanged
                         )
                         DashboardDivider()
                         DashboardToggle(

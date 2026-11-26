@@ -17,6 +17,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
 import android.webkit.WebSettings
 import com.miowser.app.browser.media.MediaArtworkPolicy
@@ -30,6 +31,7 @@ import com.miowser.app.browser.media.PageMediaNotificationAccess
 import com.miowser.app.browser.media.PageMediaNotificationKey
 import com.miowser.app.browser.media.PageMediaPositionAnchor
 import com.miowser.app.browser.media.PageMediaSnapshot
+import com.miowser.app.browser.media.PlaybackWakeLease
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
@@ -53,6 +55,15 @@ internal class BrowserPlaybackService : Service() {
         val pageUrl: String, val durationMs: Long, val artworkUrl: String?)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var cpuLock: PowerManager.WakeLock? = null
+    private val playbackWake by lazy {
+        PlaybackWakeLease(scope, acquire = { timeout ->
+            val lock = cpuLock ?: getSystemService(PowerManager::class.java)
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Miowser:BrowserPlayback")
+                .apply { setReferenceCounted(false) }.also { cpuLock = it }
+            lock.acquire(timeout)
+        }, release = { cpuLock?.takeIf { it.isHeld }?.release() })
+    }
     private lateinit var mediaSession: MediaSession
     private var artworkUserAgent = ""
     private var owner: Owner? = null
@@ -167,6 +178,7 @@ internal class BrowserPlaybackService : Service() {
     }
 
     private fun clearOwner() {
+        playbackWake.close()
         stateJob?.cancel()
         stateJob = null
         artworkJob?.cancel()
@@ -210,6 +222,7 @@ internal class BrowserPlaybackService : Service() {
     }
 
     private fun publish(snapshot: PageMediaSnapshot) {
+        playbackWake.update(snapshot.playing)
         updateArtwork(snapshot)
         val nextMetadata = MetadataKey(snapshot.title, snapshot.artist, snapshot.album,
             snapshot.pageUrl, snapshot.durationMs, snapshot.artworkUrl)

@@ -1,25 +1,14 @@
 package com.miowser.app.browser.media
 
-import java.net.URI
-import java.util.Locale
-
-/** Keep this allowlist deliberately narrow; it is not a general page lifecycle policy. */
+/** Page-frame transport eligibility. The native coordinator separately grants the top site's preference. */
 internal object SiteMediaCompatibility {
-    private val hosts = setOf("youtube.com", "www.youtube.com", "m.youtube.com",
-        "music.youtube.com", "open.spotify.com")
-
-    fun supports(url: String): Boolean = runCatching {
-        val uri = URI(url)
-        uri.scheme.equals("https", ignoreCase = true) &&
-            uri.host?.lowercase(Locale.ROOT) in hosts && uri.rawUserInfo == null
-    }.getOrDefault(false)
+    fun supports(url: String): Boolean = SiteBackgroundPlaybackPolicy.host(url) != null
 }
 
 /** Inserted inside the media bridge closure, with no public page API or listener suppression. */
 internal const val SITE_MEDIA_COMPATIBILITY_SCRIPT = """
 function createSiteMediaCompatibility() {
-    var hosts = ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'open.spotify.com'];
-    var supported = location.protocol === 'https:' && hosts.indexOf(location.hostname.toLowerCase()) >= 0;
+    var supported = location.protocol === 'https:' || location.protocol === 'http:';
     var enabled = false, restores = [];
     function notify() {
         try { document.dispatchEvent(new Event('visibilitychange')); } catch (ignored) {}

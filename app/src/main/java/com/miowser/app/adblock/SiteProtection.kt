@@ -8,6 +8,7 @@ import com.miowser.app.persistence.Persistence
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URI
+import com.miowser.app.browser.media.SiteBackgroundPlaybackPolicy
 
 enum class SiteProtectionMode(val label: String) { STANDARD("Standard"), STRICT("Strict"), OFF("Off for this site") }
 
@@ -16,6 +17,9 @@ object SiteProtection {
     @Volatile private var overrides: Map<String, SiteProtectionMode> = emptyMap()
     @Volatile private var sameTabHosts: Set<String> = emptySet()
     @Volatile private var mediaMinimums: Map<String, Int> = emptyMap()
+    @Volatile private var backgroundPlayback: Map<String, Boolean> = emptyMap()
+    private data class Saved(val modes: Map<String, SiteProtectionMode>, val sameTab: Set<String>,
+        val minimums: Map<String, Int>, val backgroundPlayback: Map<String, Boolean>)
     @Volatile private var loaded = false
     internal val initialized: Boolean get() = loaded
     var revision by mutableIntStateOf(0)
@@ -26,6 +30,7 @@ object SiteProtection {
     fun mediaMinimumOverride(host: String): Int? = canonicalHostname(host)?.let(mediaMinimums::get)
     fun mediaMinimumFor(url: String?, globalSeconds: Int): Int =
         resolveSiteMediaMinimum(url?.let(::host), mediaMinimums, globalSeconds)
+    fun backgroundPlaybackFor(url: String): Boolean = SiteBackgroundPlaybackPolicy.enabled(url, backgroundPlayback)
     suspend fun load(context: Context) {
         Persistence.requireOwner()
         if (loaded) return
@@ -42,12 +47,14 @@ object SiteProtection {
             val sameTab = prefs.getStringSet("same_tab_hosts", emptySet()).orEmpty()
                 .mapNotNull(::canonicalHostname).toSet()
             val minimums = parseSiteMediaMinimums(prefs.getStringSet("media_minimums", emptySet()).orEmpty())
-            Triple(modes, sameTab, minimums)
+            val background = SiteBackgroundPlaybackPolicy.decode(prefs.getStringSet("background_playback", emptySet()).orEmpty())
+            Saved(modes, sameTab, minimums, background)
         }
         if (!loaded) {
-            overrides = saved.first
-            sameTabHosts = saved.second
-            mediaMinimums = saved.third
+            overrides = saved.modes
+            sameTabHosts = saved.sameTab
+            mediaMinimums = saved.minimums
+            backgroundPlayback = saved.backgroundPlayback
             loaded = true
             revision++
         }
@@ -95,6 +102,21 @@ object SiteProtection {
         Persistence.submit("site-media-minimum") {
             app.getSharedPreferences("site_protection", Context.MODE_PRIVATE).edit()
                 .putStringSet("media_minimums", saved).commit()
+        }
+    }
+
+    fun setBackgroundPlayback(context: Context, host: String, enabled: Boolean) {
+        Persistence.requireOwner()
+        val canonical = canonicalHostname(host) ?: return
+        if (backgroundPlayback[canonical] == enabled) return
+        // Keep explicit Off choices even when the built-in defaults change in a future update.
+        backgroundPlayback = backgroundPlayback + (canonical to enabled)
+        revision++
+        val saved = SiteBackgroundPlaybackPolicy.encode(backgroundPlayback)
+        val app = context.applicationContext
+        Persistence.submit("site-background-playback") {
+            app.getSharedPreferences("site_protection", Context.MODE_PRIVATE).edit()
+                .putStringSet("background_playback", saved).commit()
         }
     }
 }

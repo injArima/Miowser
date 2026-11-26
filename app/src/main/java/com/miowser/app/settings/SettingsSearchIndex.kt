@@ -86,7 +86,7 @@ object SettingsSearchIndex {
         media("media.folders", "Media library folders", "Media library", "Choose folders included in Device videos.", "directories storage scan roots linked folder", condition = SettingsSearchCondition.DEVICE),
         media("media.discovery", "Device video discovery", "Media library", "Find videos in storage and linked folders.", "scan local files library indexing", condition = SettingsSearchCondition.DEVICE),
         media("media.rescan", "Auto rescan", "Media library", "Scan once when the app starts.", "startup refresh new deleted files", condition = SettingsSearchCondition.DISCOVERY),
-        media("media.background", "Background playback", "Video", "Keep permitted audio playing while the app is minimized.", "audio headphones screen off switching away"),
+        media("media.background", "Background playback", "Video", "Allow headphone mode and websites enabled in Site settings to play in the background.", "audio headphones screen off locked tabs site music"),
         media("media.orientation", "Screen orientation", "Video", "Choose how both players open.", "rotation rotate landscape portrait sensor lock"),
         media("media.jobs", "Simultaneous downloads", "Network", "Choose how many files download at once.", "queue concurrency parallel files"),
         media("media.connections", "Connections per download", "Network", "Choose the default connections per file.", "threads speed parallel network"),
