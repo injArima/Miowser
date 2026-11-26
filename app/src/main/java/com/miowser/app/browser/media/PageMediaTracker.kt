@@ -60,6 +60,7 @@ internal class PageMediaTracker(
     private var nextCommand = 0L
     private var pending: Pending? = null
     private var backgroundAllowed = false
+    private var playbackAllowed = false
     private var ownerProxy: JavaScriptReplyProxy? = null
     private var helloWindow = 0L
     private var helloCount = 0
@@ -121,8 +122,22 @@ internal class PageMediaTracker(
         sendBackgroundPolicies()
     }
 
+    fun setPlaybackAllowed(allowed: Boolean) {
+        if (playbackAllowed == allowed) return
+        playbackAllowed = allowed
+        channels.forEach { (proxy, channel) -> send(proxy, bound("playback", channel).put("allowed", allowed)) }
+        if (!allowed) { backgroundAllowed = false; sendBackgroundPolicies() }
+    }
+
+    /** Pause every bound frame, including a non-owner cross-origin player. */
+    fun pauseAll() {
+        if (retired || !accepting) return
+        channels.forEach { (proxy, channel) -> send(proxy, bound("pauseAll", channel)) }
+    }
+
     override fun command(action: String, positionMs: Long?) {
         if (retired || !accepting || action !in PageMediaActions.supported) return
+        if (!playbackAllowed && action != "pause" && action != "stop") return
         val current = snapshot ?: return
         if (action !in current.actions) return
         if (action == "seekto" && (positionMs == null || positionMs !in 0..MAX_TIME_MS)) return
@@ -200,7 +215,7 @@ internal class PageMediaTracker(
         if (old != null && old.document == document && old.navigation == navigation && old.origin == origin) {
             if (now - old.lastHello < 500) return
             old.lastHello = now
-            send(proxy, bound("bind", old).put("ownerPrefix", old.prefix))
+            send(proxy, bound("bind", old).put("ownerPrefix", old.prefix).put("playbackAllowed", playbackAllowed))
             return
         }
         if (++helloCount > 16) return
@@ -213,7 +228,7 @@ internal class PageMediaTracker(
         val channel = Channel(document, UUID.randomUUID().toString(), navigation, prefix, mainFrame,
             origin, SiteMediaCompatibility.supports(origin), now)
         channels[proxy] = channel
-        send(proxy, bound("bind", channel).put("ownerPrefix", prefix))
+        send(proxy, bound("bind", channel).put("ownerPrefix", prefix).put("playbackAllowed", playbackAllowed))
         publish()
     }
 

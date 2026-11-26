@@ -25,10 +25,30 @@ class PageMediaPolicyTest {
         }
     }
 
-    @Test fun retainingOnePageDoesNotProtectUnrelatedTabsFromEviction() {
+    @Test fun backgroundAudioPermissionIsScopedToItsPageSession() {
         assertTrue(PageMediaPolicy.keepRenderer(true, false, 17L, 17L))
         assertFalse(PageMediaPolicy.keepRenderer(true, false, 17L, 18L))
         assertFalse(PageMediaPolicy.keepRenderer(true, false, null, 17L))
         assertFalse(PageMediaPolicy.keepRenderer(false, false, 17L, 17L))
+    }
+
+    @Test fun switchingTabsExcludesThePreviousOwnerAndUnrelatedFrames() {
+        assertTrue(PageMediaPolicy.eligibleTab(18L, 18L, null))
+        assertFalse(PageMediaPolicy.eligibleTab(17L, 18L, null))
+        assertFalse(PageMediaPolicy.eligibleTab(17L, null, null))
+        assertTrue(PageMediaPolicy.eligibleTab(17L, 18L, 17L))
+    }
+
+    @Test fun foregroundPlaybackRequiresAVisibleBrowserOrPlayer() {
+        assertTrue(PageMediaPolicy.allowPlayback(true, true, false, false, false, false))
+        assertTrue(PageMediaPolicy.allowPlayback(true, false, true, false, false, false))
+        assertTrue(PageMediaPolicy.allowPlayback(true, false, false, true, false, false))
+        assertFalse(PageMediaPolicy.allowPlayback(true, false, false, false, false, false))
+    }
+
+    @Test fun minimizingRequiresExplicitBackgroundSessionOrPipPermission() {
+        assertFalse(PageMediaPolicy.allowPlayback(false, true, true, true, false, false))
+        assertTrue(PageMediaPolicy.allowPlayback(false, false, false, false, true, false))
+        assertTrue(PageMediaPolicy.allowPlayback(false, false, false, false, false, true))
     }
 }

@@ -197,6 +197,25 @@ class Tab(
         private set
     var rendererUnavailable by mutableStateOf(false)
         private set
+    var rendererUnresponsive by mutableStateOf(false)
+        private set
+    private var pagePlaybackAllowed = false
+
+    /** Native muting also covers Web Audio and media outside the document bridge's frame table. */
+    fun setPagePlaybackAllowed(allowed: Boolean) {
+        if (pagePlaybackAllowed == allowed) return
+        pagePlaybackAllowed = allowed
+        liveWebView?.let(::applyPlaybackGate)
+    }
+
+    private fun applyPlaybackGate(view: WebView) {
+        val allowed = pagePlaybackAllowed && !rendererUnresponsive
+        if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.MUTE_AUDIO)) {
+            runCatching { androidx.webkit.WebViewCompat.setAudioMuted(view, !allowed) }
+        }
+        pageMediaTracker?.setPlaybackAllowed(allowed)
+        if (!allowed) pausePageMedia()
+    }
     var certificateErrorUrl by mutableStateOf<String?>(null)
         private set
     var certificateBypassed by mutableStateOf(false)
@@ -519,43 +538,11 @@ class Tab(
         TabThumbnailMemoryRegistry.touch(thumbnailKey) { thumbnail = null }
     }
 
-    /** Invalidates page-bound bridge tokens before releasing the underlying WebView. */
-    internal val canRetireEngine: Boolean get() = !destroyed && !rendererUnavailable &&
-        !isLoading && !hasPlayingMedia && !PageMediaCoordinator.keepsRenderer(id) &&
-        rendererTransferCount == 0 && popupProxies.isEmpty() &&
-        com.miowser.app.downloader.DownloadQueue.downloads.none {
-            it.kind == com.miowser.app.downloader.DownloadKind.WEBVIEW_RESOURCE &&
-                it.rendererTransfer != null && it.pageUrl == url &&
-                it.status in setOf(com.miowser.app.downloader.DownloadStatus.QUEUED,
-                    com.miowser.app.downloader.DownloadStatus.DOWNLOADING,
-                    com.miowser.app.downloader.DownloadStatus.PAUSED)
-        }
-
-    internal fun retireBackgroundEngine() {
-        val view = liveWebView ?: return
-        if (!canRetireEngine) return
-        // Process-local, bounded navigation state, including private tabs; never a backup/session file.
-        if (view.copyBackForwardList().size <= 32) runCatching {
-            val state = android.os.Bundle()
-            if (view.saveState(state) != null) controller.rememberNavigation(id, state)
-        }
-        retireEngineCallbacks?.invoke()
-        retireEngineCallbacks = null
-        elementPickerBridge?.cancel()
-        previewCaptureGeneration++
-        mainHandler.removeCallbacks(previewCaptureRunnable)
-        clearDetections()
-        cancelRoutedPopup()
-        lastFinishedUrl = null
-        controller.release(id, view)
-    }
-
     fun destroy() {
         if (destroyed) return
         destroyed = true
         protectedPageLoad.cancel()
         navigationScope.cancel()
-        controller.takeNavigation(id)
         previewCaptureGeneration++
         mainHandler.removeCallbacks(previewCaptureRunnable)
         TabThumbnailMemoryRegistry.remove(thumbnailKey)
@@ -572,6 +559,7 @@ class Tab(
         if (crashed) com.miowser.app.diagnostics.CrashDiagnostics.recordRendererCrash(tabContext)
         blockedPageInfo = null
         rendererUnavailable = true
+        rendererUnresponsive = false
         retireEngineCallbacks?.invoke()
         retireEngineCallbacks = null
         elementPickerBridge?.cancel()
@@ -588,7 +576,7 @@ class Tab(
         showJumpToTop = false
         lastFinishedUrl = null
         pageError = if (crashed) "This page stopped unexpectedly. Reload to open it again."
-            else "This page was closed to free memory. Reload to open it again."
+            else "The webpage's rendering process stopped. Reload to recover the page."
         onRendererUnavailable(id)
         controller.release(id, view)
     }
@@ -773,6 +761,23 @@ class Tab(
         val alive = AtomicBoolean(true)
         val permissionRequests = mutableMapOf<PermissionRequest, WebPermissionLease>()
         return try { view.apply {
+            applyPlaybackGate(this)
+            if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.WEB_VIEW_RENDERER_CLIENT_BASIC_USAGE)) {
+                androidx.webkit.WebViewCompat.setWebViewRenderProcessClient(this,
+                    java.util.concurrent.Executor { work -> mainHandler.post(work) },
+                    object : androidx.webkit.WebViewRenderProcessClient() {
+                        override fun onRenderProcessUnresponsive(view: WebView, renderer: androidx.webkit.WebViewRenderProcess?) {
+                            if (!alive.get() || liveWebView !== view) return
+                            rendererUnresponsive = true
+                            applyPlaybackGate(view)
+                        }
+                        override fun onRenderProcessResponsive(view: WebView, renderer: androidx.webkit.WebViewRenderProcess?) {
+                            if (!alive.get() || liveWebView !== view) return
+                            rendererUnresponsive = false
+                            applyPlaybackGate(view)
+                        }
+                    })
+            }
             CookieManager.getInstance().setAcceptCookie(AppSettings.current.cookiesEnabled)
             settings.javaScriptEnabled = AppSettings.current.javaScriptEnabled
             mobileUserAgent = settings.userAgentString
@@ -884,6 +889,7 @@ class Tab(
             pageMediaTracker = PageMediaTracker(this@Tab.id, this, isPrivate,
                 onChanged = PageMediaCoordinator::changed).also { tracker ->
                 PageMediaCoordinator.register(tabContext, tracker)
+                tracker.setPlaybackAllowed(pagePlaybackAllowed && !rendererUnresponsive)
                 tracker.install()
             }
 
@@ -1279,19 +1285,13 @@ class Tab(
                 if (HttpNavigationApproval.requiresWarning(initialTarget, isPrivate)) {
                     onInsecureNavigationRequested(this@Tab.id, initialTarget)
                 } else {
-                    val state = controller.takeNavigation(this@Tab.id)
                     isLoading = true
                     deferredPageTarget = initialTarget
                     protectedPageLoad.execute(
                         alive = { alive.get() && !destroyed && !rendererUnavailable },
                         failure = ::protectionLoadFailed
                     ) {
-                        val restored = state?.let { runCatching { restoreState(it) }.getOrNull() }
-                        if (restored == null) loadUrl(initialTarget)
-                        else {
-                            this@Tab.canGoBack = canGoBack()
-                            this@Tab.canGoForward = canGoForward()
-                        }
+                        loadUrl(initialTarget)
                         deferredPageTarget = null
                     }
                 }
@@ -1306,7 +1306,6 @@ class Tab(
     }
 
     fun navigateTo(targetUrl: String) {
-        controller.takeNavigation(id)
         if (targetUrl.isBlank()) return
         if (HttpNavigationApproval.requiresWarning(targetUrl, isPrivate)) {
             onInsecureNavigationRequested(id, targetUrl)
@@ -1416,7 +1415,7 @@ class Tab(
     /** Stops page-owned media before Miowser's rich player takes over audio/video playback. */
     fun pausePageMedia() {
         // The system-media owner can live in a cross-origin frame, outside querySelectorAll.
-        pageMediaTracker?.command("pause")
+        pageMediaTracker?.pauseAll()
         liveWebView?.evaluateJavascript(
             """
             (() => {

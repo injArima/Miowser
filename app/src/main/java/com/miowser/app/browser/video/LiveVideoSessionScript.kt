@@ -1,12 +1,14 @@
 package com.miowser.app.browser.video
 
 /** Per-document telemetry and frame-aware browser-session playback. */
-internal const val LIVE_VIDEO_SESSION_SCRIPT = """
+internal val LIVE_VIDEO_SESSION_SCRIPT = LIVE_VIDEO_SESSION_TEMPLATE.replace("/*BOUNDED_MEDIA_DISCOVERY*/", com.miowser.app.browser.BOUNDED_MEDIA_DISCOVERY_SCRIPT)
+internal const val LIVE_VIDEO_SESSION_TEMPLATE = """
 (function () {
     'use strict';
     if (window.__miowserLiveVideos) return;
     var bridge = window.MiowserLiveVideo;
     if (!bridge) return;
+    /*BOUNDED_MEDIA_DISCOVERY*/
     var documentId = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
     var videos = new Map(), ids = new WeakMap(), nextId = 0, sequence = 0;
     var binding = null, timer = null, heartbeat = null, observer = null;
@@ -16,7 +18,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
     var controls = null, fullscreenSerial = 0, lifecycleSerial = -1;
     var trackIds = new WeakMap(), nextTrackId = 0;
     var listeners = [];
-    var frameRoutes = new Map(), shadowObservers = new Map(), shadowSweep = null,
+    var frameRoutes = new Map(), shadowObservers = new Map(), discovery = null,
         lastHeartbeatAt = 0, lastShadowScanAt = 0, lastHelloAt = -1000;
     var MAX_VIDEOS = 8, UPDATE_MS = 500;
     var frameElements = new WeakMap();
@@ -336,34 +338,17 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             }
         }, 2500);
     }
-    function scan(root) {
-        if (root.tagName === 'VIDEO') watch(root);
-        if (root.querySelectorAll) {
-            var found = root.querySelectorAll('video');
-            for (var i = 0; i < found.length; i++) watch(found[i]);
-        }
-        scanOpenRoots(root);
-    }
-    function scanOpenRoots(root) {
-        // Document observers do not cross shadow boundaries. Watch open roots only;
-        // closed roots remain outside the page API and are not probed.
-        var walker = root === document && shadowSweep ||
-            document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
-        var node = root === document && shadowSweep ? walker.currentNode :
-            root.nodeType === 1 ? root : walker.nextNode(), visited = 0;
-        while (node && visited++ < 4096) {
-            if (node.shadowRoot && !shadowObservers.has(node.shadowRoot)) {
-                var shadow = node.shadowRoot;
-                var watcher = new MutationObserver(processMutations);
-                watcher.observe(shadow, {childList: true, subtree: true,
-                    attributes: true, attributeFilter: ['src']});
-                discoveryEvents.forEach(function (type) { shadow.addEventListener(type, onPlay, true); });
-                shadowObservers.set(shadow, {observer: watcher, host: node});
-                scan(shadow);
-            }
-            node = walker.nextNode();
-        }
-        if (root === document) shadowSweep = node ? walker : null;
+    function scan(root) { if (discovery) discovery.enqueue(root); }
+    function scanOpenRoots(root) { scan(root); }
+    function discoverElement(node) {
+        if (node.tagName === 'VIDEO') watch(node);
+        var shadow = node.shadowRoot;
+        if (!shadow || shadowObservers.has(shadow)) return;
+        var watcher = new MutationObserver(processMutations);
+        watcher.observe(shadow, {childList: true, subtree: true, attributes: true, attributeFilter: ['src']});
+        discoveryEvents.forEach(function (type) { shadow.addEventListener(type, onPlay, true); });
+        shadowObservers.set(shadow, {observer: watcher, host: node});
+        scan(shadow);
     }
     function onPlay(event) { watch(event.target); }
     function processMutations(mutations) {
@@ -376,16 +361,14 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             });
             shadowObservers.delete(root);
         });
-        mutations.forEach(function (mutation) {
+        if (discovery) discovery.mutations(mutations, document);
+        for (var i = 0; i < Math.min(mutations.length, 32); i++) {
+            var mutation = mutations[i];
             if (mutation.type === 'attributes') {
                 var target = mutation.target;
                 watch(target.tagName === 'SOURCE' ? target.parentElement : target);
             }
-            for (var i = 0; i < mutation.addedNodes.length; i++) {
-                var added = mutation.addedNodes[i];
-                if (added.nodeType === 1) scan(added);
-            }
-        });
+        }
         schedule();
     }
     function reconnectChildren() {
@@ -402,6 +385,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
     function start() {
         if (running) return;
         running = true;
+        discovery = createBoundedMediaDiscovery(discoverElement);
         startHeartbeat();
         if (window.__miowserCreateVideoButton) assistant = window.__miowserCreateVideoButton({
             records: function () { return videos; },
@@ -516,7 +500,7 @@ internal const val LIVE_VIDEO_SESSION_SCRIPT = """
             entry.observer.disconnect(); root.removeEventListener('play', onPlay, true);
         });
         shadowObservers.clear();
-        shadowSweep = null;
+        if (discovery) discovery.stop(); discovery = null;
         if (intersection) intersection.disconnect();
         if (resize) resize.disconnect();
         observer = intersection = resize = null;

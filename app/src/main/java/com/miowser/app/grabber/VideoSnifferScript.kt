@@ -12,13 +12,15 @@ private const val TAG = "Miowser/DocStart"
 // for MSE-based players) plus duration/dimensions once known, both at scan time and for
 // elements added later via a MutationObserver — the "including dynamically-added ones"
 // requirement validated against 1DM's own grabber (project memory: 1dm-grabber-mechanics.md).
-private const val VIDEO_SNIFFER_SCRIPT = """
+private val VIDEO_SNIFFER_SCRIPT = VIDEO_SNIFFER_TEMPLATE.replace("/*BOUNDED_MEDIA_DISCOVERY*/", com.miowser.app.browser.BOUNDED_MEDIA_DISCOVERY_SCRIPT)
+private const val VIDEO_SNIFFER_TEMPLATE = """
     (function() {
         try {
             if (window.__miowserGrabberInstalled) return;
             window.__miowserGrabberInstalled = true;
             var bridge = window.MiowserGrabber;
             if (!bridge) return;
+            /*BOUNDED_MEDIA_DISCOVERY*/
 
             var reported = new Set();
             var watched = new WeakSet();
@@ -66,8 +68,11 @@ private const val VIDEO_SNIFFER_SCRIPT = """
             }
 
             function scan(root) {
-                root.querySelectorAll('video, audio').forEach(watch);
+                discovery.enqueue(root);
             }
+            var discovery = createBoundedMediaDiscovery(function (node) {
+                if (node.tagName === 'VIDEO' || node.tagName === 'AUDIO') watch(node);
+            });
 
             // pushState track/episode changes reset the native generation without replacing
             // this document. Rebind once for that navigation, not on every DOM mutation.
@@ -86,13 +91,7 @@ private const val VIDEO_SNIFFER_SCRIPT = """
                 token = bridge.documentToken();
                 scan(document);
                 var observer = new MutationObserver(function(mutations) {
-                    mutations.forEach(function(m) {
-                        m.addedNodes.forEach(function(node) {
-                            if (!(node instanceof Element)) return;
-                            if (node.matches && node.matches('video, audio')) watch(node);
-                            if (node.querySelectorAll) scan(node);
-                        });
-                    });
+                    discovery.mutations(mutations, document);
                     playing.forEach(function(el) { if (!el.isConnected || el.paused || el.ended) playing.delete(el); });
                     publishActivity();
                 });

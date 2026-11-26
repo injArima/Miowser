@@ -5,6 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const source = file => fs.readFileSync(path.join(__dirname, '../app/src/main/java/com/miowser/app', file), 'utf8')
   .match(/"""([\s\S]*?)"""/)[1];
+const discoverySource = source('browser/BoundedMediaDiscovery.kt');
 const targetSource = source('browser/BrowserPageGestureTarget.kt');
 let checks = 0;
 function check(name, test) { test(); checks++; console.log('PASS ' + name); }
@@ -12,6 +13,7 @@ function check(name, test) { test(); checks++; console.log('PASS ' + name); }
 class Element {
   constructor(tag = 'div', parent = null, computed = {}) {
     this.tagName = tag.toUpperCase(); this.parentElement = parent; this.computed = computed;
+    this.nodeType = 1;
     this.scrollWidth = this.clientWidth = 300; this.scrollHeight = this.clientHeight = 100;
     this.attributes = {}; this.isConnected = true; this.listeners = new Map(); this.descendants = [];
   }
@@ -104,20 +106,32 @@ check('unknown, inaccessible and excessively deep hit targets yield to the page'
 
 function snifferFixture() {
   const activity = [], reports = [], observers = [], media = []; let token = '1';
+  let nextTimer = 0; const timers = new Map();
+  function flush() {
+    let count = 0;
+    while (timers.size) {
+      assert(count++ < 10000, 'discovery must settle');
+      const [id, fn] = timers.entries().next().value; timers.delete(id); fn();
+    }
+  }
   const bridge = {documentToken: () => token,
     reportMediaActivityForDocument: (token, playing) => activity.push([token, playing]),
     reportVideoElementForDocument: (...args) => reports.push(args)};
-  const document = {readyState: 'complete', documentElement: {}, querySelectorAll: () => media};
+  const document = {nodeType: 9, readyState: 'complete', documentElement: {}, querySelectorAll: () => media,
+    createTreeWalker(root) { let index = 0; const nodes = root === document ? media : root.descendants || [];
+      return {nextNode: () => nodes[index++] || null}; }};
   const window = {MiowserGrabber: bridge};
   class MutationObserver { constructor(fn) { this.fn = fn; observers.push(this); } observe() {} }
-  vm.runInNewContext(source('grabber/VideoSnifferScript.kt'), {
-    window, document, location: {href: 'https://music.test/watch'}, Element, MutationObserver});
-  function mutate(nodes = []) { observers.forEach(o => o.fn([{addedNodes: nodes}])); }
+  vm.runInNewContext(source('grabber/VideoSnifferScript.kt').replace('/*BOUNDED_MEDIA_DISCOVERY*/', discoverySource), {
+    window, document, location: {href: 'https://music.test/watch'}, Element, MutationObserver,
+    performance: {now: () => 0}, setTimeout(fn) { timers.set(++nextTimer, fn); return nextTimer; },
+    clearTimeout(id) { timers.delete(id); }});
+  function mutate(nodes = []) { observers.forEach(o => o.fn([{type: 'childList', addedNodes: nodes}])); flush(); }
   function add(tag) {
     const el = Object.assign(new Element(tag), {src: 'https://music.test/track.mp3', duration: 180,
       paused: true, ended: false}); media.push(el); mutate([el]); return el;
   }
-  return {activity, reports, mutate, add, window, token: next => { token = next; }};
+  return {activity, reports, mutate, add, window, flush, token: next => { token = next; }};
 }
 check('thousands of unrelated SPA mutations cause only one unchanged activity bridge call', () => {
   const f = snifferFixture(); f.add('audio');
@@ -134,7 +148,7 @@ check('audio play, duplicate play, pause and removed-media activity remain corre
 });
 check('same-document navigation rebinds media reports to the new native token', () => {
   const f = snifferFixture(), el = f.add('video'); el.paused = false; el.dispatch('play');
-  f.token('2'); f.window.__miowserRefreshMediaSniffer();
+  f.token('2'); f.window.__miowserRefreshMediaSniffer(); f.flush();
   assert.equal(f.reports.at(-1)[0], '2'); assert.deepEqual(f.activity.at(-1), ['2', true]);
   const count = f.reports.length; f.window.__miowserRefreshMediaSniffer(); assert.equal(f.reports.length, count);
   el.duration = 200; el.dispatch('durationchange'); assert.equal(f.reports.at(-1)[2], 200);

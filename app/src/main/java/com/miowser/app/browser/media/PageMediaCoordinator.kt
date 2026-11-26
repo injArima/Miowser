@@ -18,6 +18,8 @@ internal object PageMediaCoordinator {
     private var suppressed = false
     private var availableTabs: Set<Long>? = null
     private var fullscreenAudioTabId: Long? = null
+    private var selectedTabId: Long? = null
+    private var companionTabId: Long? = null
     private var revision by mutableIntStateOf(0)
     private val main by lazy { Handler(Looper.getMainLooper()) }
     private var idleTimeout: Runnable? = null
@@ -50,6 +52,12 @@ internal object PageMediaCoordinator {
         val started = snapshot.playing &&
             (before == null || before.first != snapshot.ownerKey || !before.second)
         if (availableTabs?.contains(snapshot.tabId) == false) return
+        if (!PageMediaPolicy.eligibleTab(snapshot.tabId, selectedTabId, companionTabId)) {
+            if (snapshot.playing) tracker.pauseAll()
+            tracker.setBackgroundAllowed(false)
+            if (owner === tracker) release()
+            return
+        }
         if (!PageMediaPolicy.canPublish(foreground, backgroundEnabled, suppressed)) {
             tracker.setBackgroundAllowed(backgroundEnabled && snapshot.playing && snapshot.tabId == fullscreenAudioTabId)
             return
@@ -84,19 +92,22 @@ internal object PageMediaCoordinator {
     }
 
     fun configure(backgroundEnabled: Boolean, suppressed: Boolean, pauseForNative: Boolean,
-        tabIds: Set<Long>, fullscreenTabId: Long?, fullscreenAudioTabId: Long?) {
+        tabIds: Set<Long>, fullscreenTabId: Long?, fullscreenAudioTabId: Long?, selectedTabId: Long?, companionTabId: Long?) {
         if (this.backgroundEnabled == backgroundEnabled && this.suppressed == suppressed &&
-            availableTabs == tabIds && this.fullscreenAudioTabId == fullscreenAudioTabId) return
+            availableTabs == tabIds && this.fullscreenAudioTabId == fullscreenAudioTabId &&
+            this.selectedTabId == selectedTabId && this.companionTabId == companionTabId) return
         this.backgroundEnabled = backgroundEnabled
         val newlySuppressed = suppressed && !this.suppressed
         this.suppressed = suppressed
         availableTabs = tabIds
         this.fullscreenAudioTabId = fullscreenAudioTabId
+        this.selectedTabId = selectedTabId
+        this.companionTabId = companionTabId
         // Preserve fullscreen only when it is the SAME tab/engine; another tab must be paused.
         if (newlySuppressed && PageMediaPolicy.pauseForHandoff(owner?.snapshot?.tabId,
                 fullscreenTabId, pauseForNative)) owner?.command("pause")
-        if (owner?.snapshot?.tabId?.let { it !in tabIds } == true) {
-            owner?.command("pause")
+        if (owner?.snapshot?.tabId?.let { it !in tabIds || !PageMediaPolicy.eligibleTab(it, selectedTabId, companionTabId) } == true) {
+            owner?.pauseAll()
             release()
         }
         reconcile()
@@ -129,7 +140,8 @@ internal object PageMediaCoordinator {
         owner?.let { tracker ->
             changed(tracker)
         } ?: pages.keys.lastOrNull {
-            it.snapshot?.let { state -> state.playing && availableTabs?.contains(state.tabId) != false } == true
+            it.snapshot?.let { state -> state.playing && availableTabs?.contains(state.tabId) != false &&
+                PageMediaPolicy.eligibleTab(state.tabId, selectedTabId, companionTabId) } == true
         }?.let { changed(it, allowExistingPlayback = true) }
     }
 
@@ -149,6 +161,11 @@ internal object PageMediaCoordinator {
 }
 
 internal object PageMediaPolicy {
+    fun allowPlayback(foreground: Boolean, visibleBrowser: Boolean, companion: Boolean,
+        fullscreen: Boolean, pageSession: Boolean, retainedFullscreen: Boolean): Boolean =
+        pageSession || retainedFullscreen || foreground && (visibleBrowser || companion || fullscreen)
+    fun eligibleTab(tabId: Long, selectedTabId: Long?, companionTabId: Long?): Boolean =
+        tabId == selectedTabId || tabId == companionTabId
     fun pauseForHandoff(ownerTabId: Long?, fullscreenTabId: Long?, richPlayer: Boolean): Boolean =
         ownerTabId != null && (richPlayer || ownerTabId != fullscreenTabId)
 

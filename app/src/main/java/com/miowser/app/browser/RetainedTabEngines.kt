@@ -5,8 +5,6 @@ class RetainedTabEngines<E : Any>(private val dispose: (E) -> Unit) {
     private val engines = linkedMapOf<Long, E>()
     val size: Int get() = engines.size
     val oldestFirst: List<Long> get() = engines.keys.toList()
-    fun retirementCandidates(limit: Int, eligible: (Long) -> Boolean): List<Long> =
-        engines.keys.filter(eligible).take((size - limit).coerceAtLeast(0))
     fun touch(id: Long) { engines.remove(id)?.let { engines[id] = it } }
     fun peek(id: Long): E? = engines[id]
     fun acquire(id: Long, create: () -> E): E = engines[id] ?: create().also { engines[id] = it }

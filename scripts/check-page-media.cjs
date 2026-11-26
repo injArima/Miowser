@@ -12,7 +12,9 @@ function constant(file, name) {
 }
 const compatibility = constant('SiteMediaCompatibility.kt', 'SITE_MEDIA_COMPATIBILITY_SCRIPT');
 const source = constant('PageMediaScript.kt', 'PAGE_MEDIA_BRIDGE_SCRIPT')
-  .replace('/*SITE_MEDIA_COMPATIBILITY*/', compatibility);
+  .replace('/*SITE_MEDIA_COMPATIBILITY*/', compatibility)
+  .replace('/*MEDIA_ARTWORK*/', constant('MediaArtworkScript.kt', 'MEDIA_ARTWORK_SCRIPT'))
+  .replace('/*BOUNDED_MEDIA_DISCOVERY*/', constant('../BoundedMediaDiscovery.kt', 'BOUNDED_MEDIA_DISCOVERY_SCRIPT'));
 new vm.Script(source, {filename: 'PageMediaScript.js'});
 new vm.Script(compatibility, {filename: 'SiteMediaCompatibility.js'});
 
@@ -145,7 +147,7 @@ function fixture(initial = [media()], url = 'https://www.youtube.com/watch?v=epi
     advance(250);
     const hello = messages.findLast(m => m.type === 'hello'); assert(hello, 'missing candidate hello');
     bound = {documentId: hello.documentId, navigation, token, ownerPrefix: 'tab:instance:' + navigation + ':frame:document:'};
-    reply({type: 'bind', ...bound}); advance(250);
+    reply({type: 'bind', ...bound, playbackAllowed: true}); advance(250);
   }
   function send(type, extra = {}) { reply({type, ...bound, ...extra}); }
   function state() { return messages.findLast(m => m.type === 'state')?.media; }
@@ -445,4 +447,51 @@ test('parent reconnect reaches child contexts without accepting child telemetry 
   f.window.emit('message', {source: {}, data: {miowserPageMediaConnect: true, type: 'command', action: 'pause'}});
   assert.equal(f.messages.length, 0);
 });
+test('hidden tab pauses all media and rejects later play events', () => {
+  const first = media(), second = media('VIDEO');
+  const f = fixture([first, second]); f.bind();
+  f.send('playback', {allowed: false}); f.advance(250);
+  assert(first.paused && second.paused);
+  second.play(); f.advance(250); assert(second.paused);
+  const playCount = second.calls.filter(call => call === 'play').length;
+  f.command('play'); assert.equal(second.calls.filter(call => call === 'play').length, playCount);
+});
+
+test('switching back grants permission without resuming paused media', () => {
+  const item = media(), f = fixture([item]); f.bind();
+  f.send('playback', {allowed: false}); f.advance(250); assert(item.paused);
+  f.send('playback', {allowed: true}); f.advance(1000); assert(item.paused);
+  f.command('play'); assert.equal(item.paused, false);
+});
+
+test('frame-wide pause reaches non-owner media without seeking or changing volume', () => {
+  const first = media(), second = media('VIDEO', {currentTime: 77, volume: 0.4});
+  const f = fixture([first, second]); f.bind(); f.send('pauseAll'); f.advance(250);
+  assert(first.paused && second.paused);
+  assert.equal(second.currentTime, 77); assert.equal(second.volume, 0.4);
+});
+
+test('denied binding stops a new frame; stale policy cannot override its binding', () => {
+  const item = media(), f = fixture([item]); f.bind();
+  f.reply({type: 'bind', ...f.bound, playbackAllowed: false}); f.advance(250); assert(item.paused);
+  f.reply({type: 'playback', ...f.bound, token: 'stale', allowed: true});
+  item.play(); assert(item.paused);
+});
+
+test('hidden detached media cannot restart through the native play wrapper', () => {
+  const f = fixture([]), audio = f.detachedMedia(); audio.play(); f.bind();
+  f.send('playback', {allowed: false}); f.advance(250); assert(audio.paused);
+  const originalPromise = Promise.resolve(); audio.playReturn = originalPromise;
+  assert.equal(audio.play(), originalPromise); assert(audio.paused);
+  f.send('playback', {allowed: true}); f.advance(250); assert(audio.paused);
+});
+
+test('an expired frame binding can reconnect on the first explicit play', () => {
+  const item = media(), f = fixture([item]); f.bind();
+  f.send('playback', {allowed: false}); f.advance(250);
+  f.send('reset'); // Native pruning drops an idle non-owner frame.
+  item.play(); assert.equal(item.paused, false, 'unbound explicit play must establish a new handshake');
+  f.bind(4, 'reconnected'); assert.equal(f.state().playing, true);
+});
+
 console.log(`Page media: syntax + ${passed} host regressions passed.`);

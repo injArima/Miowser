@@ -4,22 +4,27 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class RetainedTabEnginesTest {
-    @Test fun retirementKeepsSixRecentEnginesAndProtectsVisibleTransfers() {
+    @Test fun manyTabSwitchesRetainEveryEngineWithoutReloading() {
         val retired = mutableListOf<Long>()
         val owner = RetainedTabEngines<Long>(retired::add)
         (1L..30L).forEach { id -> owner.acquire(id) { id } }
-        owner.touch(1)
-        owner.retirementCandidates(6) { it != 29L && it != 30L }.forEach(owner::release)
-        assertEquals(6, owner.size)
-        assertEquals(listOf(26L, 27L, 28L, 29L, 30L, 1L), owner.oldestFirst)
-        assertEquals((2L..25L).toList(), retired)
+        repeat(10) {
+            (30L downTo 1L).forEach { id ->
+                owner.touch(id)
+                assertEquals(id, owner.acquire(id) { error("Switching must not recreate a live tab") })
+            }
+        }
+        assertEquals(30, owner.size)
+        assertTrue(retired.isEmpty())
     }
-    @Test fun pressureRetiresOnlyEligibleEnginesAndLookupDoesNotChangeLruOrder() {
+    @Test fun lookupAndTouchDoNotReleaseAnyEngine() {
         val owner = RetainedTabEngines<Long> { }
         (1L..4L).forEach { id -> owner.acquire(id) { id } }
         owner.peek(1)
         assertEquals(listOf(1L, 2L, 3L, 4L), owner.oldestFirst)
-        assertEquals(listOf(2L), owner.retirementCandidates(1) { it == 2L })
+        owner.touch(2)
+        assertEquals(listOf(1L, 3L, 4L, 2L), owner.oldestFirst)
+        assertEquals(4, owner.size)
     }
     @Test fun staleRendererCallbackCannotRetireReloadedEngine() {
         val retired = mutableListOf<Any>()

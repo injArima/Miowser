@@ -3,6 +3,7 @@ package com.miowser.app.browser.media
 /** Document-start code, executed independently in each HTTP(S) frame. */
 internal val PAGE_MEDIA_SCRIPT = PAGE_MEDIA_BRIDGE_SCRIPT.replace(
     "/*SITE_MEDIA_COMPATIBILITY*/", SITE_MEDIA_COMPATIBILITY_SCRIPT).replace("/*MEDIA_ARTWORK*/", MEDIA_ARTWORK_SCRIPT)
+    .replace("/*BOUNDED_MEDIA_DISCOVERY*/", com.miowser.app.browser.BOUNDED_MEDIA_DISCOVERY_SCRIPT)
 
 internal const val PAGE_MEDIA_BRIDGE_SCRIPT = """
 (function () {
@@ -13,12 +14,17 @@ internal const val PAGE_MEDIA_BRIDGE_SCRIPT = """
     if (!bridge) return;
     /*SITE_MEDIA_COMPATIBILITY*/
     /*MEDIA_ARTWORK*/
+    /*BOUNDED_MEDIA_DISCOVERY*/
     var compatibility = createSiteMediaCompatibility(), compatibilityOwner = null;
     var documentId = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
     var binding = null, generation = -1, sequence = 0, activation = 0, lastCommand = 0;
     var records = new Map(), ids = new WeakMap(), nextId = 0, selected = null;
     var running = false, destroyed = false, timer = null, retry = null, retries = 0, lastHello = -1000, lastSent = -1000;
     var heartbeat = null;
+    // Native WebView muting applies immediately. Allow the initial play until the
+    // first media-bound handshake arrives; otherwise hello() can never find an owner.
+    var playbackAllowed = true;
+    var discovery = null;
     var observers = [], cleanups = [], metadataCleanups = [], session = null, metadata = null;
     var handlers = Object.create(null), positionState = null;
     var actionNames = ['play', 'pause', 'stop', 'seekto', 'seekbackward', 'seekforward', 'previoustrack', 'nexttrack'];
@@ -139,6 +145,10 @@ internal const val PAGE_MEDIA_BRIDGE_SCRIPT = """
         return record;
     }
     function onMedia(event, allowDetached) {
+        if (!playbackAllowed && (event.type === 'play' || event.type === 'playing')) {
+            try { event.target.pause(); } catch (ignored) {}
+            return;
+        }
         var record = watch(event.target, allowDetached === true);
         if (!record) return;
         if (event.type === 'loadstart' || event.type === 'emptied') refreshSource(record, true);
@@ -155,26 +165,16 @@ internal const val PAGE_MEDIA_BRIDGE_SCRIPT = """
         if (record) { record.engaged = true; choose(); schedule(); }
     }
     function discover(root) {
-        if (!root) return;
-        if (root.nodeType !== 1 && root.nodeType !== 9 && root.nodeType !== 11) return;
-        var walker = document.createTreeWalker(root, 1), node = root.nodeType === 1 ? root : walker.nextNode(), visited = 0;
-        while (node && visited++ < 512) {
-            watch(node);
-            // Open roots present on insertion are supported without polling the document.
-            if (node.shadowRoot) observeRoot(node.shadowRoot);
-            node = walker.nextNode();
-        }
+        if (discovery) discovery.enqueue(root);
     }
     function observeRoot(root) {
         if (observers.some(function (entry) { return entry.root === root; }) || observers.length >= 32) return;
         var observer = new MutationObserver(function (changes) {
-            var budget = 256;
-            changes.forEach(function (change) {
-                if (change.type === 'childList') {
-                    for (var i = 0; i < change.addedNodes.length && budget-- > 0; i++) discover(change.addedNodes[i]);
-                } else if (change.target.tagName === 'SOURCE') watch(change.target.parentElement);
-            });
-            choose(); schedule();
+            if (discovery) discovery.mutations(changes, root);
+            for (var i = 0; i < Math.min(changes.length, 32); i++) {
+                if (changes[i].type === 'attributes' && changes[i].target.tagName === 'SOURCE') watch(changes[i].target.parentElement);
+            }
+            schedule();
         });
         observers.push({root: root, observer: observer});
         observer.observe(root, {childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'srcset', 'poster']});
@@ -275,7 +275,10 @@ internal const val PAGE_MEDIA_BRIDGE_SCRIPT = """
             // Preserve the native receiver validation, exceptions and exact Promise identity.
             var result = original.apply(this, arguments);
             if (running) {
-                try { watch(this, true); choose(); schedule(); } catch (ignored) {}
+                try {
+                    watch(this, true); choose(); schedule();
+                    if (!playbackAllowed) this.pause();
+                } catch (ignored) {}
             }
             return result;
         };
@@ -368,6 +371,7 @@ internal const val PAGE_MEDIA_BRIDGE_SCRIPT = """
         media.currentTime = target; positionState = null; return true;
     }
     function command(message) {
+        if (!playbackAllowed && message.action !== 'pause' && message.action !== 'stop') return;
         var record = choose();
         if (!record || message.ownerKey !== ownerKey(record) || message.elementId !== record.id ||
             message.sourceRevision !== record.revision || !Number.isSafeInteger(message.commandId) ||
@@ -402,6 +406,9 @@ internal const val PAGE_MEDIA_BRIDGE_SCRIPT = """
     function start() {
         if (running || destroyed) return;
         running = true; retries = 0; lastHello = -1000;
+        discovery = createBoundedMediaDiscovery(function (node) {
+            watch(node); if (node.shadowRoot) observeRoot(node.shadowRoot);
+        });
         hookSession(); hookShadowRoots(); hookMediaPlay(); observeRoot(document);
         records.forEach(function (record) { watchDirect(record); });
         choose(); schedule();
@@ -421,6 +428,7 @@ internal const val PAGE_MEDIA_BRIDGE_SCRIPT = """
         if (retry !== null) clearTimeout(retry);
         if (heartbeat !== null) clearTimeout(heartbeat);
         timer = retry = heartbeat = null;
+        if (discovery) discovery.stop(); discovery = null;
         observers.forEach(function (entry) { entry.observer.disconnect(); }); observers = [];
         metadataCleanups.forEach(function (cleanup) { try { cleanup(); } catch (ignored) {} }); metadataCleanups = [];
         cleanups.reverse().forEach(function (cleanup) { try { cleanup(); } catch (ignored) {} }); cleanups = [];
@@ -450,15 +458,25 @@ internal const val PAGE_MEDIA_BRIDGE_SCRIPT = """
                 if (binding && message.navigation === binding.navigation && message.token !== binding.token) return;
                 generation = message.navigation;
                 binding = {navigation: message.navigation, token: message.token, prefix: message.ownerPrefix};
+                playbackAllowed = message.playbackAllowed === true;
+                if (!playbackAllowed) pauseAllMedia();
                 if (retry !== null) clearTimeout(retry);
                 retry = null; retries = 0; schedule(); return;
             }
             if (!binding || message.navigation !== binding.navigation || message.token !== binding.token) return;
             if (message.type === 'reset') {
                 compatibilityOwner = null; compatibility.setAllowed(false);
-                binding = null; lastCommand = 0; return;
+                // The native gate still mutes a hidden tab. A pruned frame must be
+                // able to establish its next binding on the first explicit play.
+                binding = null; playbackAllowed = true; lastCommand = 0; return;
             }
             if (message.type === 'destroy') { stop(true); return; }
+            if (message.type === 'playback') {
+                playbackAllowed = message.allowed === true;
+                if (!playbackAllowed) { compatibilityOwner = null; compatibility.setAllowed(false); pauseAllMedia(); }
+                return;
+            }
+            if (message.type === 'pauseAll') { pauseAllMedia(); return; }
             if (message.type === 'background') {
                 var current = choose();
                 var allowed = message.allowed === true && current && message.ownerKey === ownerKey(current);
@@ -470,6 +488,10 @@ internal const val PAGE_MEDIA_BRIDGE_SCRIPT = """
     };
     function onFrameMessage(event) {
         if (window !== window.top && event.source === window.parent && event.data && event.data.miowserPageMediaConnect === true) connect();
+    }
+    function pauseAllMedia() {
+        records.forEach(function (record) { try { record.media.pause(); } catch (ignored) {} });
+        schedule();
     }
     function onHide(event) { stop(!event.persisted); }
     function onShow() { if (!running && !destroyed) connect(); }

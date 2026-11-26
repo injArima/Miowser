@@ -5,7 +5,9 @@ const path = require('node:path');
 const vm = require('node:vm');
 const kotlin = fs.readFileSync(path.join(__dirname,
   '../app/src/main/java/com/miowser/app/browser/video/LiveVideoSessionScript.kt'), 'utf8');
-const source = kotlin.match(/"""([\s\S]*?)"""/)[1];
+const discoverySource = fs.readFileSync(path.join(__dirname,
+  '../app/src/main/java/com/miowser/app/browser/BoundedMediaDiscovery.kt'), 'utf8').match(/"""([\s\S]*?)"""/)[1];
+const source = kotlin.match(/"""([\s\S]*?)"""/)[1].replace('/*BOUNDED_MEDIA_DISCOVERY*/', discoverySource);
 const buttonSource = fs.readFileSync(path.join(__dirname,
   '../app/src/main/java/com/miowser/app/browser/video/VideoAssistantButtonScript.kt'), 'utf8')
   .match(/"""([\s\S]*?)"""/)[1];
@@ -79,7 +81,7 @@ function fixture(initial = [video()]) {
   const elements = [], root = new Element('html'); root.setConnected(true);
   const mutations = [], intersections = [];
   let time = 1000, next = 1;
-  const document = Object.assign(new Events(), { visibilityState: 'visible', documentElement: root,
+  const document = Object.assign(new Events(), { nodeType: 9, visibilityState: 'visible', documentElement: root,
     fullscreenEnabled: true, fullscreenElement: null,
     exitFullscreen() { this.fullscreenElement = null; this.dispatch('fullscreenchange'); return {catch() {}}; },
     querySelectorAll: () => initial.filter(v => v.isConnected),
@@ -128,6 +130,7 @@ function fixture(initial = [video()]) {
   function run() { vm.runInContext(buttonSource + controlSource + source, context); }
   run();
   function bind(extra = {}) {
+    advance(0); // Discovery now yields until the observer callback/initial script finishes.
     const hello = messages.find(m => m.type === 'hello');
     assert(hello, 'no hello from a frame with video');
     bridge.onmessage({ data: JSON.stringify({ type: 'bind', documentId: hello.documentId,
