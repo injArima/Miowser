@@ -14,6 +14,8 @@ const compatibility = constant('SiteMediaCompatibility.kt', 'SITE_MEDIA_COMPATIB
 const source = constant('PageMediaScript.kt', 'PAGE_MEDIA_BRIDGE_SCRIPT')
   .replace('/*SITE_MEDIA_COMPATIBILITY*/', compatibility)
   .replace('/*MEDIA_ARTWORK*/', constant('MediaArtworkScript.kt', 'MEDIA_ARTWORK_SCRIPT'))
+  .replace('/*MEDIA_SESSION_FALLBACK*/', constant('MediaSessionFallbackScript.kt', 'MEDIA_SESSION_FALLBACK_SCRIPT'))
+  .replace('/*SITE_MEDIA_PRESENTATION*/', constant('SiteMediaPresentationScript.kt', 'SITE_MEDIA_PRESENTATION_SCRIPT'))
   .replace('/*BOUNDED_MEDIA_DISCOVERY*/', constant('../BoundedMediaDiscovery.kt', 'BOUNDED_MEDIA_DISCOVERY_SCRIPT'));
 new vm.Script(source, {filename: 'PageMediaScript.js'});
 new vm.Script(compatibility, {filename: 'SiteMediaCompatibility.js'});
@@ -43,7 +45,7 @@ function media(tag = 'AUDIO', options = {}) {
     ...options
   });
 }
-function fixture(initial = [media()], url = 'https://www.youtube.com/watch?v=episode') {
+function fixture(initial = [media()], url = 'https://www.youtube.com/watch?v=episode', options = {}) {
   let time = 1000, nextTimer = 1;
   const timers = new Map(), messages = [], observers = [], scans = [], registrations = new Map();
   const apiCalls = [], elements = [...initial];
@@ -111,8 +113,11 @@ function fixture(initial = [media()], url = 'https://www.youtube.com/watch?v=epi
     disconnect() { this.connected = false; }
   }
   const window = Object.assign(new Events(), {MiowserPageMedia: bridge, frames: [], Element, HTMLMediaElement});
+  if (options.nativeSession !== false) window.MediaMetadata = Metadata;
   window.top = window; window.parent = window;
-  const context = vm.createContext({window, document, navigator: {mediaSession: session}, location: new URL(url), URL,
+  const navigator = options.nativeSession === false ? {} : {mediaSession: session};
+  if (options.lockedSession) Object.defineProperty(navigator, 'mediaSession', {value: undefined, configurable: false});
+  const context = vm.createContext({window, document, navigator, location: new URL(url), URL,
     MutationObserver, performance: {now: () => time}, Event: class {constructor(type) { this.type = type; }},
     setTimeout(fn, delay = 0) { const id = nextTimer++; timers.set(id, {fn, at: time + delay}); return id; },
     clearTimeout(id) { timers.delete(id); }
@@ -162,7 +167,7 @@ function fixture(initial = [media()], url = 'https://www.youtube.com/watch?v=epi
   function mutate(root = document, addedNodes = []) {
     observers.find(o => o.root === root && o.connected)?.fn([{type: 'childList', target: root, addedNodes}]);
   }
-  return {window, document, session, Metadata, Element, originalAttach, originalAction, originalPosition,
+  return {window, document, navigator, session: navigator.mediaSession, Metadata: window.MediaMetadata, Element, originalAttach, originalAction, originalPosition,
     HTMLMediaElement, originalPlay, playCalls, detachedMedia,
     visibilityDescriptor, apiCalls, registrations, elements, timers, messages, observers, scans,
     fire, advance, reply, bind, send, state, command, mutate, context, get bound() { return bound; }};
@@ -492,6 +497,110 @@ test('an expired frame binding can reconnect on the first explicit play', () => 
   f.send('reset'); // Native pruning drops an idle non-owner frame.
   item.play(); assert.equal(item.paused, false, 'unbound explicit play must establish a new handshake');
   f.bind(4, 'reconnected'); assert.equal(f.state().playing, true);
+});
+
+test('WebView without Media Session captures complete track metadata and transport handlers', () => {
+  const f = fixture([media()], 'https://music.youtube.com/watch?v=song', {nativeSession: false});
+  assert(f.session, 'WebView must expose the playback adapter before the site feature-detects it');
+  f.session.metadata = new f.Metadata({title: 'KALYANI (Remix)', artist: 'ARJN, KDS, FIFTY4, & RONN',
+    album: 'KALYANI', artwork: [{src: 'https://images.test/cover.jpg', sizes: '512x512', type: 'image/jpeg'}]});
+  let next = 0, previous = 0;
+  f.session.setActionHandler('nexttrack', function (event) { assert.equal(this, f.session); assert.equal(event.action, 'nexttrack'); next++; });
+  f.session.setActionHandler('previoustrack', () => previous++);
+  f.bind();
+  assert.equal(f.state().title, 'KALYANI (Remix)'); assert.equal(f.state().artist, 'ARJN, KDS, FIFTY4, & RONN');
+  assert.equal(f.state().album, 'KALYANI'); assert.equal(f.state().artworkUrl, 'https://images.test/cover.jpg');
+  assert(f.state().actions.includes('nexttrack') && f.state().actions.includes('previoustrack'));
+  f.command('nexttrack'); f.command('previoustrack'); assert.equal(next, 1); assert.equal(previous, 1);
+});
+
+test('WebView track changes replace metadata and cover without a reload', () => {
+  const f = fixture([media()], 'https://example.com/player', {nativeSession: false});
+  f.session.metadata = new f.Metadata({title: 'First', artwork: [{src: '/first.jpg'}]}); f.bind();
+  assert.equal(f.state().artworkUrl, 'https://example.com/first.jpg');
+  f.session.metadata.title = 'Second'; f.session.metadata.artist = 'Second artist';
+  f.session.metadata.artwork = [{src: '/second.jpg'}]; f.advance(250);
+  assert.equal(f.state().title, 'Second'); assert.equal(f.state().artist, 'Second artist');
+  assert.equal(f.state().artworkUrl, 'https://example.com/second.jpg');
+  f.session.metadata = null; f.advance(250); assert.equal(f.state().artworkUrl, null);
+});
+
+test('WebView handler replacement and removal update reported capabilities', () => {
+  const f = fixture([media()], 'https://example.com/', {nativeSession: false}); let old = 0, current = 0;
+  f.session.setActionHandler('nexttrack', () => old++); f.bind();
+  f.session.setActionHandler('nexttrack', () => current++); f.advance(250); f.command('nexttrack');
+  assert.equal(old, 0); assert.equal(current, 1);
+  f.session.setActionHandler('nexttrack', null); f.advance(250); assert(!f.state().actions.includes('nexttrack'));
+});
+
+test('WebView adapter survives BFCache without losing website registrations', () => {
+  const f = fixture([media()], 'https://example.com/', {nativeSession: false}); const session = f.session; let next = 0;
+  session.metadata = new f.Metadata({title: 'Restored', artwork: [{src: '/cover'}]});
+  session.setActionHandler('nexttrack', () => next++); f.bind();
+  f.window.emit('pagehide', {persisted: true}); f.window.emit('pageshow', {persisted: true}); f.bind();
+  assert.equal(session, f.navigator.mediaSession); assert.equal(f.state().title, 'Restored');
+  f.command('nexttrack'); assert.equal(next, 1);
+});
+
+test('WebView adapter validates metadata and position state before publishing', () => {
+  const f = fixture([media()], 'https://example.com/', {nativeSession: false});
+  const source = [{src: '/cover', sizes: '256x256'}], metadata = new f.Metadata({artwork: source});
+  source[0].src = '/wrong'; assert.equal(metadata.artwork[0].src, 'https://example.com/cover');
+  assert(Object.isFrozen(metadata.artwork) && Object.isFrozen(metadata.artwork[0]));
+  assert.throws(() => new f.Metadata({artwork: [{}]}));
+  assert.throws(() => { f.session.playbackState = 'invalid'; });
+  for (const state of [{duration: -1}, {duration: 20, position: 21}, {duration: 20, playbackRate: 0}, {position: 10}])
+    assert.throws(() => f.session.setPositionState(state));
+  assert.throws(() => f.session.setActionHandler('nexttrack', {}));
+  assert.throws(() => f.session.setActionHandler('invalid', () => {}));
+  f.session.setPositionState({duration: 300, position: 40}); f.bind();
+  assert.equal(f.state().durationMs, 300000); assert(f.state().positionMs >= 40000 && f.state().positionMs < 41000);
+  f.session.setPositionState(null); f.advance(250); assert.equal(f.state().durationMs, 180000);
+});
+
+test('position state registered before media readiness attaches to the first real player', () => {
+  const item = media('AUDIO', {paused: true, readyState: 0, currentTime: 0});
+  const f = fixture([item], 'https://example.com/', {nativeSession: false});
+  f.session.setPositionState({duration: 300, position: 40}); f.advance(250); assert.equal(f.messages.length, 0);
+  item.readyState = 4; item.paused = false; f.fire(item, 'playing'); f.bind();
+  assert.equal(f.state().durationMs, 300000); assert(f.state().positionMs >= 40000 && f.state().positionMs < 41000);
+});
+
+test('metadata alone never starts a session or fabricates previous/next controls', () => {
+  const f = fixture([], 'https://example.com/', {nativeSession: false});
+  f.session.metadata = new f.Metadata({title: 'Idle', artwork: [{src: '/art'}]}); f.advance(60000);
+  assert.equal(f.messages.length, 0); assert.equal(f.timers.size, 0);
+  const playing = fixture([media()], 'https://example.com/', {nativeSession: false}); playing.bind();
+  assert(!playing.state().actions.includes('nexttrack')); assert(!playing.state().actions.includes('previoustrack'));
+});
+
+test('WebView fallback handlers remain blocked after switching to another tab', () => {
+  const f = fixture([media()], 'https://example.com/', {nativeSession: false}); let next = 0;
+  f.session.setActionHandler('nexttrack', () => next++); f.bind(); f.send('playback', {allowed: false}); f.advance(250);
+  f.command('nexttrack'); assert.equal(next, 0);
+  f.send('playback', {allowed: true}); f.advance(250); f.command('nexttrack'); assert.equal(next, 1);
+});
+
+test('YouTube Music fallback reads only the current player and respects disabled track buttons', () => {
+  const f = fixture([media()], 'https://music.youtube.com/watch?v=song', {nativeSession: false, lockedSession: true});
+  let next = 0, previous = 0, disabled = false, rootQueries = 0;
+  const button = callback => ({isConnected: true, get disabled() { return disabled; },
+    hasAttribute: () => false, getAttribute: () => null, click: callback});
+  const nextButton = button(() => next++), prevButton = button(() => previous++);
+  const bar = {isConnected: true, querySelector(selector) {
+    if (selector === '#next-button') return nextButton;
+    if (selector === '#previous-button') return prevButton;
+    if (selector.startsWith('.title')) return {textContent: 'Current song'};
+    if (selector.startsWith('.byline')) return {textContent: 'Current artist'};
+    assert(selector.includes('img.image')); return {currentSrc: 'https://images.test/cover', getAttribute: () => '/stale'};
+  }};
+  f.document.querySelector = selector => { assert.equal(selector, 'ytmusic-player-bar'); rootQueries++; return bar; };
+  f.bind(); assert.equal(f.state().title, 'Current song'); assert.equal(f.state().artist, 'Current artist');
+  assert.equal(f.state().artworkUrl, 'https://images.test/cover');
+  f.command('nexttrack'); f.command('previoustrack'); assert.equal(next, 1); assert.equal(previous, 1);
+  disabled = true; f.fire(f.elements[0], 'timeupdate'); f.advance(250);
+  assert(!f.state().actions.includes('nexttrack')); assert(!f.state().actions.includes('previoustrack'));
+  assert.equal(rootQueries, 1, 'reuse the connected player root');
 });
 
 console.log(`Page media: syntax + ${passed} host regressions passed.`);

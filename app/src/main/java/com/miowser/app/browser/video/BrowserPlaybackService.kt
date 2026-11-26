@@ -180,6 +180,7 @@ internal class BrowserPlaybackService : Service() {
         notificationKey = null
         mediaSession.isActive = false
         mediaSession.setCallback(null)
+        mediaSession.setSessionActivity(null)
         mediaSession.setMetadata(null)
         mediaSession.setPlaybackState(null)
     }
@@ -216,13 +217,17 @@ internal class BrowserPlaybackService : Service() {
             metadataKey = nextMetadata
             mediaSession.setMetadata(MediaMetadata.Builder()
                 .putString(MediaMetadata.METADATA_KEY_TITLE, snapshot.title)
+                .putString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE, snapshot.title)
                 .putString(MediaMetadata.METADATA_KEY_ARTIST, snapshot.artist)
+                .putString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE, snapshot.artist.ifBlank { snapshot.album })
                 .putString(MediaMetadata.METADATA_KEY_ALBUM, snapshot.album)
+                .putString(MediaMetadata.METADATA_KEY_DISPLAY_DESCRIPTION, snapshot.album)
                 .putString(MediaMetadata.METADATA_KEY_MEDIA_URI, snapshot.pageUrl)
                 .putLong(MediaMetadata.METADATA_KEY_DURATION, snapshot.durationMs)
                 .apply { artwork?.let {
                     putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, it)
                     putBitmap(MediaMetadata.METADATA_KEY_ART, it)
+                    putBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON, it)
                 } }
                 .build())
         }
@@ -276,7 +281,9 @@ internal class BrowserPlaybackService : Service() {
         }
         val tap = PendingIntent.getActivity(this, 0, main,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        mediaSession.setSessionActivity(tap)
         val builder = Notification.Builder(this, CHANNEL_ID)
+            .setCategory(Notification.CATEGORY_TRANSPORT)
             .setSmallIcon(R.drawable.ic_notification_miowser)
             .setContentTitle(snapshot?.title ?: "Browser media")
             .setContentText(snapshot?.artist?.ifBlank { snapshot.album }?.ifBlank { "Browser playback" })

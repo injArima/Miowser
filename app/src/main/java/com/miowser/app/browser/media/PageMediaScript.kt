@@ -4,6 +4,8 @@ package com.miowser.app.browser.media
 internal val PAGE_MEDIA_SCRIPT = PAGE_MEDIA_BRIDGE_SCRIPT.replace(
     "/*SITE_MEDIA_COMPATIBILITY*/", SITE_MEDIA_COMPATIBILITY_SCRIPT).replace("/*MEDIA_ARTWORK*/", MEDIA_ARTWORK_SCRIPT)
     .replace("/*BOUNDED_MEDIA_DISCOVERY*/", com.miowser.app.browser.BOUNDED_MEDIA_DISCOVERY_SCRIPT)
+    .replace("/*MEDIA_SESSION_FALLBACK*/", MEDIA_SESSION_FALLBACK_SCRIPT)
+    .replace("/*SITE_MEDIA_PRESENTATION*/", SITE_MEDIA_PRESENTATION_SCRIPT)
 
 internal const val PAGE_MEDIA_BRIDGE_SCRIPT = """
 (function () {
@@ -15,6 +17,8 @@ internal const val PAGE_MEDIA_BRIDGE_SCRIPT = """
     /*SITE_MEDIA_COMPATIBILITY*/
     /*MEDIA_ARTWORK*/
     /*BOUNDED_MEDIA_DISCOVERY*/
+    /*MEDIA_SESSION_FALLBACK*/
+    /*SITE_MEDIA_PRESENTATION*/
     var compatibility = createSiteMediaCompatibility(), compatibilityOwner = null;
     var documentId = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
     var binding = null, generation = -1, sequence = 0, activation = 0, lastCommand = 0;
@@ -31,6 +35,7 @@ internal const val PAGE_MEDIA_BRIDGE_SCRIPT = """
     var mediaEvents = ['play', 'playing', 'pause', 'ended', 'loadedmetadata', 'loadeddata', 'loadstart', 'emptied',
         'durationchange', 'timeupdate', 'ratechange', 'volumechange', 'seeking', 'seeked', 'waiting', 'stalled', 'error'];
     var MAX_MEDIA = 16, UPDATE_MS = 250, MAX_TIME = 31536000;
+    var fallbackSession = installMediaSessionFallback(schedule);
 
     function send(message) {
         try {
@@ -112,6 +117,11 @@ internal const val PAGE_MEDIA_BRIDGE_SCRIPT = """
                 playing(media) === playing(best.media) && record.activity > best.activity) best = record;
         });
         selected = best;
+        if (best && positionState && !positionState.record) {
+            positionState.record = best; positionState.revision = best.revision;
+            positionState.at = performance.now();
+            positionState.advancing = playing(best.media) && best.media.readyState >= 3 && !best.media.seeking;
+        }
         if (compatibilityOwner && (!best || ownerKey(best) !== compatibilityOwner)) {
             compatibilityOwner = null; compatibility.setAllowed(false);
         }
@@ -177,7 +187,8 @@ internal const val PAGE_MEDIA_BRIDGE_SCRIPT = """
             schedule();
         });
         observers.push({root: root, observer: observer});
-        observer.observe(root, {childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'srcset', 'poster']});
+        observer.observe(root, {childList: true, subtree: true, attributes: true,
+            attributeFilter: ['src', 'srcset', 'poster', 'disabled', 'aria-disabled']});
         mediaEvents.forEach(function (name) { listen(root, name, onMedia, true); });
         listen(root, 'pointerdown', onInteraction, true);
         listen(root, 'keydown', onInteraction, true);
@@ -228,13 +239,14 @@ internal const val PAGE_MEDIA_BRIDGE_SCRIPT = """
     function hookSession() {
         try { session = navigator.mediaSession || null; } catch (ignored) { session = null; }
         if (!session) return;
+        if (fallbackSession && session === fallbackSession.session) handlers = fallbackSession.handlers;
         hookMethod(session, 'setActionHandler', function (args) {
             if (actionNames.indexOf(args[0]) < 0) return;
             if (typeof args[1] === 'function') handlers[args[0]] = args[1]; else delete handlers[args[0]];
             schedule();
         });
         hookMethod(session, 'setPositionState', function (args) {
-            var value = args[0];
+            var value = fallbackSession && session === fallbackSession.session ? fallbackSession.position() : args[0];
             positionState = value && Number.isFinite(value.duration) ? {
                 duration: seconds(value.duration, null), position: seconds(value.position, 0),
                 rate: Number.isFinite(value.playbackRate) && value.playbackRate > 0 ? Math.min(value.playbackRate, 16) : 1,
@@ -303,10 +315,14 @@ internal const val PAGE_MEDIA_BRIDGE_SCRIPT = """
         var result = ['play', 'pause', 'stop'];
         if (seekable(record.media)) result.push('seekto', 'seekbackward', 'seekforward');
         actionNames.forEach(function (name) { if (handlers[name] && result.indexOf(name) < 0) result.push(name); });
+        ['previoustrack', 'nexttrack'].forEach(function (name) {
+            if (result.indexOf(name) < 0 && siteMediaButton(name)) result.push(name);
+        });
         return result;
     }
     function state(record) {
         var media = record.media, meta = session && session.metadata;
+        var site = !meta || !meta.title || !meta.artist ? siteMediaMetadata() : null;
         var artwork = selectMediaArtwork(meta, media);
         var duration = seconds(media.duration, null), position = seconds(media.currentTime, 0);
         var speed = Number.isFinite(media.playbackRate) && media.playbackRate > 0 ? Math.min(media.playbackRate, 16) : 1;
@@ -317,9 +333,10 @@ internal const val PAGE_MEDIA_BRIDGE_SCRIPT = """
             position = anchor.position;
         }
         return {elementId: record.id, sourceRevision: record.revision, everPlayed: true,
-            hasMetadataTitle: !!string(meta && meta.title, 512),
-            title: string(meta && meta.title, 512) || string(document.title, 512),
-            artist: string(meta && meta.artist, 512), album: string(meta && meta.album, 512), artworkUrl: artwork,
+            hasMetadataTitle: !!(string(meta && meta.title, 512) || site && site.title),
+            title: string(meta && meta.title, 512) || site && site.title || string(document.title, 512),
+            artist: string(meta && meta.artist, 512) || site && site.artist || '',
+            album: string(meta && meta.album, 512), artworkUrl: artwork,
             pageUrl: httpUrl(location.href), playing: playing(media),
             buffering: playing(media) && (media.readyState < 3 || !!media.seeking),
             positionMs: Math.round(position * 1000), durationMs: duration === null ? null : Math.round(duration * 1000),
@@ -392,6 +409,11 @@ internal const val PAGE_MEDIA_BRIDGE_SCRIPT = """
             if (action === 'seekto') { details.seekTime = message.positionMs / 1000; details.fastSeek = false; }
             if (action === 'seekbackward' || action === 'seekforward') details.seekOffset = 10;
             if (handlers[action]) result = handlers[action].call(session, details);
+            else if (action === 'previoustrack' || action === 'nexttrack') {
+                var button = siteMediaButton(action);
+                if (!button) { done(false); return; }
+                button.click(); done(true); return;
+            }
             else if (action === 'play') result = media.play();
             else if (action === 'pause') media.pause();
             else if (action === 'stop') { media.pause(); if (seekable(media)) seek(media, 0); }

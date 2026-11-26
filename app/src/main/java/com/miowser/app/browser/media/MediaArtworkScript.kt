@@ -2,7 +2,6 @@ package com.miowser.app.browser.media
 
 /** Pure selection inside the page-media closure; no image requests or document-wide scans. */
 internal const val MEDIA_ARTWORK_SCRIPT = """
-var musicArtworkBar = null;
 function selectMediaArtwork(meta, media) {
     var best = null, bestScore = -Infinity;
     var images = meta && meta.artwork;
@@ -25,11 +24,11 @@ function selectMediaArtwork(meta, media) {
         if (score > bestScore) { best = url; bestScore = score; }
     }
     // A narrowly scoped current-player fallback, never a recommendation/queue image.
-    if (!best && location.hostname === 'music.youtube.com') {
+    if (!best) {
         try {
-            if (!musicArtworkBar || !musicArtworkBar.isConnected) musicArtworkBar = document.querySelector('ytmusic-player-bar');
-            var cover = musicArtworkBar && musicArtworkBar.querySelector('#thumbnail img, ytmusic-thumbnail-renderer img');
-            if (cover) best = httpUrl(cover.getAttribute('src')) || httpUrl(cover.currentSrc);
+            var bar = currentMusicBar();
+            var cover = bar && bar.querySelector('#thumbnail img, ytmusic-thumbnail-renderer img, yt-img-shadow img, img.image, img');
+            if (cover) best = httpUrl(cover.currentSrc) || httpUrl(cover.getAttribute('src'));
         } catch (ignored) {}
     }
     // The selected media's own poster is relevant; favicons and recommendation images are not.

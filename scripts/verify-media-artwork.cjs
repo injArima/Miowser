@@ -6,12 +6,13 @@ const dir = path.join(__dirname, '../app/src/main/java/com/miowser/app/browser/m
 const page = fs.readFileSync(path.join(dir, 'PageMediaScript.kt'), 'utf8');
 const httpUrl = page.slice(page.indexOf('    function httpUrl('), page.indexOf('    function listen('));
 const artwork = fs.readFileSync(path.join(dir, 'MediaArtworkScript.kt'), 'utf8').split('"""')[1];
+const presentation = fs.readFileSync(path.join(dir, 'SiteMediaPresentationScript.kt'), 'utf8').split('"""')[1];
 let coverUrl = 'https://images.example.com/first.jpg';
 let documentQueries = 0;
 const bar = { isConnected: true, querySelector: () => ({ getAttribute: () => coverUrl, currentSrc: coverUrl }) };
-const ctx = vm.createContext({ URL, location: { href: 'https://music.youtube.com/watch?v=one', hostname: 'music.youtube.com' },
+const ctx = vm.createContext({ URL, location: { protocol: 'https:', href: 'https://music.youtube.com/watch?v=one', hostname: 'music.youtube.com' },
   document: { querySelector: (selector) => { assert.equal(selector, 'ytmusic-player-bar'); documentQueries++; return bar; } } });
-vm.runInContext(httpUrl + artwork, ctx);
+vm.runInContext(httpUrl + presentation + artwork, ctx);
 const select = (art, poster = '') => ctx.selectMediaArtwork({ artwork: art }, { poster });
 assert.equal(select([{ src: '/tiny', sizes: '48x48' }, { src: '/cover', sizes: '512x512' }]), 'https://music.youtube.com/cover');
 assert.equal(select([{ src: '/wide', sizes: '1024x128' }, { src: '/square', sizes: '512x512' }]), 'https://music.youtube.com/square');
